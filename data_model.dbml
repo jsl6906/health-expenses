@@ -1,0 +1,99 @@
+//// Docs: https://dbml.dbdiagram.io/docs
+Table charges {
+  id int [pk, increment]
+  excel_legacy_id varchar [note: "Legacy identifier from Excel spreadsheet"]
+  service_date date
+  family_member family_member
+  medical_type medical_type
+  cpt_code varchar
+  provider_id int [ref: > providers.id]
+  doctor_name varchar
+  charge_description varchar
+  base_fee_amount money
+  charged_amount money
+  owed_amount money
+  reimbursement_amount money [note: "Amount reimbursed by HSA / FSA"]
+  eob_claim_num varchar
+  insurance_discount_amount money
+  insurance_paid_amount money
+  ignore_for_issue_spotting boolean
+  notes bpchar
+}
+
+Table payments {
+  id int [pk, increment]
+  payment_date date
+  payment_amount money
+  expense_type expense_type
+  // expense_type_id int [ref: > ref_expense_types.id]
+  provider_id int [ref: > providers.id]
+  provider_name_legacy varchar [note: "From legacy spreadsheet, now mapped via provider_id"]
+  link_to_legacy_charges varchar
+  has_receipt_indicator varchar
+  transaction_match_flag varchar
+  reimbursement_amount money [note: "Amount reimbursed by HSA / FSA"]
+  notes bpchar
+}
+
+Table charge_payment_xref {
+  id int [pk, increment]
+  charge_id int [ref: > charges.id]
+  payment_id int [ref: > payments.id]
+}
+
+Table attachments {
+  id int [pk, increment]
+  charge_id int [ref: > charges.id, note: "Nullable: attachment associated to a charge"]
+  payment_id int [ref: > payments.id, note: "Nullable: attachment associated to a payment"]
+  original_filename varchar
+  content_type varchar
+  file_size int
+  content bytea [note: "Binary file content stored in database"]
+  notes text
+}
+
+Table providers {
+  id int [pk, increment]
+  provider_name varchar
+  provider_group varchar
+  provider_address varchar
+  one_way_miles numeric
+  active_provider_flag boolean
+
+}
+
+Table premiums {
+  id int [pk, increment]
+  year int
+  medical_premium money
+  dental_premium money
+  vision_premium money
+  hsa_fsa_paid money
+}
+
+Table ref_expense_types {
+  id int [pk, increment]
+  expense_type_name varchar
+}
+
+Enum family_member {
+  "Alex"
+  "Jordan"
+  "Sam"
+  "Riley"
+}
+
+Enum medical_type {
+  "Medical"
+  "Dental"
+  "Vision"
+  "Mental Health"
+  "Other"
+}
+
+Enum expense_type {
+  "Medical"
+  "Dental"
+  "Vision"
+  "HSA / FSA"
+}

@@ -1,0 +1,627 @@
+{% extends "base.html" %}
+
+{% block title %}Charges - Personal Health Expenses{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-receipt"></i> Medical Charges</h2>
+    <div class="btn-group" role="group" aria-label="Add or Import Charges">
+        <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addChargeModal">
+            <i class="bi bi-plus-circle"></i> Add Charge
+        </button>
+        <a href="/charges/import/eob" class="btn btn-outline-primary">
+            <i class="bi bi-file-earmark-medical"></i> Add Charges from EOB
+        </a>
+        <a href="/charges/import/invoice" class="btn btn-outline-primary">
+            <i class="bi bi-receipt"></i> Add Charges from Invoice
+        </a>
+    </div>
+</div>
+
+<!-- Filter and Search Controls -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3">
+                <label for="searchInput" class="form-label">Search</label>
+                <input type="text" class="form-control" id="searchInput" placeholder="Search charges...">
+            </div>
+            <div class="col-md-2">
+                <label for="familyMemberFilter" class="form-label">Family Member</label>
+                <select class="form-control" id="familyMemberFilter">
+                    <option value="">All Members</option>
+                    <option value="Alex">Alex</option>
+                    <option value="Jordan">Jordan</option>
+                    <option value="Sam">Sam</option>
+                    <option value="Riley">Riley</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="medicalTypeFilter" class="form-label">Medical Type</label>
+                <select class="form-control" id="medicalTypeFilter">
+                    <option value="">All Types</option>
+                    <option value="Medical">Medical</option>
+                    <option value="Dental">Dental</option>
+                    <option value="Vision">Vision</option>
+                    <option value="Mental Health">Mental Health</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="statusFilter" class="form-label">Payment Status</label>
+                <select class="form-control" id="statusFilter">
+                    <option value="">All Status</option>
+                    <option value="outstanding">Outstanding</option>
+                    <option value="paid">Paid</option>
+                </select>
+            </div>
+            <div class="col-md-1">
+                <label for="dateFrom" class="form-label">From</label>
+                <input type="date" class="form-control" id="dateFrom">
+            </div>
+            <div class="col-md-1">
+                <label for="dateTo" class="form-label">To</label>
+                <input type="date" class="form-control" id="dateTo">
+            </div>
+            <div class="col-md-1 d-flex align-items-end">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearFilters()">
+                    <i class="bi bi-x-circle"></i> Clear
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table manual-striped" id="chargesTable">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-column="0">Service Date <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="1">Family Member <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="2">Type <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="3">Provider <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="4">Description <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="5">Charged <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="6">Owed <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="7">Paid <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="8">Status <i class="bi bi-arrow-down-up"></i></th>
+                                <th>Attchs</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Debug: {{ charges|length }} charges loaded -->
+                            {% for charge in charges %}
+                            <tr>
+                                <td>{{ charge.service_date.strftime('%#m/%#d/%y') if charge.service_date else '-' }}</td>
+                                <td>{{ charge.family_member or '-' }}</td>
+                                <td>
+                                    {% set mt = (charge.medical_type or '') %}
+                                    {% set mt_map = {
+                                        'Medical': '🩺',
+                                        'Dental': '🦷',
+                                        'Vision': '👁️',
+                                        'Mental Health': '🧠',
+                                        'Other': '🧾'
+                                    } %}
+                                    {% set icon = mt_map.get(mt, '❔') %}
+                                    <span class="medical-type-icon" title="{{ mt or 'Unknown' }}">{{ icon }}</span>
+                                    <span class="visually-hidden filter-text">{{ mt }}</span>
+                                </td>
+                                <td>
+                                    {% if charge.provider %}
+                                        <a href="/providers/{{ charge.provider.id }}" class="text-decoration-none">{{ charge.provider.provider_name }}</a>{% if charge.provider.provider_group %} <span class="text-muted">({{ charge.provider.provider_group }})</span>{% endif %}
+                                    {% else %}-{% endif %}
+                                </td>
+                                <td>
+                                    <a href="/charges/{{ charge.id }}" class="text-decoration-none">
+                                        {% if charge.cpt_code and charge.cpt_code.lower() not in ['???','na','n/a'] %}<span class="text-muted">({{ charge.cpt_code }})</span> {% endif %}{{ charge.charge_description or '-' }}
+                                    </a>
+                                </td>
+                                <td>{{ charge.charged_amount | currency }}</td>
+                                <td>{{ charge.owed_amount | currency }}</td>
+                                <td>{{ charge.paid_amount_agg | currency }}</td>
+                                <td>
+                                    {% set owed = charge.owed_amount or 0 %}
+                                    {% set paid = charge.paid_amount_agg or 0 %}
+                                    {% if owed > 0 and paid >= owed %}
+                                        <span class="badge bg-success">Paid</span>
+                                    {% elif owed > 0 and paid > 0 and paid < owed %}
+                                        <span class="badge bg-info text-dark">Partial</span>
+                                    {% elif owed > 0 and paid == 0 %}
+                                        <span class="badge bg-warning">Outstanding</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">N/A</span>
+                                    {% endif %}
+                                </td>
+                <td class="text-center">
+                    {% if charge.attachment_count and charge.attachment_count > 0 %}
+                      <span class="text-muted small"><i class="bi bi-paperclip"></i> {{ charge.attachment_count }}</span>
+                    {% endif %}
+                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Charge Modal -->
+<div class="modal fade" id="addChargeModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Charge</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addChargeForm">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="service_date" class="form-label">Service Date</label>
+                            <input type="date" class="form-control" id="service_date" name="service_date" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="family_member" class="form-label">Family Member</label>
+                            <select class="form-select" id="family_member" name="family_member" required>
+                                <option value="">Select...</option>
+                                <option value="Alex">Alex</option>
+                                <option value="Jordan">Jordan</option>
+                                <option value="Sam">Sam</option>
+                                <option value="Riley">Riley</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="medical_type" class="form-label">Medical Type</label>
+                            <select class="form-select" id="medical_type" name="medical_type" required>
+                                <option value="">Select...</option>
+                                <option value="Medical">Medical</option>
+                                <option value="Dental">Dental</option>
+                                <option value="Vision">Vision</option>
+                                <option value="Mental Health">Mental Health</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="provider_id" class="form-label">Provider</label>
+                            <select class="form-select" id="provider_id" name="provider_id" required>
+                                <option value="">Select...</option>
+                                {% for provider in providers %}
+                                <option value="{{ provider.id }}">{{ provider.provider_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="cpt_code" class="form-label">CPT Code (optional)</label>
+                            <input type="text" class="form-control" id="cpt_code" name="cpt_code" list="cptCodeDatalist" placeholder="e.g. 99213">
+                            <datalist id="cptCodeDatalist"></datalist>
+                            <div class="form-text">Start typing to see previous codes.</div>
+                        </div>
+                        <div class="col-md-8 mb-3">
+                            <label for="charge_description" class="form-label">Description</label>
+                            <input type="text" class="form-control" id="charge_description" name="charge_description" required>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="charged_amount" class="form-label">Charged Amount</label>
+                            <input type="number" step="0.01" class="form-control" id="charged_amount" name="charged_amount" required>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="owed_amount" class="form-label">Amount Owed</label>
+                            <input type="number" step="0.01" class="form-control" id="owed_amount" name="owed_amount">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="insurance_paid_amount" class="form-label">Insurance Paid</label>
+                            <input type="number" step="0.01" class="form-control" id="insurance_paid_amount" name="insurance_paid_amount">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="base_fee_amount" class="form-label">Base Fee</label>
+                            <input type="number" step="0.01" class="form-control" id="base_fee_amount" name="base_fee_amount">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="reimbursement_amount" class="form-label">Reimbursed (HSA/FSA)</label>
+                            <input type="number" step="0.01" class="form-control" id="reimbursement_amount" name="reimbursement_amount">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="insurance_discount_amount" class="form-label">Insurance Discount</label>
+                            <input type="number" step="0.01" class="form-control" id="insurance_discount_amount" name="insurance_discount_amount">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="doctor_name" class="form-label">Doctor Name</label>
+                            <input type="text" class="form-control" id="doctor_name" name="doctor_name" placeholder="Dr. Smith">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="eob_claim_num" class="form-label">EOB / Claim #</label>
+                            <input type="text" class="form-control" id="eob_claim_num" name="eob_claim_num">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="notes" class="form-label">Notes</label>
+                        <textarea class="form-control" id="notes" name="notes" rows="2" placeholder="Any additional context..."></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="charge_attachments" class="form-label">Attachments (optional)</label>
+                        <input type="file" class="form-control" id="charge_attachments" name="attachments" multiple>
+                        <div class="form-text">Upload related documents (receipts, EOBs, invoices). You can select multiple files.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">Save Charge</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Table enhancement functionality
+let currentSort = { column: -1, direction: 'asc' };
+
+// Initialize table enhancements
+document.addEventListener('DOMContentLoaded', function() {
+    initializeTableEnhancements();
+    setupFormSubmission();
+    applyStriping('chargesTable');
+    // Removed inline row attachment upload; use detail page drag & drop instead
+});
+
+function initializeTableEnhancements() {
+    // Setup search
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', filterTable);
+    }
+    
+    // Setup all filters
+    const familyMemberFilter = document.getElementById('familyMemberFilter');
+    const medicalTypeFilter = document.getElementById('medicalTypeFilter');
+    const statusFilter = document.getElementById('statusFilter');
+    const dateFrom = document.getElementById('dateFrom');
+    const dateTo = document.getElementById('dateTo');
+    
+    if (familyMemberFilter) familyMemberFilter.addEventListener('change', filterTable);
+    if (medicalTypeFilter) medicalTypeFilter.addEventListener('change', filterTable);
+    if (statusFilter) statusFilter.addEventListener('change', filterTable);
+    if (dateFrom) dateFrom.addEventListener('change', filterTable);
+    if (dateTo) dateTo.addEventListener('change', filterTable);
+    
+    // Setup sortable headers
+    const sortableHeaders = document.querySelectorAll('.sortable');
+    sortableHeaders.forEach(header => {
+        header.style.cursor = 'pointer';
+        header.addEventListener('click', () => sortTable(parseInt(header.dataset.column)));
+    });
+}
+
+function sortTable(column) {
+    const table = document.getElementById('chargesTable');
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    
+    // Determine sort direction
+    let direction = 'asc';
+    if (currentSort.column === column && currentSort.direction === 'asc') {
+        direction = 'desc';
+    }
+    
+    // Update sort indicators
+    document.querySelectorAll('.sortable i').forEach(icon => {
+        icon.className = 'bi bi-arrow-down-up';
+    });
+    
+    const currentHeader = document.querySelector(`[data-column="${column}"] i`);
+    if (direction === 'asc') {
+        currentHeader.className = 'bi bi-arrow-up';
+    } else {
+        currentHeader.className = 'bi bi-arrow-down';
+    }
+    
+    currentSort = { column, direction };
+    
+    // Sort rows
+    rows.sort((a, b) => {
+        const cellA = a.cells[column].textContent.trim();
+        const cellB = b.cells[column].textContent.trim();
+        
+        // Handle different data types
+        let valueA, valueB;
+        
+        if (column === 0) { // Service Date column
+            valueA = new Date(cellA || '1900-01-01');
+            valueB = new Date(cellB || '1900-01-01');
+    } else if ([5,6,7].includes(column)) { // Amount columns (charged, owed, paid)
+            valueA = parseFloat(cellA.replace(/[$,]/g, '')) || 0;
+            valueB = parseFloat(cellB.replace(/[$,]/g, '')) || 0;
+        } else { // Text columns
+            valueA = cellA.toLowerCase();
+            valueB = cellB.toLowerCase();
+        }
+        
+        if (valueA < valueB) return direction === 'asc' ? -1 : 1;
+        if (valueA > valueB) return direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+    
+    // Re-append sorted rows
+    rows.forEach(row => tbody.appendChild(row));
+    applyStriping('chargesTable');
+}
+
+function filterTable() {
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+    const familyMember = document.getElementById('familyMemberFilter').value.toLowerCase();
+    const medicalType = document.getElementById('medicalTypeFilter').value.toLowerCase();
+    const status = document.getElementById('statusFilter').value.toLowerCase();
+    const dateFrom = document.getElementById('dateFrom').value;
+    const dateTo = document.getElementById('dateTo').value;
+    
+    const table = document.getElementById('chargesTable');
+    const rows = table.querySelectorAll('tbody tr');
+    
+    rows.forEach(row => {
+        let visible = true;
+        
+        // Text search filter
+        if (searchTerm) {
+            const rowText = row.textContent.toLowerCase();
+            if (!rowText.includes(searchTerm)) {
+                visible = false;
+            }
+        }
+        
+        // Family member filter
+        if (visible && familyMember) {
+            const familyMemberCell = row.cells[1].textContent.toLowerCase().trim();
+            if (!familyMemberCell.includes(familyMember)) {
+                visible = false;
+            }
+        }
+        
+        // Medical type filter
+        if (visible && medicalType) {
+            const medicalTypeCell = row.cells[2].textContent.toLowerCase().trim();
+            if (!medicalTypeCell.includes(medicalType)) {
+                visible = false;
+            }
+        }
+        
+        // Status filter
+        if (visible && status) {
+            const statusCell = row.cells[8].textContent.toLowerCase().trim();
+            if (!statusCell.includes(status)) {
+                visible = false;
+            }
+        }
+        
+        // Date range filter
+        if (visible && (dateFrom || dateTo)) {
+            const serviceDateCell = row.cells[0].textContent.trim();
+            if (serviceDateCell && serviceDateCell !== '-') {
+                const serviceDate = new Date(serviceDateCell);
+                
+                if (dateFrom && serviceDate < new Date(dateFrom)) {
+                    visible = false;
+                }
+                if (dateTo && serviceDate > new Date(dateTo)) {
+                    visible = false;
+                }
+            } else if (dateFrom || dateTo) {
+                // Hide rows with no date when date filter is active
+                visible = false;
+            }
+        }
+        
+        row.style.display = visible ? '' : 'none';
+    });
+    
+    // Update visible row count
+    updateRowCount();
+    applyStriping('chargesTable');
+}
+
+function updateRowCount() {
+    const table = document.getElementById('chargesTable');
+    const allRows = table.querySelectorAll('tbody tr');
+    const visibleRows = table.querySelectorAll('tbody tr:not([style*="display: none"])');
+    
+    // Add/update row count display
+    let countDisplay = document.getElementById('rowCount');
+    if (!countDisplay) {
+        countDisplay = document.createElement('small');
+        countDisplay.id = 'rowCount';
+        countDisplay.className = 'text-muted ms-2';
+        const tableCard = table.closest('.card');
+        if (tableCard) {
+            const cardBody = tableCard.querySelector('.card-body');
+            cardBody.insertBefore(countDisplay, cardBody.firstChild);
+        }
+    }
+    countDisplay.textContent = `Showing ${visibleRows.length} of ${allRows.length} charges`;
+}
+
+function clearFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('familyMemberFilter').value = '';
+    document.getElementById('medicalTypeFilter').value = '';
+    document.getElementById('statusFilter').value = '';
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value = '';
+    filterTable();
+}
+
+function applyStriping(tableId) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const all = table.querySelectorAll('tbody tr');
+    all.forEach(r => r.classList.remove('table-alt'));
+    const visible = Array.from(all).filter(r => r.style.display !== 'none');
+    visible.forEach((row, idx) => {
+        if (idx % 2 === 1) row.classList.add('table-alt');
+    });
+}
+
+// Existing functions
+async function deleteCharge(id) {
+    if (confirm('Are you sure you want to delete this charge?')) {
+        try {
+            const response = await fetch(`/api/charges/${id}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                location.reload();
+            } else {
+                alert('Error deleting charge');
+            }
+        } catch (error) {
+            alert('Error deleting charge: ' + error.message);
+        }
+    }
+}
+
+function editCharge(id) {
+    alert('Edit functionality would open a modal with charge data for ID: ' + id);
+}
+
+function setupFormSubmission() {
+    const form = document.getElementById('addChargeForm');
+    if (form) {
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const data = {
+                service_date: formData.get('service_date') || null,
+                family_member: formData.get('family_member') || null,
+                medical_type: formData.get('medical_type') || null,
+                provider_id: formData.get('provider_id') ? parseInt(formData.get('provider_id')) : null,
+                cpt_code: formData.get('cpt_code') || null,
+                charge_description: formData.get('charge_description') || null,
+                charged_amount: formData.get('charged_amount') ? parseFloat(formData.get('charged_amount')) : null,
+                owed_amount: formData.get('owed_amount') ? parseFloat(formData.get('owed_amount')) : null,
+                insurance_paid_amount: formData.get('insurance_paid_amount') ? parseFloat(formData.get('insurance_paid_amount')) : null
+            };
+            // Optional extended fields
+            const optMap = {
+                base_fee_amount: 'base_fee_amount',
+                reimbursement_amount: 'reimbursement_amount',
+                insurance_discount_amount: 'insurance_discount_amount',
+                doctor_name: 'doctor_name',
+                eob_claim_num: 'eob_claim_num',
+                notes: 'notes'
+            };
+            for (const [key, field] of Object.entries(optMap)) {
+                const raw = formData.get(field);
+                if (raw !== null && raw !== '') {
+                    if (key.includes('amount')) {
+                        data[key] = parseFloat(raw);
+                    } else {
+                        data[key] = raw;
+                    }
+                }
+            }
+            
+            try {
+                const response = await fetch('/api/charges/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (response.ok) {
+                    const created = await response.json();
+                    const newId = created.id;
+                    // Handle attachments if any selected
+                    const filesInput = document.getElementById('charge_attachments');
+                    if (filesInput && filesInput.files && filesInput.files.length > 0) {
+                        for (const file of filesInput.files) {
+                            const upFd = new FormData();
+                            upFd.append('charge_id', newId);
+                            upFd.append('notes', '');
+                            upFd.append('file', file);
+                            try {
+                                const upResp = await fetch('/api/attachments/upload', { method: 'POST', body: upFd });
+                                if (!upResp.ok) {
+                                    console.warn('Attachment upload failed for', file.name);
+                                }
+                            } catch (ex) {
+                                console.warn('Attachment upload error', ex);
+                            }
+                        }
+                    }
+                    location.reload();
+                } else {
+                    const errorData = await response.json();
+                    alert('Error creating charge: ' + (errorData.detail || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error creating charge: ' + error.message);
+            }
+        });
+    }
+}
+
+// Inline attachment upload per charge row
+// Inline attachment upload removed: attachments handled on detail page
+
+// CPT code autocomplete (simple datalist) with one-time load and optional basic filtering
+let cptCodesCache = null;
+async function loadCptCodes(force=false) {
+    if (cptCodesCache && !force) return cptCodesCache;
+    try {
+        const resp = await fetch('/api/cpt-codes');
+        if (!resp.ok) return [];
+        const data = await resp.json();
+        cptCodesCache = data.cpt_codes || [];
+        return cptCodesCache;
+    } catch { return []; }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const cptInput = document.getElementById('cpt_code');
+    const datalist = document.getElementById('cptCodeDatalist');
+    if (cptInput && datalist) {
+        cptInput.addEventListener('focus', async () => {
+            if (!cptCodesCache) {
+                const codes = await loadCptCodes();
+                datalist.innerHTML = codes.map(c => `<option value="${c}"></option>`).join('');
+            }
+        });
+        cptInput.addEventListener('input', () => {
+            // Client-side lightweight filter (trim length threshold optional)
+            if (!cptCodesCache) return; // wait until loaded
+            const val = cptInput.value.toLowerCase();
+            const filtered = cptCodesCache.filter(c => c.toLowerCase().includes(val)).slice(0,50);
+            datalist.innerHTML = filtered.map(c => `<option value="${c}"></option>`).join('');
+        });
+    }
+});
+</script>
+
+{% endblock %}

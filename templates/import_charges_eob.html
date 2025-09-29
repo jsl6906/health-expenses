@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% block title %}Import Charges from EOB{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2><i class="bi bi-file-earmark-medical"></i> Import Charges from EOB</h2>
+  <a href="/charges" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to Charges</a>
+</div>
+<div class="card mb-3">
+  <div class="card-body py-3">
+    <form id="eobUploadForm" class="row g-2 align-items-end" enctype="multipart/form-data">
+      <div class="col-md-4">
+        <label for="eobFile" class="form-label small mb-1">EOB File (PDF / any)</label>
+        <input type="file" class="form-control form-control-sm" id="eobFile" name="file" required>
+      </div>
+      <div class="col-md-3">
+        <label for="providerSelect" class="form-label small mb-1">Provider</label>
+        <select id="providerSelect" class="form-select form-select-sm" required>
+          <option value="">(Select a provider)</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label for="defaultFamilyMember" class="form-label small mb-1">Default Family Member</label>
+        <select id="defaultFamilyMember" class="form-select form-select-sm">
+          <option value="">(Auto from parse)</option>
+          <option>Alex</option>
+          <option>Jordan</option>
+          <option>Sam</option>
+          <option>Riley</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <button class="btn btn-primary btn-form-sm w-100" type="submit">
+          <i class="bi bi-upload"></i> <span class="d-none d-md-inline">Upload & Parse</span><span class="d-inline d-md-none">Parse</span>
+        </button>
+      </div>
+    </form>
+    <div class="small text-muted mt-2">Upload a single EOB to parse. Additional smart detection & OCR will arrive in a future iteration.</div>
+  </div>
+</div>
+
+<div id="parseResults" class="d-none">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0">Parsed Line Items <small class="text-muted" id="rowCountMeta"></small></h5>
+    <div>
+      <button id="importSelectedBtn" class="btn btn-success btn-sm" disabled>
+        <i class="bi bi-check2-circle"></i> Import Selected
+      </button>
+      <button id="resetSessionBtn" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-x-circle"></i> Reset
+      </button>
+    </div>
+  </div>
+  <div class="table-responsive" style="max-height: 50vh;">
+    <table class="table table-sm table-bordered align-middle" id="eobParsedTable">
+      <thead class="table-light">
+        <tr>
+          <th style="width:30px"><input type="checkbox" id="selectAll"></th>
+          <th>Date</th>
+          <th>CPT</th>
+          <th>Description</th>
+          <th>Base Fee</th>
+          <th>Discount</th>
+          <th>Charged</th>
+          <th>Ins Paid</th>
+          <th>Owed</th>
+          <th>Family Member</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div id="importStatus" class="mt-2 small"></div>
+</div>
+
+  <datalist id="cptDatalist"></datalist>
+
+<div id="emptyState" class="alert alert-info small">
+  <strong>Workflow:</strong>
+  <ol class="mb-0 mt-1 ps-3">
+    <li>Select an EOB file & click Upload & Parse.</li>
+    <li>Review parsed rows, adjust selections.</li>
+    <li>Click Import Selected to create new charges.</li>
+  </ol>
+  <div class="mt-2 text-muted">Future: multi-file sessions, duplicate detection, provider auto-match, OCR for image/PDF.</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentSessionId = null;
+const providersCache = [];
+
+async function fetchProviders() {
+  try {
+    const resp = await fetch('/api/providers/?limit=1000');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const sel = document.getElementById('providerSelect');
+    data.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.provider_name;
+      sel.appendChild(opt);
+    });
+  } catch { /* ignore */ }
+}
+
+function resetUI() {
+  currentSessionId = null;
+  document.getElementById('parseResults').classList.add('d-none');
+  document.getElementById('emptyState').classList.remove('d-none');
+  document.getElementById('importStatus').textContent = '';
+  document.querySelector('#eobParsedTable tbody').innerHTML = '';
+  document.getElementById('rowCountMeta').textContent = '';
+  document.getElementById('importSelectedBtn').disabled = true;
+}
+
+async function handleUpload(e) {
+  e.preventDefault();
+  const form = e.target;
+  const fileInput = document.getElementById('eobFile');
+  const providerSelect = document.getElementById('providerSelect');
+  if (!fileInput.files.length) return;
+  if (!providerSelect.value) {
+    alert('Please select a provider before uploading.');
+    providerSelect.focus();
+    return;
+  }
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  const btn = form.querySelector('button[type="submit"]');
+  const prevHtml = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Parsing...';
+  try {
+    const resp = await fetch('/api/eob/upload', { method: 'POST', body: fd });
+    if (!resp.ok) { alert('Upload failed'); return; }
+    const data = await resp.json();
+    currentSessionId = data.session_id;
+    await loadSession();
+  } catch (err) { alert('Error: ' + err); }
+  finally { btn.disabled = false; btn.innerHTML = prevHtml; }
+}
+
+async function loadSession() {
+  if (!currentSessionId) return;
+  try {
+    const resp = await fetch(`/api/eob/session/${currentSessionId}`);
+    if (!resp.ok) { alert('Session not found'); resetUI(); return; }
+    const data = await resp.json();
+    const tbody = document.querySelector('#eobParsedTable tbody');
+    tbody.innerHTML = '';
+    data.rows.forEach(r => {
+      const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="checkbox" class="row-select" data-index="${r.index}" checked></td>
+  <td><input type="date" class="form-control form-control-sm date-input eob-date" data-index="${r.index}" value="${r.service_date ? r.service_date.substring(0,10) : ''}" /></td>
+  <td><input type="text" list="cptDatalist" class="form-control form-control-sm cpt-input eob-cpt" data-index="${r.index}" value="${r.cpt_code || ''}" /></td>
+    <td><input type="text" class="form-control form-control-sm desc-input w-100" style="min-width:220px" value="${r.description || ''}" data-index="${r.index}" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm basefee-input amt-input eob-amt" value="${r.base_fee_amount ?? ''}" data-index="${r.index}" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm discount-input amt-input eob-amt" value="${r.insurance_discount_amount ?? ''}" data-index="${r.index}" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm charged-input amt-input eob-amt" value="${r.charged_amount ?? ''}" data-index="${r.index}" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm inspaid-input amt-input eob-amt" value="${r.insurance_paid_amount ?? ''}" data-index="${r.index}" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm owed-input amt-input eob-amt" value="${r.owed_amount ?? ''}" data-index="${r.index}" /></td>
+        <td>
+          <select class="form-select form-select-sm fam-input" style="min-width:140px" data-index="${r.index}">
+            <option value="">(None)</option>
+            <option ${r.family_member==='Alex'?'selected':''}>Alex</option>
+            <option ${r.family_member==='Jordan'?'selected':''}>Jordan</option>
+            <option ${r.family_member==='Sam'?'selected':''}>Sam</option>
+            <option ${r.family_member==='Riley'?'selected':''}>Riley</option>
+          </select>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('rowCountMeta').textContent = `(${data.row_count} rows parsed)`;
+    document.getElementById('parseResults').classList.remove('d-none');
+    document.getElementById('emptyState').classList.add('d-none');
+    updateImportButtonState();
+  } catch (e) { console.error(e); }
+}
+
+function updateImportButtonState() {
+  const anyChecked = Array.from(document.querySelectorAll('.row-select')).some(c => c.checked);
+  document.getElementById('importSelectedBtn').disabled = !anyChecked;
+}
+
+async function importSelected() {
+  const providerId = document.getElementById('providerSelect').value || null;
+  const defaultFm = document.getElementById('defaultFamilyMember').value || null;
+  const indices = Array.from(document.querySelectorAll('.row-select'))
+    .filter(c => c.checked)
+    .map(c => parseInt(c.getAttribute('data-index')));
+  // Collect edited field values to send so server can override stub before import
+  const rows = indices.map(i => ({
+    index: i,
+  service_date: document.querySelector(`.date-input[data-index="${i}"]`)?.value || null,
+  cpt_code: document.querySelector(`.cpt-input[data-index="${i}"]`)?.value || null,
+  description: document.querySelector(`.desc-input[data-index="${i}"]`)?.value || null,
+    charged_amount: parseFloat(document.querySelector(`.charged-input[data-index="${i}"]`)?.value || '0') || null,
+    owed_amount: parseFloat(document.querySelector(`.owed-input[data-index="${i}"]`)?.value || '0') || null,
+    insurance_paid_amount: parseFloat(document.querySelector(`.inspaid-input[data-index="${i}"]`)?.value || '0') || null,
+    insurance_discount_amount: parseFloat(document.querySelector(`.discount-input[data-index="${i}"]`)?.value || '0') || null,
+    base_fee_amount: parseFloat(document.querySelector(`.basefee-input[data-index="${i}"]`)?.value || '0') || null,
+  reimbursement_amount: null,
+    family_member: document.querySelector(`.fam-input[data-index="${i}"]`)?.value || null,
+  }));
+  if (!indices.length) return;
+  if (defaultFm) {
+    rows.forEach(r => { if (!r.family_member) r.family_member = defaultFm; });
+  }
+  const payload = { selected_indices: indices, provider_id: providerId ? parseInt(providerId) : null, overrides: rows };
+  const btn = document.getElementById('importSelectedBtn');
+  const prev = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Importing...';
+  try {
+    const resp = await fetch(`/api/eob/session/${currentSessionId}/import`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!resp.ok) { alert('Import failed'); return; }
+    const data = await resp.json();
+    document.getElementById('importStatus').innerHTML = `<span class="text-success">Imported ${data.imported_count} charges.</span>`;
+    // Disable further imports (session removed server-side)
+    currentSessionId = null;
+    document.getElementById('importSelectedBtn').disabled = true;
+  } catch (e) { alert('Error: ' + e); }
+  finally { btn.innerHTML = prev; }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  fetchProviders();
+  // Global drag & drop for EOB upload
+  let dragDepth = 0;
+  const fileInput = document.getElementById('eobFile');
+  const form = document.getElementById('eobUploadForm');
+  const providerSelect = document.getElementById('providerSelect');
+  function showGlobalDrag() { document.body.classList.add('drag-attachments-active'); }
+  function hideGlobalDrag() { document.body.classList.remove('drag-attachments-active'); }
+  ['dragenter','dragover'].forEach(evt => window.addEventListener(evt, e => {
+    e.preventDefault(); e.stopPropagation();
+    dragDepth++; showGlobalDrag();
+  }));
+  ['dragleave','drop'].forEach(evt => window.addEventListener(evt, e => {
+    e.preventDefault(); e.stopPropagation();
+    dragDepth = Math.max(0, dragDepth-1);
+    if (evt === 'drop' || dragDepth === 0) { dragDepth = 0; hideGlobalDrag(); }
+  }));
+  window.addEventListener('drop', e => {
+    if (!fileInput || !form) return;
+    const dtFiles = e.dataTransfer?.files;
+    if (dtFiles && dtFiles.length) {
+      fileInput.files = dtFiles; // assign files
+      form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    }
+  });
+  // Load CPT codes for datalist (basic one-time fetch)
+  (async () => {
+    try {
+      const resp = await fetch('/api/cpt-codes');
+      if (resp.ok) {
+        const data = await resp.json();
+        const dl = document.getElementById('cptDatalist');
+        if (dl) {
+          dl.innerHTML = (data.cpt_codes || []).map(c => `<option value="${c}"></option>`).join('');
+        }
+      }
+    } catch {/* ignore */}
+  })();
+  document.getElementById('eobUploadForm').addEventListener('submit', handleUpload);
+  document.getElementById('selectAll').addEventListener('change', (e) => {
+    document.querySelectorAll('.row-select').forEach(c => { c.checked = e.target.checked; });
+    updateImportButtonState();
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target.classList && e.target.classList.contains('row-select')) updateImportButtonState();
+  });
+  document.getElementById('importSelectedBtn').addEventListener('click', (e) => { e.preventDefault(); importSelected(); });
+  document.getElementById('resetSessionBtn').addEventListener('click', (e) => { e.preventDefault(); resetUI(); });
+});
+</script>
+{% endblock %}

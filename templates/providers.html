@@ -1,0 +1,452 @@
+{% extends "base.html" %}
+
+{% block title %}Providers - Personal Health Expenses{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-building"></i> Healthcare Providers</h2>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addProviderModal">
+        <i class="bi bi-plus-circle"></i> Add Provider
+    </button>
+</div>
+
+<!-- Filter and Search Controls -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-3">
+                <label for="searchInput" class="form-label">Search</label>
+                <input type="text" class="form-control" id="searchInput" placeholder="Search providers...">
+            </div>
+            <div class="col-md-2">
+                <label for="groupFilter" class="form-label">Group</label>
+                <select class="form-control" id="groupFilter">
+                    <option value="">All Groups</option>
+                    {% set groups = providers | selectattr('provider_group') | map(attribute='provider_group') | unique | sort %}
+                    {% for group in groups %}
+                    <option value="{{ group }}">{{ group }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="activeFilter" class="form-label">Status</label>
+                <select class="form-control" id="activeFilter">
+                    <option value="">All Statuses</option>
+                    <option value="active">Active Only</option>
+                    <option value="inactive">Inactive Only</option>
+                </select>
+            </div>
+            <div class="col-md-5 d-flex align-items-end">
+                <button type="button" class="btn btn-outline-secondary me-2" onclick="clearFilters()">
+                    <i class="bi bi-x-circle"></i> Clear
+                </button>
+            </div>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table manual-striped" id="providersTable">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-column="0">Provider (Group) <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="1">Distance (miles) <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="2">Total Owed <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="3">Total Payments <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="4">Net Amount <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="5">Active <i class="bi bi-arrow-down-up"></i></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for provider in providers %}
+                            <tr data-group="{{ provider.provider_group|lower if provider.provider_group else '' }}">
+                                    <td data-field="provider_name" data-group="{{ provider.provider_group or '' }}">
+                                        <a href="/providers/{{ provider.id }}" class="text-decoration-none">{{ provider.provider_name }}</a>
+                                    {% if provider.provider_group %}<span class="text-muted"> ({{ provider.provider_group }})</span>{% endif %}
+                                </td>
+                                <td>{{ provider.one_way_miles|round|int if provider.one_way_miles else '-' }}</td>
+                                <td>{{ provider.total_owed | currency }}</td>
+                                <td>{{ provider.total_payments | currency }}</td>
+                                <td>
+                                    <span class="{% if provider.net_amount > 0 %}text-danger{% elif provider.net_amount < 0 %}text-success{% else %}text-muted{% endif %}">
+                                        {{ provider.net_amount | currency }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <span class="badge {% if provider.active_provider_flag %}bg-success{% else %}bg-danger{% endif %}">
+                                        {% if provider.active_provider_flag %}Active{% else %}Inactive{% endif %}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Provider Modal -->
+<div class="modal fade" id="addProviderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add New Provider</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="addProviderForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="provider_name" class="form-label">Provider Name *</label>
+                                    <input type="text" class="form-control" id="provider_name" name="provider_name" required>
+                                    <div id="providerNameFeedback" class="form-text"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="provider_group" class="form-label">Provider Group</label>
+                        <input type="text" class="form-control" id="provider_group" name="provider_group" list="providerGroupOptions" autocomplete="off" placeholder="Start typing to see existing or add new...">
+                        <datalist id="providerGroupOptions"></datalist>
+                        <div id="providerGroupFeedback" class="form-text"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="provider_address" class="form-label">Address</label>
+                        <textarea class="form-control" id="provider_address" name="provider_address" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="one_way_miles" class="form-label">One-way Distance (miles)</label>
+                        <input type="number" step="0.1" class="form-control" id="one_way_miles" name="one_way_miles">
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="active_provider_flag" name="active_provider_flag" checked>
+                        <label class="form-check-label" for="active_provider_flag">Active Provider</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Provider</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Table enhancement functionality
+let currentSort = { column: -1, direction: 'asc' };
+
+// Initialize table enhancements
+document.addEventListener('DOMContentLoaded', function() {
+    initializeTableEnhancements();
+    setupFormSubmission();
+    applyStriping('providersTable');
+    setupProviderNameValidation();
+    setupProviderGroupAutocomplete();
+    // Default to Active Only view
+    const activeFilter = document.getElementById('activeFilter');
+    if (activeFilter) {
+        activeFilter.value = 'active';
+        filterTable();
+    }
+});
+
+function initializeTableEnhancements() {
+    // Setup search
+    const searchInput = document.getElementById('searchInput');
+    if (searchInput) {
+        searchInput.addEventListener('input', filterTable);
+    }
+    
+    // Setup filters
+    const groupFilter = document.getElementById('groupFilter');
+    const activeFilter = document.getElementById('activeFilter');
+    
+    if (groupFilter) groupFilter.addEventListener('change', filterTable);
+    if (activeFilter) activeFilter.addEventListener('change', filterTable);
+    
+    // Setup sortable headers
+    const sortableHeaders = document.querySelectorAll('.sortable');
+    sortableHeaders.forEach(header => {
+        header.style.cursor = 'pointer';
+        header.addEventListener('click', () => sortTable(parseInt(header.dataset.column)));
+    });
+}
+
+function sortTable(column) {
+    const table = document.getElementById('providersTable');
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    
+    // Determine sort direction
+    let direction = 'asc';
+    if (currentSort.column === column && currentSort.direction === 'asc') {
+        direction = 'desc';
+    }
+    
+    // Update sort indicators
+    document.querySelectorAll('.sortable i').forEach(icon => {
+        icon.className = 'bi bi-arrow-down-up';
+    });
+    
+    const currentHeader = document.querySelector(`[data-column="${column}"] i`);
+    if (direction === 'asc') {
+        currentHeader.className = 'bi bi-arrow-up';
+    } else {
+        currentHeader.className = 'bi bi-arrow-down';
+    }
+    
+    currentSort = { column, direction };
+    
+    // Sort rows
+    rows.sort((a, b) => {
+        const cellA = a.cells[column].textContent.trim();
+        const cellB = b.cells[column].textContent.trim();
+        
+        // Handle different data types
+        let valueA, valueB;
+        
+        if (column === 1) { // Distance column (after removing Address)
+            valueA = parseFloat(cellA) || 0;
+            valueB = parseFloat(cellB) || 0;
+        } else if (column === 2 || column === 3 || column === 4) { // Financial columns (owed, payments, net)
+            valueA = parseFloat(cellA.replace(/[$,]/g, '')) || 0;
+            valueB = parseFloat(cellB.replace(/[$,]/g, '')) || 0;
+        } else { // Text columns
+            valueA = cellA.toLowerCase();
+            valueB = cellB.toLowerCase();
+        }
+        
+        if (valueA < valueB) return direction === 'asc' ? -1 : 1;
+        if (valueA > valueB) return direction === 'asc' ? 1 : -1;
+        return 0;
+    });
+    
+    // Re-append sorted rows
+    rows.forEach(row => tbody.appendChild(row));
+    applyStriping('providersTable');
+}
+
+function filterTable() {
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+    const groupFilter = document.getElementById('groupFilter').value.toLowerCase();
+    const activeFilter = document.getElementById('activeFilter').value;
+    
+    const table = document.getElementById('providersTable');
+    const rows = table.querySelectorAll('tbody tr');
+    
+    rows.forEach(row => {
+        let visible = true;
+        
+        // Text search filter
+        if (searchTerm) {
+            const rowText = row.textContent.toLowerCase();
+            if (!rowText.includes(searchTerm)) {
+                visible = false;
+            }
+        }
+        
+        // Group filter
+        if (visible && groupFilter) {
+            const groupAttr = (row.getAttribute('data-group') || '').toLowerCase();
+            if (!groupAttr.includes(groupFilter)) visible = false;
+        }
+        
+        // Active status filter
+        if (visible && activeFilter) {
+            const statusCell = row.cells[5]; // Active column after removing Address
+            const isActive = statusCell.textContent.includes('Active');
+            
+            if (activeFilter === 'active' && !isActive) {
+                visible = false;
+            } else if (activeFilter === 'inactive' && isActive) {
+                visible = false;
+            }
+        }
+        
+        row.style.display = visible ? '' : 'none';
+    });
+    
+    // Update visible row count
+    updateRowCount();
+    applyStriping('providersTable');
+}
+
+function updateRowCount() {
+    const table = document.getElementById('providersTable');
+    const allRows = table.querySelectorAll('tbody tr');
+    const visibleRows = Array.from(allRows).filter(r => r.style.display !== 'none');
+    
+    // Add/update row count display
+    let countDisplay = document.getElementById('rowCount');
+    if (!countDisplay) {
+        countDisplay = document.createElement('small');
+        countDisplay.id = 'rowCount';
+        countDisplay.className = 'text-muted ms-2';
+        const tableCard = table.closest('.card');
+        if (tableCard) {
+            const cardBody = tableCard.querySelector('.card-body');
+            cardBody.insertBefore(countDisplay, cardBody.firstChild);
+        }
+    }
+    countDisplay.textContent = `Showing ${visibleRows.length} of ${allRows.length} providers`;
+}
+
+function clearFilters() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('groupFilter').value = '';
+    document.getElementById('activeFilter').value = '';
+    filterTable();
+}
+
+function applyStriping(tableId) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const allRows = table.querySelectorAll('tbody tr');
+    allRows.forEach(r => r.classList.remove('table-alt'));
+    const visibleRows = Array.from(allRows).filter(r => r.style.display !== 'none');
+    visibleRows.forEach((row, idx) => {
+        if (idx % 2 === 1) { // start shading from second visible row
+            row.classList.add('table-alt');
+        }
+    });
+}
+
+// --- Provider name uniqueness validation ---
+let providerNameTimer = null;
+function setupProviderNameValidation() {
+    const input = document.getElementById('provider_name');
+    const feedback = document.getElementById('providerNameFeedback');
+    const form = document.getElementById('addProviderForm');
+    if (!input || !feedback) return;
+
+    input.addEventListener('input', () => {
+        clearTimeout(providerNameTimer);
+        const value = input.value.trim();
+        feedback.textContent = '';
+        input.classList.remove('is-invalid', 'is-valid');
+        form.querySelector('button[type="submit"]').disabled = false;
+        if (!value) return;
+        providerNameTimer = setTimeout(async () => {
+            try {
+                const resp = await fetch(`/api/providers/exists?name=${encodeURIComponent(value)}`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.exists) {
+                        feedback.textContent = 'A provider with this name already exists.';
+                        input.classList.add('is-invalid');
+                        form.querySelector('button[type="submit"]').disabled = true;
+                    } else {
+                        input.classList.add('is-valid');
+                    }
+                }
+            } catch (e) {
+                // Silently ignore network errors; allow submission (server will enforce uniqueness)
+            }
+        }, 300); // debounce
+    });
+}
+
+// --- Provider group autocomplete ---
+let providerGroupCache = [];
+let providerGroupLoaded = false;
+async function fetchProviderGroups(query) {
+    const url = query ? `/api/provider-groups?q=${encodeURIComponent(query)}` : '/api/provider-groups';
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('Failed to load groups');
+    const data = await resp.json();
+    return data.groups || [];
+}
+
+function populateProviderGroupDatalist(groups) {
+    const dl = document.getElementById('providerGroupOptions');
+    if (!dl) return;
+    dl.innerHTML = '';
+    groups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g;
+        dl.appendChild(opt);
+    });
+}
+
+function setupProviderGroupAutocomplete() {
+    const input = document.getElementById('provider_group');
+    if (!input) return;
+    // Load full distinct list once when modal first opens / input focuses
+    input.addEventListener('focus', async () => {
+        if (providerGroupLoaded) return;
+        try {
+            providerGroupCache = await fetchProviderGroups();
+            populateProviderGroupDatalist(providerGroupCache);
+            providerGroupLoaded = true;
+        } catch (e) {
+            document.getElementById('providerGroupFeedback').textContent = 'Could not load existing groups (you can still add a new one).';
+        }
+    }, { once: false });
+
+    // On input, optionally filter locally if cache loaded; if not loaded, rely on initial fetch
+    let grpTimer = null;
+    input.addEventListener('input', () => {
+        clearTimeout(grpTimer);
+        const val = input.value.trim().toLowerCase();
+        grpTimer = setTimeout(async () => {
+            if (!providerGroupLoaded) return; // will populate on focus
+            if (!val) {
+                populateProviderGroupDatalist(providerGroupCache);
+                return;
+            }
+            // Local filter for responsiveness
+            const filtered = providerGroupCache.filter(g => g.toLowerCase().includes(val));
+            populateProviderGroupDatalist(filtered.slice(0, 50));
+        }, 150);
+    });
+}
+
+// Existing functions
+function setupFormSubmission() {
+    document.getElementById('addProviderForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        const data = {
+            provider_name: formData.get('provider_name'),
+            provider_group: formData.get('provider_group') || null,
+            provider_address: formData.get('provider_address') || null,
+            one_way_miles: formData.get('one_way_miles') ? parseFloat(formData.get('one_way_miles')) : null,
+            active_provider_flag: formData.get('active_provider_flag') === 'on'
+        };
+        
+        try {
+            const response = await fetch('/api/providers/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+            
+            if (response.ok) {
+                location.reload();
+            } else {
+                const err = await response.json().catch(() => ({}));
+                if (err && err.detail === 'Provider name already exists') {
+                    alert('Duplicate name: a provider with this name already exists.');
+                } else {
+                    alert('Error creating provider');
+                }
+            }
+        } catch (error) {
+            alert('Error creating provider: ' + error.message);
+        }
+    });
+}
+
+</script>
+
+{% endblock %}

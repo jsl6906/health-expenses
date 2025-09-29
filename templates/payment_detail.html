@@ -1,0 +1,240 @@
+{% extends "base.html" %}
+{% block title %}Payment Details - ID {{ payment.id }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2><i class="bi bi-credit-card"></i> Payment #{{ payment.id }}</h2>
+  <div class="d-flex gap-1">
+    <a href="/payments" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to Payments</a>
+    {% if provider %}<a href="/providers/{{ provider.id }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-building"></i> Provider</a>{% endif %}
+    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editPaymentModal"><i class="bi bi-pencil"></i> Edit</button>
+    <button class="btn btn-sm btn-outline-danger" id="deletePaymentBtn"><i class="bi bi-trash"></i> Delete</button>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-5">
+    <div class="card h-100">
+      <div class="card-header">Payment Info</div>
+      <div class="card-body small">
+        <dl class="row mb-0">
+          <dt class="col-5">Date</dt><dd class="col-7">{{ payment.payment_date.strftime('%#m/%#d/%y') if payment.payment_date else '-' }}</dd>
+          <dt class="col-5">Amount</dt><dd class="col-7">{{ payment.payment_amount | currency }}</dd>
+          <dt class="col-5">Expense Type</dt><dd class="col-7">{{ payment.expense_type or '-' }}</dd>
+          <dt class="col-5">Provider</dt><dd class="col-7">{% if provider %}<a href="/providers/{{ provider.id }}">{{ provider.provider_name }}</a>{% else %}-{% endif %}</dd>
+          <dt class="col-5">Reimbursed (HSA/FSA)</dt><dd class="col-7">{{ payment.reimbursement_amount | currency }}</dd>
+          <dt class="col-5">Has Receipt</dt><dd class="col-7">{% if payment.has_receipt_indicator %}{{ payment.has_receipt_indicator }}{% else %}-{% endif %}</dd>
+          <dt class="col-5">Notes</dt><dd class="col-7">{{ payment.notes or '-' }}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-7">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center">Allocated Charges
+        <small class="text-muted">Even share across linked charges</small>
+      </div>
+      <div class="card-body p-2">
+        <div class="table-responsive" style="max-height:340px; overflow:auto;">
+          <table class="table table-sm table-hover mb-0" id="allocatedChargesTable">
+            <thead class="table-light">
+              <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th class="text-end">Owed</th>
+                <th class="text-end">Prior Paid</th>
+                <th class="text-end">This Share</th>
+                <th class="text-end">Total Paid</th>
+                <th class="text-end">Remaining</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in charges %}
+              <tr>
+                <td>{{ c.service_date.strftime('%#m/%#d/%y') if c.service_date else '-' }}</td>
+                <td><a href="/charges/{{ c.id }}" class="text-decoration-none">Charge #{{ c.id }} - {{ c.charge_description or ('Charge #' ~ c.id) }}</a></td>
+                <td class="text-end">{{ c.owed_amount | currency }}</td>
+                <td class="text-end">{{ c.prior_paid | currency }}</td>
+                <td class="text-end">{{ c.allocated_share | currency }}</td>
+                <td class="text-end">{{ c.total_paid_all | currency }}</td>
+                <td class="text-end">{{ c.remaining_after_all | currency }}</td>
+              </tr>
+              {% endfor %}
+              {% if charges|length == 0 %}
+              <tr><td colspan="7" class="text-center text-muted small">No charges linked to this payment.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-12">
+    <div class="card mt-2 attachment-card" id="paymentAttachmentCard" tabindex="0" aria-label="Attachments. Drag and drop files anywhere in this card to upload.">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="fw-semibold">Attachments</div>
+        <small class="text-muted d-none d-sm-inline">Drag & Drop anywhere in card or click</small>
+        <input type="file" id="paymentHiddenFileInput" multiple hidden>
+      </div>
+      <div class="card-body p-2 position-relative">
+        <div class="upload-hint small text-muted mb-1 d-sm-none"><i class="bi bi-cloud-arrow-up"></i> Tap to browse or drag files</div>
+        <div id="paymentAttachmentsList" class="small">
+          {% if attachments|length == 0 %}
+            <div class="text-muted fst-italic">No attachments yet.</div>
+          {% else %}
+            <ul class="list-unstyled mb-0" id="paymentAttachmentItems">
+              {% for a in attachments %}
+              <li class="d-flex justify-content-between align-items-center border-bottom py-1" data-att-id="{{ a.id }}">
+                <div>
+                  <i class="bi bi-paperclip"></i>
+                  <a href="/api/attachments/{{ a.id }}/download" class="text-decoration-none">{{ a.original_filename or ('Attachment #' ~ a.id) }}</a>
+                  <small class="text-muted ms-1">({{ (a.file_size or 0) // 1024 }} KB)</small>
+                  {% if a.notes %}<span class="text-muted ms-2">{{ a.notes }}</span>{% endif %}
+                </div>
+                <button class="btn btn-sm btn-outline-danger" data-action="delete-payment-att" data-att-id="{{ a.id }}"><i class="bi bi-trash"></i></button>
+              </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<span id="paymentMeta" data-payment-id="{{ payment.id }}" hidden></span>
+<script>
+function applyStriping(tableId){const t=document.getElementById(tableId);if(!t)return;const rows=[...t.querySelectorAll('tbody tr')].filter(r=>r.style.display!=='none');rows.forEach(r=>r.classList.remove('table-alt'));rows.forEach((r,i)=>{if(i%2===1)r.classList.add('table-alt');});}
+applyStriping('allocatedChargesTable');
+
+window.addEventListener('DOMContentLoaded',()=>{
+  const meta=document.getElementById('paymentMeta');
+  const paymentId=parseInt(meta.dataset.paymentId,10);
+  const listWrapper=document.getElementById('paymentAttachmentsList');
+  listWrapper.addEventListener('click',async(e)=>{
+    const btn=e.target.closest('button[data-action="delete-payment-att"]');
+    if(!btn) return;const attId=btn.dataset.attId; if(!attId) return; if(!confirm('Delete this attachment?')) return;
+    try{const resp=await fetch(`/api/attachments/${attId}`,{method:'DELETE'}); if(resp.ok){ const li=listWrapper.querySelector(`li[data-att-id="${attId}"]`); if(li) li.remove(); if(!listWrapper.querySelector('li[data-att-id]')){listWrapper.innerHTML='<div class="text-muted fst-italic">No attachments yet.</div>';}} else {alert('Failed to delete attachment');}}
+    catch(ex){alert('Network error deleting attachment: '+ex.message);}  
+  });
+  // Drag & Drop (Payment) - entire card
+  const dz=document.getElementById('paymentAttachmentCard');
+  const hiddenInput=document.getElementById('paymentHiddenFileInput');
+  function uploadFiles(files){
+    if(!files||files.length===0) return; 
+    [...files].forEach(async f=>{
+      const fd=new FormData();
+      fd.append('payment_id', paymentId);
+      fd.append('notes','');
+      fd.append('file',f);
+      try{const resp=await fetch('/api/attachments/upload',{method:'POST',body:fd});
+        if(resp.ok){
+          const att=await resp.json();
+          let ul=document.getElementById('paymentAttachmentItems');
+            if(!ul){listWrapper.innerHTML='<ul class="list-unstyled mb-0" id="paymentAttachmentItems"></ul>';ul=document.getElementById('paymentAttachmentItems');}
+          const li=document.createElement('li');
+          li.className='d-flex justify-content-between align-items-center border-bottom py-1';
+          li.dataset.attId=att.id;
+          const sizeKB=Math.round((att.file_size||0)/1024);
+          li.innerHTML=`<div><i class="bi bi-paperclip"></i> <a href="/api/attachments/${att.id}/download" class="text-decoration-none">${att.original_filename||('Attachment #'+att.id)}</a> <small class="text-muted ms-1">(${sizeKB} KB)</small></div><button class="btn btn-sm btn-outline-danger" data-action="delete-payment-att" data-att-id="${att.id}"><i class="bi bi-trash"></i></button>`;
+          ul.appendChild(li);
+        }else{console.warn('Upload failed',f.name);} }
+      catch(ex){console.warn('Upload error',ex);} });
+  }
+  if(dz){
+    dz.addEventListener('click',e=>{ if(e.target.closest('a,button')) return; hiddenInput.click(); });
+    dz.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();hiddenInput.click();} });
+    let cardDragDepth=0;
+    dz.addEventListener('dragenter',e=>{ if(!isFileDrag(e)) return; e.preventDefault(); cardDragDepth++; dz.classList.add('drop-hover'); });
+    dz.addEventListener('dragover',e=>{ if(!isFileDrag(e)) return; e.preventDefault(); });
+    dz.addEventListener('dragleave',e=>{ if(!isFileDrag(e)) return; cardDragDepth=Math.max(0,cardDragDepth-1); if(cardDragDepth===0) dz.classList.remove('drop-hover'); });
+    dz.addEventListener('drop',e=>{ if(!isFileDrag(e)) return; e.preventDefault(); cardDragDepth=0; dz.classList.remove('drop-hover'); uploadFiles(e.dataTransfer.files); });
+  }
+  // Global drag highlight
+  let dragDepth=0; // track nested dragenter/leaves
+  const body=document.body;
+  function isFileDrag(e){ return (e.dataTransfer && Array.from(e.dataTransfer.types||[]).includes('Files')); }
+  window.addEventListener('dragenter',e=>{ if(!isFileDrag(e)) return; dragDepth++; body.classList.add('drag-attachments-active'); });
+  window.addEventListener('dragleave',e=>{ if(!isFileDrag(e)) return; dragDepth=Math.max(0,dragDepth-1); if(dragDepth===0) body.classList.remove('drag-attachments-active'); });
+  window.addEventListener('dragover',e=>{ if(isFileDrag(e)) e.preventDefault(); });
+  window.addEventListener('drop',e=>{ if(!isFileDrag(e)) return; e.preventDefault(); const files=e.dataTransfer.files; dragDepth=0; body.classList.remove('drag-attachments-active'); uploadFiles(files); });
+  if(hiddenInput){hiddenInput.addEventListener('change',()=>{uploadFiles(hiddenInput.files); hiddenInput.value='';});}
+
+  // Delete payment
+  const delBtn=document.getElementById('deletePaymentBtn');
+  if(delBtn){
+    delBtn.addEventListener('click', async()=>{
+      if(!confirm('Delete this payment? This will unlink it from any charges and remove its attachments.')) return;
+      try{const resp=await fetch(`/api/payments/${paymentId}`,{method:'DELETE'});if(resp.ok){window.location='/payments';}else{const j=await resp.json().catch(()=>({}));alert('Failed to delete payment: '+(j.detail||resp.status));}}catch(ex){alert('Network error deleting payment: '+ex.message);}    
+    });
+  }
+});
+</script>
+
+<!-- Edit Payment Modal -->
+<div class="modal fade" id="editPaymentModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Payment #{{ payment.id }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="editPaymentForm">
+        <div class="modal-body">
+          <div class="mb-2"><label class="form-label">Payment Date *</label><input type="date" name="payment_date" class="form-control" value="{{ payment.payment_date }}" required></div>
+          <div class="mb-2"><label class="form-label">Amount *</label><input type="number" step="0.01" name="payment_amount" class="form-control" value="{{ payment.payment_amount }}" required></div>
+          <div class="mb-2"><label class="form-label">Expense Type *</label>
+            <select name="expense_type" class="form-select" required>
+              {% for et in ['Professional','Prescription','Eyewear','Travel','Other'] %}
+                <option {% if payment.expense_type==et %}selected{% endif %}>{{ et }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2"><label class="form-label">Provider</label>
+            <select name="provider_id" class="form-select">
+              <option value="">-- None --</option>
+              {% for pr in providers %}
+                <option value="{{ pr.id }}" {% if payment.provider_id==pr.id %}selected{% endif %}>{{ pr.provider_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2"><label class="form-label">Reimbursement Amount</label><input type="number" step="0.01" name="reimbursement_amount" class="form-control" value="{{ payment.reimbursement_amount or '' }}"></div>
+          <div class="mb-2"><label class="form-label">Has Receipt *</label>
+            <select name="has_receipt_indicator" class="form-select" required>
+              {% for opt in ['Yes','No'] %}
+                <option {% if payment.has_receipt_indicator==opt %}selected{% endif %}>{{ opt }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-2"><label class="form-label">Notes</label><textarea name="notes" rows="2" class="form-control">{{ payment.notes or '' }}</textarea></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+  const meta=document.getElementById('paymentMeta');
+  const paymentId=parseInt(meta.dataset.paymentId,10);
+  const form=document.getElementById('editPaymentForm');
+  if(form){
+    form.addEventListener('submit', async(e)=>{
+      e.preventDefault();
+      const fd=new FormData(form);
+      const payload={};
+      fd.forEach((v,k)=>{payload[k]=v||null;});
+      ['payment_amount','reimbursement_amount','provider_id'].forEach(k=>{if(payload[k]==='') payload[k]=null; if(['payment_amount','reimbursement_amount'].includes(k) && payload[k]!==null) payload[k]=parseFloat(payload[k]); if(k==='provider_id' && payload[k]!==null) payload[k]=parseInt(payload[k]);});
+      try{const resp=await fetch(`/api/payments/${paymentId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); if(resp.ok){location.reload();} else { const j=await resp.json().catch(()=>({})); alert('Update failed: '+(j.detail||resp.status)); }}
+      catch(ex){alert('Network error updating payment: '+ex.message);}  
+    });
+  }
+});
+</script>
+{% endblock %}

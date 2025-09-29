@@ -1,0 +1,652 @@
+{% extends "base.html" %}
+{% block title %}Provider Details - {{ provider.provider_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h2 class="mb-0"><i class="bi bi-person-badge"></i> {{ provider.provider_name }} {% if provider.provider_group %}<small class="text-muted">({{ provider.provider_group }})</small>{% endif %}</h2>
+  <div class="d-flex gap-1">
+    <a href="/providers" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editProviderModal"><i class="bi bi-pencil"></i> Edit</button>
+    <button class="btn btn-sm btn-outline-danger" id="deleteProviderBtn"><i class="bi bi-trash"></i> Delete</button>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header">Provider Info</div>
+      <div class="card-body small">
+        <dl class="row mb-0">
+          <dt class="col-5">Name</dt><dd class="col-7">{{ provider.provider_name }}</dd>
+          <dt class="col-5">Group</dt><dd class="col-7">{{ provider.provider_group or '-' }}</dd>
+          <dt class="col-5">Address</dt><dd class="col-7">{{ provider.provider_address or '-' }}</dd>
+          <dt class="col-5">One Way Miles</dt><dd class="col-7">{{ provider.one_way_miles or '-' }}</dd>
+          <dt class="col-5">Active</dt><dd class="col-7">{% if provider.active_provider_flag %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header">Financial Summary</div>
+      <div class="card-body small">
+        <div class="row">
+          <div class="col-6 mb-2"><strong>Total Charges:</strong><br>{{ provider.total_charged | currency }}</div>
+          <div class="col-6 mb-2"><strong>Total Payments:</strong><br>{{ provider.total_payments | currency }}</div>
+          <div class="col-6 mb-2"><strong>Insurance Paid:</strong><br>{{ provider.total_ins_paid | currency }}</div>
+          <div class="col-6 mb-2"><strong>Reimbursed:</strong><br>{{ provider.total_reimbursed | currency }}</div>
+          <div class="col-6 mb-2"><strong>Outstanding (Owed - Payments):</strong><br>{{ provider.net_outstanding | currency }}</div>
+          <div class="col-6 mb-2"><strong>Owed Amount Sum:</strong><br>{{ provider.total_owed | currency }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% if provider.provider_address %}
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-header">Location</div>
+      <div class="card-body p-2">
+        <div class="ratio ratio-4x3">
+          <iframe
+            loading="lazy"
+            referrerpolicy="no-referrer-when-downgrade"
+            src="https://www.google.com/maps?q={{ provider.provider_address | urlencode }}&output=embed">
+          </iframe>
+        </div>
+        <div class="mt-2 small text-truncate" title="{{ provider.provider_address }}">{{ provider.provider_address }}</div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center gap-2">
+          <span class="fw-semibold">Charges</span>
+          <span class="badge bg-secondary">{{ provider.charge_count }}</span>
+        </div>
+        <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#addProviderChargeModal"><i class="bi bi-plus-circle"></i> Add Charge</button>
+      </div>
+      <div class="card-body p-2">
+        <div class="table-responsive" style="max-height:320px; overflow:auto;">
+          <table class="table table-sm table-hover mb-0" id="chargesTable">
+            <thead class="table-light">
+              <tr>
+                <th>Date</th>
+                <th>Member</th>
+                <th>Description</th>
+                <th class="text-end">Charged</th>
+                <th class="text-end">Owed</th>
+                <th class="text-end">Paid</th>
+                <th>Status</th>
+                <th>Attchs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for c in charges %}
+              <tr data-charge-row="{{ c.id }}">
+                <td>{{ c.service_date.strftime('%#m/%#d/%y') if c.service_date else '-' }}</td>
+                <td>{{ c.family_member or '-' }}</td>
+                <td>
+                  {% if c.charge_description %}
+                    <a href="/charges/{{ c.id }}" class="text-decoration-none">{{ c.charge_description }}</a>
+                  {% else %}-{% endif %}
+                </td>
+                <td class="text-end">{{ c.charged_amount | currency }}</td>
+                <td class="text-end">{{ c.owed_amount | currency }}</td>
+                <td class="text-end">{{ c.paid_amount_agg | currency }}</td>
+                <td>
+                  {% set owed = c.owed_amount or 0 %}
+                  {% set paid = c.paid_amount_agg or 0 %}
+                  {% if owed > 0 and paid >= owed %}
+                    <span class="badge bg-success">Paid</span>
+                  {% elif owed > 0 and paid > 0 and paid < owed %}
+                    <span class="badge bg-info text-dark">Partial</span>
+                  {% elif owed > 0 and paid == 0 %}
+                    <span class="badge bg-warning">Outstanding</span>
+                  {% else %}
+                    <span class="badge bg-secondary">N/A</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <button type="button" class="btn btn-sm btn-outline-secondary provider-attach-charge-btn" data-charge-id="{{ c.id }}" title="Manage attachments">
+                    <i class="bi bi-paperclip"></i>
+                    <span class="att-count">({{ c.attachment_count or 0 }})</span>
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center gap-2">
+          <span class="fw-semibold">Payments</span>
+          <span class="badge bg-secondary">{{ provider.payment_count }}</span>
+        </div>
+        <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addProviderPaymentModal"><i class="bi bi-plus-circle"></i> Add Payment</button>
+      </div>
+      <div class="card-body p-2">
+        <div class="table-responsive" style="max-height:320px; overflow:auto;">
+          <table class="table table-sm table-hover mb-0" id="paymentsTable">
+            <thead class="table-light">
+              <tr>
+                <th>Date</th>
+                <th>Amount</th>
+                <th>Receipt</th>
+                <th>Charges</th>
+                <th>Attchs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in payments %}
+              <tr data-payment-row="{{ p.id }}">
+                <td>{% if p.payment_date %}<a href="/payments/{{ p.id }}" class="text-decoration-none">{{ p.payment_date.strftime('%#m/%#d/%y') }}</a>{% else %}-{% endif %}</td>
+                <td><a href="/payments/{{ p.id }}" class="text-decoration-none">{{ p.payment_amount | currency }}</a></td>
+                <td>{% if p.has_receipt_indicator %}{{ p.has_receipt_indicator }}{% else %}-{% endif %}</td>
+                <td>
+                  {% if p.linked_charge_links and p.linked_charge_links|length > 0 %}
+                    {% for cid,label in p.linked_charge_links %}
+                      <a href="/charges/{{ cid }}" class="text-decoration-none" title="Charge #{{ cid }}">{{ label }}</a>{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                  {% else %}
+                    <span class="text-muted">-</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <button type="button" class="btn btn-sm btn-outline-secondary provider-attach-payment-btn" data-payment-id="{{ p.id }}" title="Manage attachments">
+                    <i class="bi bi-paperclip"></i>
+                    <span class="att-count">({{ p.attachment_count or 0 }})</span>
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Hidden metadata element to safely access provider id without inline JS templating
+// (prevents lint parse errors on Jinja expressions inside JS objects)
+</script>
+<span id="providerDetailMeta" data-provider-id="{{ provider.id }}" hidden></span>
+<script>
+// Simple manual striping reuse
+function applyStriping(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const rows = Array.from(table.querySelectorAll('tbody tr'));
+  rows.forEach(r => r.classList.remove('table-alt'));
+  rows.filter(r => r.style.display !== 'none').forEach((r,i)=>{ if(i%2===1) r.classList.add('table-alt'); });
+}
+['chargesTable','paymentsTable'].forEach(applyStriping);
+
+// Provider-scoped Add Charge modal submission
+document.addEventListener('DOMContentLoaded', () => {
+  const providerMetaEl = document.getElementById('providerDetailMeta');
+  const providerId = providerMetaEl ? parseInt(providerMetaEl.dataset.providerId, 10) : null;
+  // Delete provider
+  const delBtn=document.getElementById('deleteProviderBtn');
+  if(delBtn){
+    delBtn.addEventListener('click', async()=>{
+      if(!confirm('Delete this provider and all related charges, payments, attachments and links?')) return;
+      try{const resp=await fetch(`/api/providers/${providerId}`,{method:'DELETE'});if(resp.ok){window.location='/providers';}else{const j=await resp.json().catch(()=>({}));alert('Failed to delete provider: '+(j.detail||resp.status));}}catch(ex){alert('Network error deleting provider: '+ex.message);}    
+    });
+  }
+  // Default payment date in provider payment modal
+  const providerPaymentModal = document.getElementById('addProviderPaymentModal');
+  if (providerPaymentModal) {
+    providerPaymentModal.addEventListener('show.bs.modal', () => {
+      const dateInput = providerPaymentModal.querySelector('input[name="payment_date"]');
+      if (dateInput && !dateInput.value) {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        dateInput.value = `${yyyy}-${mm}-${dd}`;
+      }
+    });
+  }
+  const chargeForm = document.getElementById('providerAddChargeForm');
+  if (chargeForm) {
+    chargeForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const payload = {
+        service_date: fd.get('service_date') || null,
+        family_member: fd.get('family_member') || null,
+        medical_type: fd.get('medical_type') || null,
+        provider_id: providerId,
+        cpt_code: fd.get('cpt_code') || null,
+        charge_description: fd.get('charge_description') || null,
+        charged_amount: fd.get('charged_amount') ? parseFloat(fd.get('charged_amount')) : null,
+        owed_amount: fd.get('owed_amount') ? parseFloat(fd.get('owed_amount')) : null,
+        insurance_paid_amount: fd.get('insurance_paid_amount') ? parseFloat(fd.get('insurance_paid_amount')) : null,
+        base_fee_amount: fd.get('base_fee_amount') ? parseFloat(fd.get('base_fee_amount')) : null,
+        reimbursement_amount: fd.get('reimbursement_amount') ? parseFloat(fd.get('reimbursement_amount')) : null,
+        insurance_discount_amount: fd.get('insurance_discount_amount') ? parseFloat(fd.get('insurance_discount_amount')) : null,
+        doctor_name: fd.get('doctor_name') || null,
+        eob_claim_num: fd.get('eob_claim_num') || null,
+        notes: fd.get('notes') || null
+      };
+      try {
+        const resp = await fetch('/api/charges/', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        if (resp.ok) { location.reload(); } else { const err=await resp.json(); alert('Error: '+ (err.detail||'creating charge')); }
+      } catch(ex) { alert('Network error creating charge: '+ex.message); }
+    });
+  }
+
+  const paymentForm = document.getElementById('providerAddPaymentForm');
+  if (paymentForm) {
+    const openChargesBox = document.getElementById('providerOpenCharges');
+    const loadOpenCharges = async () => {
+      if (!providerId || !openChargesBox) return;
+      openChargesBox.innerHTML = '<em class="text-muted">Loading...</em>';
+      try {
+        const resp = await fetch(`/api/providers/${providerId}/open-charges`);
+        if (!resp.ok) { openChargesBox.innerHTML = '<span class="text-danger">Failed to load charges.</span>'; return; }
+        const data = await resp.json();
+        const list = data.open_charges || [];
+        if (list.length === 0) { openChargesBox.innerHTML = '<em class="text-muted">No open charges.</em>'; return; }
+        openChargesBox.innerHTML = list.map(ch => {
+          const label = ch.service_date ? new Date(ch.service_date).toLocaleDateString(undefined,{month:'numeric',day:'numeric'}) : '—';
+          return `<div class="form-check form-check-sm">\n  <input class="form-check-input" type="checkbox" data-charge-id="${ch.id}" id="poc_${ch.id}">\n  <label class="form-check-label" for="poc_${ch.id}"><strong>${label}</strong> ${ch.description || ''} <span class="text-muted">(Rem: $${ch.remaining.toFixed(2)})</span></label>\n</div>`;
+        }).join('');
+      } catch(ex) { openChargesBox.innerHTML = '<span class="text-danger">Error loading charges.</span>'; }
+    };
+    loadOpenCharges();
+    paymentForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const payload = {
+        payment_date: fd.get('payment_date') || null,
+        payment_amount: fd.get('payment_amount') ? parseFloat(fd.get('payment_amount')) : null,
+        expense_type: fd.get('expense_type') || null,
+        provider_id: providerId,
+        reimbursement_amount: fd.get('reimbursement_amount') ? parseFloat(fd.get('reimbursement_amount')) : null,
+        has_receipt_indicator: fd.get('has_receipt_indicator') || null,
+        notes: fd.get('notes') || null
+      };
+      const selectedCharges = Array.from(document.querySelectorAll('#providerOpenCharges input[type="checkbox"][data-charge-id]:checked')).map(cb => parseInt(cb.dataset.chargeId));
+      try {
+        let resp;
+        if (selectedCharges.length > 0) {
+          resp = await fetch('/api/payments/with-charges', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ ...payload, charge_ids: selectedCharges }) });
+        } else {
+          resp = await fetch('/api/payments/', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        }
+        if (resp.ok) { location.reload(); } else { const err=await resp.json(); alert('Error: '+ (err.detail||'creating payment')); }
+      } catch(ex) { alert('Network error creating payment: '+ex.message); }
+    });
+    // Attachment modal logic
+    const attachmentModalEl = document.getElementById('providerAttachmentModal');
+    const attachmentListEl = document.getElementById('providerAttachmentList');
+    const attachmentUploadInput = document.getElementById('providerAttachmentFiles');
+    const attachmentUploadBtn = document.getElementById('providerUploadBtn');
+    let currentContext = { kind: null, id: null };
+
+    function renderAttachmentItems(items) {
+      if (!attachmentListEl) return;
+      if (!items || items.length === 0) {
+        attachmentListEl.innerHTML = '<div class="text-muted fst-italic">No attachments yet.</div>';
+        return;
+      }
+      const html = ['<ul class="list-unstyled mb-0 small">'];
+      for (const a of items) {
+        const sizeKB = a.file_size ? Math.round(a.file_size / 1024) : 0;
+        html.push(`
+          <li class="d-flex justify-content-between align-items-center border-bottom py-1" data-att-id="${a.id}">
+            <div>
+              <i class="bi bi-paperclip"></i>
+              <a href="/api/attachments/${a.id}/download" class="text-decoration-none">${a.original_filename || ('Attachment #' + a.id)}</a>
+              <small class="text-muted ms-1">(${sizeKB} KB)</small>
+              ${a.notes ? `<span class="text-muted ms-2">${a.notes}</span>` : ''}
+            </div>
+            <button class="btn btn-sm btn-outline-danger" data-action="delete-att" data-att-id="${a.id}"><i class="bi bi-trash"></i></button>
+          </li>`);
+      }
+      html.push('</ul>');
+      attachmentListEl.innerHTML = html.join('');
+    }
+
+    async function loadAttachments(kind, id) {
+      // Reuse existing listing endpoints by hitting a lightweight JSON list we need to implement? For now attempt summary by charge/payment detail not available.
+      // Fallback: minimal endpoint not present; we'll attempt a fetch pattern expecting /api/attachments/list?charge_id= or payment_id=.
+      let url;
+      if (kind === 'charge') url = `/api/attachments/list?charge_id=${id}`;
+      else if (kind === 'payment') url = `/api/attachments/list?payment_id=${id}`;
+      else return;
+      attachmentListEl.innerHTML = '<div class="text-muted">Loading...</div>';
+      try {
+        const resp = await fetch(url, { headers: { 'Accept': 'application/json' }});
+        if (!resp.ok) { attachmentListEl.innerHTML = '<div class="text-danger">Failed to load.</div>'; return; }
+        const ct = resp.headers.get('Content-Type') || '';
+        if (!ct.includes('application/json')) { attachmentListEl.innerHTML = '<div class="text-danger">Unexpected response.</div>'; return; }
+        const data = await resp.json();
+        const items = (data && data.attachments) ? data.attachments : [];
+        renderAttachmentItems(items);
+      } catch (ex) {
+        attachmentListEl.innerHTML = '<div class="text-danger">Error loading attachments.</div>';
+      }
+    }
+
+    document.addEventListener('click', (e) => {
+      const chargeBtn = e.target.closest('.provider-attach-charge-btn');
+      const paymentBtn = e.target.closest('.provider-attach-payment-btn');
+      if (chargeBtn) {
+        currentContext = { kind: 'charge', id: chargeBtn.getAttribute('data-charge-id') };
+      } else if (paymentBtn) {
+        currentContext = { kind: 'payment', id: paymentBtn.getAttribute('data-payment-id') };
+      } else return;
+      const modalTitle = document.getElementById('providerAttachmentModalLabel');
+      if (modalTitle) {
+        modalTitle.textContent = currentContext.kind === 'charge' ? `Charge #${currentContext.id} Attachments` : `Payment #${currentContext.id} Attachments`;
+      }
+      if (attachmentUploadInput) attachmentUploadInput.value='';
+      loadAttachments(currentContext.kind, currentContext.id);
+      const modal = new bootstrap.Modal(attachmentModalEl);
+      modal.show();
+    });
+
+    if (attachmentUploadBtn && attachmentUploadInput) {
+      attachmentUploadBtn.addEventListener('click', async () => {
+        if (!currentContext.id || !currentContext.kind) return;
+        if (!attachmentUploadInput.files || attachmentUploadInput.files.length === 0) { alert('Select one or more files first.'); return; }
+        for (const file of attachmentUploadInput.files) {
+          const fd = new FormData();
+          if (currentContext.kind === 'charge') fd.append('charge_id', currentContext.id);
+          else fd.append('payment_id', currentContext.id);
+          fd.append('notes','');
+          fd.append('file', file);
+          try {
+            const resp = await fetch('/api/attachments/upload', { method: 'POST', body: fd });
+            if (!resp.ok) console.warn('Upload failed', file.name);
+          } catch(ex) { console.warn('Upload error', ex); }
+        }
+        attachmentUploadInput.value='';
+        loadAttachments(currentContext.kind, currentContext.id);
+        // Update count badge in table (optimistic increment: re-query list length afterwards)
+        setTimeout(() => {
+          const badgeSelector = currentContext.kind === 'charge' ? `.provider-attach-charge-btn[data-charge-id="${currentContext.id}"] .att-count` : `.provider-attach-payment-btn[data-payment-id="${currentContext.id}"] .att-count`;
+          const span = document.querySelector(badgeSelector);
+          if (span && attachmentListEl) {
+            const cnt = attachmentListEl.querySelectorAll('li[data-att-id]').length;
+              span.textContent = `(${cnt})`;
+          }
+        }, 500);
+      });
+    }
+
+    // Delete attachment inside modal
+    attachmentListEl?.addEventListener('click', async (e) => {
+      const delBtn = e.target.closest('button[data-action="delete-att"]');
+      if (!delBtn) return;
+      const attId = delBtn.getAttribute('data-att-id');
+      if (!attId) return;
+      if (!confirm('Delete this attachment?')) return;
+      try {
+        const resp = await fetch(`/api/attachments/${attId}`, { method: 'DELETE' });
+        if (resp.ok) {
+          const li = attachmentListEl.querySelector(`li[data-att-id="${attId}"]`);
+          if (li) li.remove();
+          if (!attachmentListEl.querySelector('li[data-att-id]')) {
+            attachmentListEl.innerHTML = '<div class="text-muted fst-italic">No attachments yet.</div>';
+          }
+          // Update count badge
+          const badgeSelector = currentContext.kind === 'charge' ? `.provider-attach-charge-btn[data-charge-id="${currentContext.id}"] .att-count` : `.provider-attach-payment-btn[data-payment-id="${currentContext.id}"] .att-count`;
+          const span = document.querySelector(badgeSelector);
+          if (span) {
+            const cnt = attachmentListEl.querySelectorAll('li[data-att-id]').length;
+            span.textContent = `(${cnt})`;
+          }
+        } else {
+          alert('Failed to delete attachment');
+        }
+      } catch (ex) {
+        alert('Network error deleting attachment: ' + ex.message);
+      }
+    });
+  }
+});
+</script>
+
+<!-- Edit Provider Modal -->
+<div class="modal fade" id="editProviderModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Provider</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="editProviderForm">
+        <div class="modal-body">
+          <div class="mb-2"><label class="form-label">Name *</label><input type="text" name="provider_name" class="form-control" value="{{ provider.provider_name }}" required></div>
+          <div class="mb-2"><label class="form-label">Group</label><input type="text" name="provider_group" class="form-control" value="{{ provider.provider_group or '' }}"></div>
+          <div class="mb-2"><label class="form-label">Address</label><textarea name="provider_address" rows="2" class="form-control">{{ provider.provider_address or '' }}</textarea></div>
+          <div class="mb-2"><label class="form-label">One Way Miles</label><input type="number" step="0.1" name="one_way_miles" class="form-control" value="{{ provider.one_way_miles or '' }}"></div>
+          <div class="mb-2"><label class="form-label">Active *</label>
+            <select name="active_provider_flag" class="form-select" required>
+              <option value="true" {% if provider.active_provider_flag %}selected{% endif %}>Yes</option>
+              <option value="false" {% if not provider.active_provider_flag %}selected{% endif %}>No</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+  const providerMetaEl=document.getElementById('providerDetailMeta');
+  if(!providerMetaEl) return;
+  const providerId=parseInt(providerMetaEl.dataset.providerId,10);
+  const form=document.getElementById('editProviderForm');
+  if(form){
+    form.addEventListener('submit', async(e)=>{
+      e.preventDefault();
+      const fd=new FormData(form);
+      const payload={};
+      fd.forEach((v,k)=>{payload[k]=v||null;});
+      if(payload['one_way_miles']!==null && payload['one_way_miles']!=='') payload['one_way_miles']=parseFloat(payload['one_way_miles']); else payload['one_way_miles']=null;
+      payload['active_provider_flag']= payload['active_provider_flag']==='true';
+      try{const resp=await fetch(`/api/providers/${providerId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); if(resp.ok){location.reload();} else { const j=await resp.json().catch(()=>({})); alert('Update failed: '+(j.detail||resp.status)); }}
+      catch(ex){alert('Network error updating provider: '+ex.message);}    
+    });
+  }
+});
+</script>
+
+<!-- Provider Attachment Modal (moved outside script to avoid JS parse error) -->
+<div class="modal fade" id="providerAttachmentModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="providerAttachmentModalLabel">Attachments</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <input type="file" id="providerAttachmentFiles" class="form-control form-control-sm" multiple style="max-width:300px;" />
+          <button class="btn btn-sm btn-outline-secondary" id="providerUploadBtn"><i class="bi bi-upload"></i> Upload</button>
+        </div>
+        <div id="providerAttachmentList" class="small">
+          <div class="text-muted fst-italic">Select a row's paperclip to view attachments.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Add Charge Modal (Provider Scoped) -->
+<div class="modal fade" id="addProviderChargeModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add Charge for {{ provider.provider_name }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="providerAddChargeForm">
+        <div class="modal-body">
+          <div class="row">
+            <div class="col-md-4 mb-2">
+              <label class="form-label">Service Date *</label>
+              <input type="date" name="service_date" class="form-control" required>
+            </div>
+            <div class="col-md-4 mb-2">
+              <label class="form-label">Family Member *</label>
+              <select name="family_member" class="form-select" required>
+                <option value="">Select...</option>
+                <option>Alex</option><option>Jordan</option><option>Sam</option><option>Riley</option>
+              </select>
+            </div>
+            <div class="col-md-4 mb-2">
+              <label class="form-label">Medical Type *</label>
+              <select name="medical_type" class="form-select" required>
+                <option value="">Select...</option>
+                <option>Medical</option><option>Dental</option><option>Vision</option><option>Mental Health</option><option>Other</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-3 mb-2">
+              <label class="form-label">CPT Code</label>
+              <input type="text" name="cpt_code" class="form-control" list="providerDetailCptCodes">
+              <datalist id="providerDetailCptCodes"></datalist>
+            </div>
+            <div class="col-md-9 mb-2">
+              <label class="form-label">Description *</label>
+              <input type="text" name="charge_description" class="form-control" required>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-3 mb-2">
+              <label class="form-label">Charged *</label>
+              <input type="number" step="0.01" name="charged_amount" class="form-control" required>
+            </div>
+            <div class="col-md-3 mb-2">
+              <label class="form-label">Owed</label>
+              <input type="number" step="0.01" name="owed_amount" class="form-control">
+            </div>
+            <div class="col-md-3 mb-2">
+              <label class="form-label">Insurance Paid</label>
+              <input type="number" step="0.01" name="insurance_paid_amount" class="form-control">
+            </div>
+            <div class="col-md-3 mb-2">
+              <label class="form-label">Base Fee</label>
+              <input type="number" step="0.01" name="base_fee_amount" class="form-control">
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-md-4 mb-2">
+              <label class="form-label">Reimbursed (HSA/FSA)</label>
+              <input type="number" step="0.01" name="reimbursement_amount" class="form-control">
+            </div>
+            <div class="col-md-4 mb-2">
+              <label class="form-label">Ins. Discount</label>
+              <input type="number" step="0.01" name="insurance_discount_amount" class="form-control">
+            </div>
+            <div class="col-md-4 mb-2">
+              <label class="form-label">EOB / Claim #</label>
+              <input type="text" name="eob_claim_num" class="form-control">
+            </div>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Doctor Name</label>
+            <input type="text" name="doctor_name" class="form-control">
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Notes</label>
+            <textarea name="notes" rows="2" class="form-control"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success">Save Charge</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Add Payment Modal (Provider Scoped) -->
+<div class="modal fade" id="addProviderPaymentModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add Payment for {{ provider.provider_name }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="providerAddPaymentForm">
+        <div class="modal-body">
+          <div class="mb-2">
+            <label class="form-label">Payment Date *</label>
+            <input type="date" name="payment_date" class="form-control" required>
+          </div>
+          <div class="mb-2">
+            <label class="form-label">Payment Amount *</label>
+            <input type="number" step="0.01" name="payment_amount" class="form-control" required>
+          </div>
+            <div class="mb-2">
+              <label class="form-label">Expense Type *</label>
+              <select name="expense_type" class="form-select" required>
+                <option value="">Select...</option>
+                <option>Professional</option><option>Prescription</option><option>Eyewear</option><option>Travel</option><option>Other</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Reimbursement Amount</label>
+              <input type="number" step="0.01" name="reimbursement_amount" class="form-control">
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Has Receipt *</label>
+              <select name="has_receipt_indicator" class="form-select" required>
+                <option value="">Select...</option>
+                <option>Yes</option><option>No</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Notes</label>
+              <textarea name="notes" rows="2" class="form-control"></textarea>
+            </div>
+            <div class="mb-2">
+              <label class="form-label">Apply To Charges (optional)</label>
+              <div id="providerOpenCharges" class="border rounded p-2 small" style="max-height:160px; overflow:auto;">
+                <em class="text-muted">Loading open charges...</em>
+              </div>
+              <div class="form-text">Only charges with remaining balance are listed. Payment is split equally across selected charges.</div>
+            </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Payment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

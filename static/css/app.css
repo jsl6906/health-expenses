@@ -1,0 +1,130 @@
+/* Critical condensed table & utility styles loaded early to prevent layout flash */
+
+.table {
+  font-size: 0.75em;
+  margin-bottom: 0.5rem;
+}
+.table th,
+.table td {
+  padding: 0.05rem 0.30rem !important; /* further tightened vertical & a bit narrower horizontal */
+  vertical-align: middle;
+  line-height: 1.05;
+  border-top: 1px solid #dee2e6;
+}
+.table th {
+  font-weight: 600;
+  border-bottom: 2px solid #dee2e6;
+  padding: 0.12rem 0.30rem !important; /* slightly taller than body but still compact */
+}
+
+/* Extra specificity safeguard to win over any Bootstrap utilities applied later */
+table.table.manual-striped tbody tr td { padding: 0.05rem 0.30rem !important; }
+table.table.manual-striped thead tr th { padding: 0.12rem 0.30rem !important; }
+.manual-striped tbody tr.table-alt > td { background: rgba(0,0,0,0.02)!important; }
+
+/* Buttons & badges density */
+.btn-sm { padding: 0.15rem 0.3rem; font-size: 0.7rem; line-height: 1.2; }
+.badge { font-size: 0.65em; padding: 0.15em 0.4em; line-height: 1.1; }
+/* Vertically center badges within table cells */
+table.table td .badge, table.table th .badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1; /* tighter for flex centering */
+  vertical-align: middle;
+}
+
+/* Removed fixed last-column width now that action columns were eliminated */
+
+/* Avoid flash of unstyled content for tables using JS post-processing (striping) */
+.manual-striped tbody tr { transition: background-color 120ms ease-in; }
+
+/* Optional: subtle hover (can be removed if too busy) */
+.table tbody tr:hover { background-color: rgba(0,0,0,0.04); }
+
+/* ===== Consolidated styles moved from individual templates ===== */
+.sortable { user-select: none; }
+.sortable:hover { background-color: #f8f9fa; }
+#rowCount { font-style: italic; }
+.table td .btn { display: inline-block; white-space: nowrap; }
+/* Reinforce last-child adjustments (already present, keep single source) */
+/* Attachment count spans inside buttons */
+/* Attachment buttons: keep icon + count on one line without wrapping */
+.attach-btn, .attach-payment-btn { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+.attach-btn .att-count, .attach-payment-btn .att-count { margin-left: 2px; font-weight: 500; display: inline-block; min-width: 22px; text-align: left; white-space: nowrap; }
+/* Prevent Safari/Chrome flex shrink from collapsing count */
+.attach-btn .att-count, .attach-payment-btn .att-count { flex-shrink: 0; }
+/* Charges table specific: ensure absolutely no wrapping inside attachment cell */
+table#chargesTable td .attach-btn { white-space: nowrap !important; }
+table#chargesTable td .attach-btn i, table#chargesTable td .attach-btn .att-count { display: inline-block; }
+/* Reduce internal horizontal padding to minimize wrap triggers */
+table#chargesTable td .attach-btn.btn { padding-left: 0.25rem; padding-right: 0.25rem; }
+/* Alternate row class (applied via JS) */
+.table-alt { background-color: #fafafa; }
+/* Placeholder for per-page overrides if needed */
+/* .page-charges {} */
+
+/* Drag & Drop Attachment Zones */
+.drop-zone {
+  position: relative;
+  border: 2px dashed #adb5bd;
+  border-radius: 6px;
+  padding: 0.75rem;
+  text-align: center;
+  font-size: 0.7rem;
+  color: #6c757d;
+  background: #fcfcfc;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.drop-zone.hover { background:#eef6ff; border-color:#0d6efd; color:#0d6efd; }
+.drop-zone input[type="file"] { display:none; }
+.drop-zone .dz-instructions { display:block; font-weight:500; }
+.drop-zone .dz-sub { font-size:0.6rem; opacity:0.8; }
+.drop-zone.compact { padding:0.35rem 0.6rem; font-size:0.65rem; }
+.drop-zone.compact .dz-instructions { font-weight:600; }
+.drop-zone.compact .dz-sub { font-size:0.55rem; }
+/* Card-level drag target */
+.attachment-card { transition: background-color 140ms ease, border-color 140ms ease; }
+.attachment-card.drop-hover { background:#e2f0ff !important; box-shadow:0 0 0 3px #0d6efd55 inset, 0 0 0 1px #0d6efd; position:relative; }
+.attachment-card.drop-hover::after { content:"Drop files to upload"; position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:1rem; font-weight:700; letter-spacing:.5px; color:#0a58ca; background:rgba(255,255,255,0.72); backdrop-filter:blur(3px); border:3px dashed #0a58ca; border-radius:0.5rem; text-shadow:0 1px 1px #fff; }
+
+/* Global drag active state (when dragging files over window) */
+body.drag-attachments-active .attachment-card { outline:2px dashed #6aa6ff; outline-offset:4px; }
+body.drag-attachments-active .attachment-card:hover { outline-color:#0d6efd; }
+body.drag-attachments-active .attachment-card:not(.drop-hover) { background:linear-gradient(135deg,#f8fbff,#f1f7ff); }
+
+/* Subtle pulse to draw attention */
+@keyframes attachPulse { 0%{box-shadow:0 0 0 0 rgba(13,110,253,0.35);} 70%{box-shadow:0 0 0 8px rgba(13,110,253,0);} 100%{box-shadow:0 0 0 0 rgba(13,110,253,0);} }
+body.drag-attachments-active .attachment-card { animation: attachPulse 2.2s ease-in-out infinite; }
+
+/* Full-page hint overlay (non-blocking; pointer-events none) */
+body.drag-attachments-active::after { content:""; position:fixed; inset:0; pointer-events:none; background:repeating-linear-gradient(45deg,rgba(13,110,253,0.05) 0 10px, rgba(13,110,253,0.0) 10px 20px); }
+
+/* === EOB Parsed Table Input Sizing === */
+/* Compact form-aligned primary button to visually match form-control-sm height */
+.btn-form-sm { 
+  padding: 0.15rem 0.50rem; /* match visual height of form-control-sm */
+  font-size: 0.70rem; 
+  line-height: 1.2; 
+  border-radius: 0.25rem; 
+  display: inline-flex; 
+  align-items: center; 
+  gap: 0.25rem;
+}
+.btn-form-sm i { font-size: 0.75rem; line-height:1; }
+.btn-form-sm:focus { box-shadow: 0 0 0 0.15rem rgba(13,110,253,0.35); }
+/* Date a bit narrower */
+input.eob-date { max-width: 115px; min-width:90px; }
+/* CPT slightly wider for readability */
+input.eob-cpt { max-width: 110px; font-weight:600; letter-spacing:0.5px; }
+/* Dollar amount fields slightly tighter */
+input.eob-amt { width: 78px !important; padding-right: 2px; }
+/* Ensure numeric alignment */
+input.eob-amt, input.eob-amt::-webkit-outer-spin-button, input.eob-amt::-webkit-inner-spin-button { text-align: right; }
+/* Responsive tweak: on very small screens allow wrap but keep min usability */
+@media (max-width: 600px) {
+  input.eob-date { max-width: 95px; }
+  input.eob-cpt { max-width: 95px; }
+  input.eob-amt { width: 70px !important; }
+}
