@@ -11,3 +11,6 @@ wheels/
 
 # Windows shortcuts 
 *.Ink
+
+# Database dumps
+.db_dumps/

@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}Add Multiple Charges{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2><i class="bi bi-receipt"></i> Add Multiple Charges</h2>
+  <a href="/charges" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to Charges</a>
+</div>
+<div class="alert alert-info small mb-3">
+  Enter shared header information once, then add one or more individual line items. An optional attachment will be linked to the line with the highest Charged Amount.
+</div>
+<form id="multiChargesForm" enctype="multipart/form-data" class="card">
+  <div class="card-body">
+    <h5 class="mb-3">Shared Details</h5>
+    <div class="row g-3">
+      <div class="col-md-3">
+        <label class="form-label">Service Date</label>
+        <input type="date" class="form-control form-control-sm" name="service_date" required>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Family Member</label>
+        <select class="form-select form-select-sm" name="family_member" required>
+          <option value="">Select...</option>
+          <option>Alex</option>
+          <option>Jordan</option>
+          <option>Sam</option>
+          <option>Riley</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Type</label>
+        <select class="form-select form-select-sm" name="medical_type" required>
+          <option value="">Select...</option>
+          <option>Medical</option>
+          <option>Dental</option>
+          <option>Vision</option>
+          <option>Mental Health</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Provider</label>
+        <select class="form-select form-select-sm" name="provider_id" required>
+          <option value="">Select...</option>
+          {% for provider in providers %}
+          <option value="{{ provider.id }}">{{ provider.provider_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Doctor Name (optional)</label>
+        <input type="text" class="form-control form-control-sm" name="doctor_name" placeholder="Dr. Smith">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">EOB / Claim # (optional)</label>
+        <input type="text" class="form-control form-control-sm" name="eob_claim_num" placeholder="e.g. CLM123456" />
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Batch Attachment (optional)</label>
+        <input type="file" class="form-control form-control-sm" name="attachment">
+        <div class="form-text">Applied to highest Charged Amount line.</div>
+      </div>
+    </div>
+
+    <hr class="my-4">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h5 class="mb-0">Line Items</h5>
+      <div>
+        <button type="button" class="btn btn-sm btn-outline-primary" id="addRowBtn"><i class="bi bi-plus-circle"></i> Add Row</button>
+        <button type="button" class="btn btn-sm btn-outline-danger" id="clearEmptyBtn"><i class="bi bi-eraser"></i> Remove Empty Rows</button>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered align-middle mb-0" id="lineItemsTable" style="min-width:1100px;">
+        <thead class="table-light">
+          <tr>
+            <th style="width:220px">Description</th>
+            <th style="width:90px">CPT</th>
+            <th style="width:110px">Base Fee</th>
+            <th style="width:110px">Discount</th>
+            <th style="width:110px">Charged *</th>
+            <th style="width:110px">Ins Paid</th>
+            <th style="width:110px">Owed</th>
+            <th style="width:110px">Reimbursed</th>
+            <th style="width:40px"></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="small text-muted mt-2">* At least one line must have a Charged Amount. Empty rows will be skipped automatically.</div>
+  </div>
+  <div class="card-footer d-flex justify-content-between align-items-center">
+    <div id="formStatus" class="small text-muted"></div>
+    <div>
+      <button type="button" class="btn btn-outline-secondary" onclick="window.location='/charges'">Cancel</button>
+      <button type="submit" class="btn btn-success"><i class="bi bi-check2-circle"></i> Create Charges</button>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let rowCounter = 0;
+function newRow() {
+  rowCounter++;
+  return `<tr data-row="${rowCounter}">
+    <td><input type="text" class="form-control form-control-sm desc" placeholder="Description" /></td>
+    <td><input type="text" class="form-control form-control-sm cpt" placeholder="CPT" list="cptDatalist" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm base_fee" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm discount" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm charged" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm inspaid" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm owed" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm reimbursed" /></td>
+    <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger del-row" title="Remove Row"><i class="bi bi-x"></i></button></td>
+  </tr>`;
+}
+function addRow() {
+  document.querySelector('#lineItemsTable tbody').insertAdjacentHTML('beforeend', newRow());
+}
+function removeRow(btn){ const tr = btn.closest('tr'); if(tr) tr.remove(); }
+function collectRows() {
+  const rows = [];
+  document.querySelectorAll('#lineItemsTable tbody tr').forEach(tr => {
+    const desc = tr.querySelector('.desc').value.trim();
+    const charged = tr.querySelector('.charged').value;
+    const owed = tr.querySelector('.owed').value;
+    const baseFee = tr.querySelector('.base_fee').value;
+    const anyVal = desc || charged || owed || baseFee;
+    if(!anyVal) return; // skip empty row
+    rows.push({
+      description: desc,
+      cpt_code: tr.querySelector('.cpt').value.trim() || null,
+      base_fee_amount: baseFee || null,
+      insurance_discount_amount: tr.querySelector('.discount').value || null,
+      charged_amount: charged || null,
+      insurance_paid_amount: tr.querySelector('.inspaid').value || null,
+      owed_amount: tr.querySelector('.owed').value || null,
+      reimbursement_amount: tr.querySelector('.reimbursed').value || null,
+    });
+  });
+  return rows;
+}
+async function submitMultiCharges(e){
+  e.preventDefault();
+  const form = e.target;
+  const statusEl = document.getElementById('formStatus');
+  statusEl.textContent = '';
+  const fd = new FormData();
+  const svc = form.querySelector('[name="service_date"]').value;
+  const fam = form.querySelector('[name="family_member"]').value;
+  const medType = form.querySelector('[name="medical_type"]').value;
+  const prov = form.querySelector('[name="provider_id"]').value;
+  if(!svc || !fam || !medType || !prov){ statusEl.textContent = 'Please fill required shared fields.'; return; }
+  fd.append('service_date', svc);
+  fd.append('family_member', fam);
+  fd.append('medical_type', medType);
+  fd.append('provider_id', prov);
+  const doctorName = form.querySelector('[name="doctor_name"]').value;
+  if(doctorName) fd.append('doctor_name', doctorName);
+  const eobClaim = form.querySelector('[name="eob_claim_num"]').value;
+  if(eobClaim) fd.append('eob_claim_num', eobClaim);
+  const rows = collectRows();
+  if(!rows.length){ statusEl.textContent = 'Please add at least one non-empty row.'; return; }
+  fd.append('rows_json', JSON.stringify(rows));
+  const attachInput = form.querySelector('[name="attachment"]');
+  if(attachInput && attachInput.files && attachInput.files.length){ fd.append('attachment', attachInput.files[0]); }
+  const submitBtn = form.querySelector('button[type="submit"]');
+  const prevHtml = submitBtn.innerHTML; submitBtn.disabled = true; submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...';
+  try {
+    const resp = await fetch('/api/charges/bulk-create', { method: 'POST', body: fd });
+    if(!resp.ok){
+      let msg = 'Error creating charges';
+      try { const j = await resp.json(); if(j.detail) msg = j.detail; } catch {}
+      statusEl.innerHTML = '<span class="text-danger">' + msg + '</span>';
+    } else {
+      const data = await resp.json();
+      statusEl.innerHTML = '<span class="text-success">Created ' + data.created_count + ' charges. Redirecting...</span>';
+      setTimeout(()=> window.location='/charges', 900);
+    }
+  } catch(err){
+    statusEl.innerHTML = '<span class="text-danger">' + err + '</span>';
+  } finally { submitBtn.disabled = false; submitBtn.innerHTML = prevHtml; }
+}
+async function loadCptCodes() {
+  try { const resp = await fetch('/api/cpt-codes'); if(!resp.ok) return; const data = await resp.json(); const dl = document.getElementById('cptDatalist'); if(dl){ dl.innerHTML = (data.cpt_codes||[]).map(c => `<option value="${c}"></option>`).join(''); } } catch {}
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  addRow(); addRow(); // start with two rows
+  document.getElementById('addRowBtn').addEventListener('click', addRow);
+  document.getElementById('clearEmptyBtn').addEventListener('click', () => {
+    document.querySelectorAll('#lineItemsTable tbody tr').forEach(tr => {
+      const hasVal = tr.querySelector('.desc').value || tr.querySelector('.charged').value || tr.querySelector('.owed').value || tr.querySelector('.base_fee').value;
+      if(!hasVal) tr.remove();
+    });
+  });
+  document.querySelector('#lineItemsTable tbody').addEventListener('click', (e) => {
+    if(e.target.closest('.del-row')) removeRow(e.target.closest('.del-row'));
+  });
+  document.getElementById('multiChargesForm').addEventListener('submit', submitMultiCharges);
+  loadCptCodes();
+  // Global drag & drop for batch attachment (whole page as drop zone similar to detail pages)
+  const body = document.body;
+  let dragDepth = 0;
+  const attachInput = document.querySelector('input[name="attachment"]');
+  function isFileDrag(e){
+    const dt = e.dataTransfer; if(!dt) return false; return Array.from(dt.types||[]).includes('Files');
+  }
+  window.addEventListener('dragenter', e => { if(!isFileDrag(e)) return; dragDepth++; body.classList.add('drag-attachments-active'); });
+  window.addEventListener('dragleave', e => { if(!isFileDrag(e)) return; dragDepth=Math.max(0,dragDepth-1); if(dragDepth===0) body.classList.remove('drag-attachments-active'); });
+  window.addEventListener('dragover', e => { if(!isFileDrag(e)) return; e.preventDefault(); });
+  window.addEventListener('drop', e => { if(!isFileDrag(e)) return; e.preventDefault(); const files = e.dataTransfer.files; dragDepth=0; body.classList.remove('drag-attachments-active'); if(files && files.length && attachInput){ attachInput.files = files; const statusEl = document.getElementById('formStatus'); if(statusEl){ statusEl.innerHTML = '<span class="text-primary">Attached '+files.length+' file'+(files.length>1?'s':'')+' (will apply to highest charge)</span>'; } }});
+});
+</script>
+<datalist id="cptDatalist"></datalist>
+{% endblock %}

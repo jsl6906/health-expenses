@@ -8,8 +8,28 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Dict, Any
 from uuid import uuid4
-from datetime import date, timedelta
-import random
+from datetime import date
+_LLM_IMPORT_ERROR: str | None = None
+_llm_parse = None
+try:
+    from .llm.eob_parser import parse_eob_bytes as _llm_parse  # type: ignore
+except Exception as ex1:  # relative import failed
+    _LLM_IMPORT_ERROR = f"relative_import_failed: {ex1}"
+    try:
+        from llm.eob_parser import parse_eob_bytes as _llm_parse  # type: ignore
+    except Exception as ex2:
+        if _LLM_IMPORT_ERROR:
+            _LLM_IMPORT_ERROR += f" | abs_import_failed: {ex2}"
+        else:
+            _LLM_IMPORT_ERROR = f"abs_import_failed: {ex2}"
+        try:
+            # Sometimes running via 'python -m src.app' means modules are under 'src'
+            from src.llm.eob_parser import parse_eob_bytes as _llm_parse  # type: ignore
+        except Exception as ex3:  # pragma: no cover
+            if _LLM_IMPORT_ERROR:
+                _LLM_IMPORT_ERROR += f" | src_import_failed: {ex3}"
+            else:
+                _LLM_IMPORT_ERROR = f"src_import_failed: {ex3}"
 
 
 @dataclass
@@ -51,6 +71,7 @@ class EOBImportSession:
     rows: List[ParsedChargeRow] = field(default_factory=list)
     file_bytes: bytes | None = None
     content_type: str | None = None
+    debug_info: Dict[str, Any] | None = None
 
     def serialize(self) -> Dict[str, Any]:
         return {
@@ -58,58 +79,67 @@ class EOBImportSession:
             "filename": self.filename,
             "row_count": len(self.rows),
             "rows": [r.to_dict() for r in self.rows],
+            "debug": self.debug_info or {},
         }
 
 
 _SESSIONS: Dict[str, EOBImportSession] = {}
 
-FAMILY_MEMBERS = ["Alex", "Jordan", "Sam", "Riley"]
-CPT_POOL = ["99213", "99397", "90471", "87635", "83036", "97110", "92557"]
-DESC_SNIPPETS = [
-    "Office visit",
-    "Preventive exam",
-    "Lab panel",
-    "Therapy session",
-    "Hearing test",
-    "Vaccination admin",
-    "Physical therapy",
-]
-
-
-def _mock_parse(filename: str, file_bytes: bytes) -> List[ParsedChargeRow]:
-    random.seed(filename + str(len(file_bytes)))
-    today = date.today()
-    rows: List[ParsedChargeRow] = []
-    for i in range(1, 6):
-        svc_date = today - timedelta(days=random.randint(5, 120))
-        charged = round(random.uniform(80, 400), 2)
-        owed = round(charged * random.uniform(0.2, 0.8), 2)
-        insurance_paid = round(owed * random.uniform(0.1, 0.6), 2)
-        discount = round(charged - owed - insurance_paid, 2)
-        base_fee = charged  # assume charged is base for stub
-        reimbursement = round(owed * random.uniform(0.0, 0.3), 2)
-        row = ParsedChargeRow(
-            index=i - 1,
-            service_date=svc_date,
-            cpt_code=random.choice(CPT_POOL),
-            description=random.choice(DESC_SNIPPETS),
-            charged_amount=charged,
-            owed_amount=owed,
-            provider_name="Auto Parsed Provider",
-            family_member=random.choice(FAMILY_MEMBERS),
-            insurance_paid_amount=insurance_paid,
-            insurance_discount_amount=discount,
-            base_fee_amount=base_fee,
-            reimbursement_amount=reimbursement,
-        )
-        rows.append(row)
-    return rows
 
 
 def create_session(filename: str, file_bytes: bytes, content_type: str | None = None) -> EOBImportSession:
     session_id = uuid4().hex
     session = EOBImportSession(id=session_id, filename=filename)
-    session.rows = _mock_parse(filename, file_bytes)
+    parsed_rows: list[ParsedChargeRow] = []
+    # Attempt LLM parsing first
+    if _llm_parse is not None:
+        meta: Dict[str, Any] | None = None
+        try:
+            llm_rows, meta = _llm_parse(filename, file_bytes, content_type)  # type: ignore[misc]
+        except Exception as ex:  # capture failure reason
+            llm_rows = []  # type: ignore[assignment]
+            meta = {"status": "error", "error": str(ex)}
+        # Convert normalized dict rows into ParsedChargeRow instances
+        if isinstance(meta, dict):
+            session.debug_info = meta
+        for idx, r in enumerate(llm_rows or []):  # type: ignore[union-attr]
+            try:
+                svc_date = None
+                svc = r.get("service_date")
+                if svc:
+                    from datetime import date as _d
+                    parts = str(svc).split('-')
+                    if len(parts) == 3:
+                        try:
+                            svc_date = _d(int(parts[0]), int(parts[1]), int(parts[2]))
+                        except Exception:
+                            svc_date = None
+                parsed_rows.append(ParsedChargeRow(
+                    index=idx,
+                    service_date=svc_date,
+                    cpt_code=r.get("cpt_code"),
+                    description=r.get("description") or "(No description)",
+                    charged_amount=r.get("charged_amount"),
+                    owed_amount=r.get("owed_amount"),
+                    provider_name=r.get("provider_name"),
+                    family_member=r.get("family_member"),
+                    insurance_paid_amount=r.get("insurance_paid_amount"),
+                    insurance_discount_amount=r.get("insurance_discount_amount"),
+                    base_fee_amount=r.get("base_fee_amount"),
+                    reimbursement_amount=r.get("reimbursement_amount"),
+                ))
+            except Exception:
+                continue
+    else:
+        # Parser module not importable, surface reason & details to UI
+        session.debug_info = {
+            "status": "parser_unavailable",
+            "reasons": ["import_error"],
+            "message": "LLM parser module could not be imported",
+            "import_error_detail": _LLM_IMPORT_ERROR,
+        }
+    # If no rows parsed, leave session empty (UI can display zero rows)
+    session.rows = parsed_rows
     session.file_bytes = file_bytes
     session.content_type = content_type
     _SESSIONS[session_id] = session

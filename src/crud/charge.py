@@ -2,17 +2,17 @@
 CRUD operations for Charge model.
 """
 
-from typing import List, Optional
+from typing import List
 from datetime import date
 from sqlalchemy.orm import Session
 
 # Handle imports whether running as module or script
 try:
     from crud.base import BaseCRUD
-    from models.database import Charge, FamilyMember, MedicalType
+    from models.database import Charge
 except ImportError:
     from .base import BaseCRUD
-    from ..models.database import Charge, FamilyMember, MedicalType
+    from ..models.database import Charge
 
 
 class ChargeCRUD(BaseCRUD[Charge]):

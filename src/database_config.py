@@ -5,7 +5,7 @@ Database configuration and connection management.
 import os
 import urllib.parse
 from typing import Generator
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
@@ -21,21 +21,47 @@ load_dotenv()
 
 
 class DatabaseConfig:
-    """Database configuration class."""
-    
+    """Database configuration class with ENV_MODE (TEST|PROD) support.
+
+    Priority of credential selection:
+      1. ENV_MODE=TEST uses TEST_DB_* variables.
+      2. ENV_MODE=PROD (default) uses PROD_DB_* variables.
+      3. If corresponding prefixed variables absent, fall back to generic DB_* variables.
+    """
+
     def __init__(self):
-        self.db_host = os.getenv("DB_HOST", "localhost")
-        self.db_port = os.getenv("DB_PORT", "5432")
-        self.db_name = os.getenv("DB_NAME", "personal_expenses")
-        self.db_user = os.getenv("DB_USER", "postgres")
-        self.db_password = os.getenv("DB_PASSWORD", "")
-        
+        self.env_mode = (os.getenv("ENV_MODE", "PROD") or "PROD").upper()
+        if self.env_mode not in {"TEST", "PROD"}:
+            print(f"WARNING: Unknown ENV_MODE '{self.env_mode}' - defaulting to PROD")
+            self.env_mode = "PROD"
+
+        # Determine prefix based on mode
+        prefix = "TEST" if self.env_mode == "TEST" else "PROD"
+
+        def first(*names: str, default: str | None = None):
+            for n in names:
+                v = os.getenv(n)
+                if v not in (None, ""):
+                    return v
+            return default
+
+        # Host / Port
+        self.db_host = first(f"{prefix}_DB_HOST", "DB_HOST", default="localhost")
+        self.db_port = first(f"{prefix}_DB_PORT", "DB_PORT", default="5432")
+        self.db_name = first(f"{prefix}_DB_NAME", "DB_NAME", default="personal_expenses")
+        self.db_user = first(f"{prefix}_DB_USER", "DB_USER", default="postgres")
+        self.db_password = first(f"{prefix}_DB_PASSWORD", "DB_PASSWORD", default="")
+
+        # Safety: If TEST mode but host looks like a prod host (heuristic), warn.
+        if self.env_mode == "TEST" and self.db_host not in {"localhost", "127.0.0.1", "192.0.2.10"}:
+            print(f"WARNING: ENV_MODE=TEST but host={self.db_host} is not local.")
+
         # Connection pool settings
         self.pool_size = int(os.getenv("DB_POOL_SIZE", "5"))
         self.max_overflow = int(os.getenv("DB_MAX_OVERFLOW", "10"))
-        
+
         # Build connection string with URL-encoded password
-        encoded_password = urllib.parse.quote_plus(self.db_password)
+        encoded_password = urllib.parse.quote_plus(self.db_password or "")
         self.database_url = (
             f"postgresql://{self.db_user}:{encoded_password}@"
             f"{self.db_host}:{self.db_port}/{self.db_name}"
@@ -99,7 +125,7 @@ def test_connection():
     """Test database connection."""
     try:
         with engine.connect() as connection:
-            connection.execute("SELECT 1")
+            connection.execute(text("SELECT 1"))
             print("Database connection successful!")
             return True
     except Exception as e:

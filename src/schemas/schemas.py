@@ -78,6 +78,7 @@ class ChargeBase(BaseModel):
     owed_amount: Optional[Decimal] = None
     reimbursement_amount: Optional[Decimal] = None
     eob_claim_num: Optional[str] = None
+    eob_claim_id: Optional[str] = None
     insurance_discount_amount: Optional[Decimal] = None
     insurance_paid_amount: Optional[Decimal] = None
     ignore_for_issue_spotting: bool = False
@@ -102,6 +103,7 @@ class ChargeUpdate(BaseModel):
     owed_amount: Optional[Decimal] = None
     reimbursement_amount: Optional[Decimal] = None
     eob_claim_num: Optional[str] = None
+    eob_claim_id: Optional[str] = None
     insurance_discount_amount: Optional[Decimal] = None
     insurance_paid_amount: Optional[Decimal] = None
     ignore_for_issue_spotting: Optional[bool] = None

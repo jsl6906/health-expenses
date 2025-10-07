@@ -9,6 +9,11 @@
     <link href="/static/css/app.css" rel="stylesheet">
 </head>
 <body>
+    {% if ENV_MODE == 'TEST' %}
+    <div style="background: #ffeb3b; color:#333; padding:6px 12px; text-align:center; font-weight:600; font-size:0.95rem; border-bottom:2px solid #e0c200;">
+        TEST ENVIRONMENT - DATA IS NON-PRODUCTION
+    </div>
+    {% endif %}
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
             <a class="navbar-brand" href="/">

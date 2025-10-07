@@ -173,6 +173,41 @@ async function loadSession() {
       tbody.appendChild(tr);
     });
     document.getElementById('rowCountMeta').textContent = `(${data.row_count} rows parsed)`;
+    if (data.row_count === 0) {
+      const dbg = data.debug || {};
+      const lines = [];
+      lines.push('No rows were parsed by the LLM.');
+      if (dbg.status) lines.push(`Status: ${dbg.status}`);
+      if (dbg.model) lines.push(`Model: ${dbg.model}`);
+      if (dbg.model_configured !== undefined) lines.push(`Model Configured: ${dbg.model_configured}`);
+      if (dbg.api_key_present !== undefined) lines.push(`API Key Present: ${dbg.api_key_present}`);
+      if (dbg.content_type) lines.push(`Content-Type: ${dbg.content_type}`);
+      if (typeof dbg.bytes === 'number') lines.push(`File Bytes: ${dbg.bytes}`);
+      if (dbg.upload_enabled !== undefined) lines.push(`Upload Enabled: ${dbg.upload_enabled}`);
+      if (dbg.upload_used !== undefined) lines.push(`Upload Used: ${dbg.upload_used}`);
+      if (dbg.response_mode) lines.push(`Response Mode: ${dbg.response_mode}`);
+      if (dbg.upload_file_id) lines.push(`Upload File ID: ${dbg.upload_file_id}`);
+      if (typeof dbg.extracted_text_chars === 'number') lines.push(`Extracted Text Chars: ${dbg.extracted_text_chars}`);
+      if (dbg.empty_text) lines.push('Extracted Text Empty: true');
+      if (dbg.attempted !== undefined) lines.push(`Generation Attempted: ${dbg.attempted}`);
+      if (typeof dbg.raw_text_chars === 'number') lines.push(`Raw Model Text Chars: ${dbg.raw_text_chars}`);
+      if (typeof dbg.upload_raw_text_chars === 'number') lines.push(`Upload Raw Text Chars: ${dbg.upload_raw_text_chars}`);
+      if (Array.isArray(dbg.reasons) && dbg.reasons.length) lines.push('Reasons: ' + dbg.reasons.join(', '));
+      if (dbg.error) lines.push(`Error: ${dbg.error}`);
+      if (dbg.upload_error) lines.push(`Upload Error: ${dbg.upload_error}`);
+      if (dbg.raw_snippet) {
+        const snippetSafe = dbg.raw_snippet.replace(/</g,'&lt;');
+        lines.push('Raw Snippet: <code style="white-space:pre-wrap">' + snippetSafe + '</code>');
+      }
+      if (dbg.upload_raw_snippet) {
+        const upSnippetSafe = dbg.upload_raw_snippet.replace(/</g,'&lt;');
+        lines.push('Upload Raw Snippet: <code style="white-space:pre-wrap">' + upSnippetSafe + '</code>');
+      }
+      const alert = document.createElement('div');
+      alert.className = 'alert alert-warning small mt-2';
+      alert.innerHTML = `<strong>Parse Debug</strong><br>${lines.join('<br>')}<br><em>Next steps: verify API key, model name (GEMINI_MODEL_NAME), and that the file contains selectable text.</em>`;
+      document.getElementById('parseResults').prepend(alert);
+    }
     document.getElementById('parseResults').classList.remove('d-none');
     document.getElementById('emptyState').classList.add('d-none');
     updateImportButtonState();

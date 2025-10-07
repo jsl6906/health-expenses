@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% block title %}Import Charges from JSON (FHIR){% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h2><i class="bi bi-filetype-json"></i> Import Charges from JSON (FHIR Bundle)</h2>
+  <a href="/charges" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to Charges</a>
+</div>
+<div class="card mb-3">
+  <div class="card-body">
+  <form id="jsonImportForm" class="row g-3" enctype="multipart/form-data">
+      <div class="col-md-4">
+        <label class="form-label">JSON File (FHIR Bundle)</label>
+  <input type="file" class="form-control form-control-sm" name="file" accept="application/json">
+        <div class="form-text">Must be a FHIR Bundle containing ExplanationOfBenefit or Claim resources.</div>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Provider (override)</label>
+        <select name="provider_id" class="form-select form-select-sm">
+          <option value="">Auto / From Resource</option>
+          {% for provider in providers %}
+          <option value="{{ provider.id }}">{{ provider.provider_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Default Family Member</label>
+        <select name="family_member" class="form-select form-select-sm">
+          <option value="">(None)</option>
+          <option>Alex</option>
+          <option>Jordan</option>
+          <option>Sam</option>
+          <option>Riley</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label">Medical Type</label>
+        <select name="medical_type" class="form-select form-select-sm">
+          <option value="">Medical</option>
+          <option>Medical</option>
+          <option>Dental</option>
+          <option>Vision</option>
+          <option>Mental Health</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div class="col-12">
+        <label class="form-label mb-1">OR Paste Raw JSON (Bundle / charges array)</label>
+        <textarea class="form-control form-control-sm font-monospace" name="json_text" rows="6" placeholder='Paste FHIR Bundle or [ { "description": "..." } ] here. If provided and no file chosen, this will be used instead of the file upload.'></textarea>
+        <div class="form-text">If both a file and pasted JSON are provided, the file takes precedence.</div>
+      </div>
+      <div class="col-12 d-flex justify-content-end">
+        <button type="submit" class="btn btn-primary btn-sm" id="previewBtn"><i class="bi bi-search"></i> Preview</button>
+      </div>
+    </form>
+    <div id="importStatus" class="small mt-3 text-muted"></div>
+  </div>
+</div>
+<div id="resultsCard" class="card d-none">
+  <div class="card-body py-3">
+    <h5 class="mb-2">Preview Results</h5>
+      <div id="providerSection" class="mb-3 d-none">
+        <h6 class="mb-2">Provider Candidates</h6>
+        <div class="table-responsive" style="max-height:25vh;">
+          <table class="table table-sm table-bordered" id="providerPreviewTable">
+            <thead class="table-light">
+              <tr>
+                <th><input type="checkbox" id="selectAllProviders"></th>
+                <th>Name</th><th>Address</th><th>Location ID</th><th>Duplicate?</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="small text-muted" id="providerSummary"></div>
+        <hr/>
+      </div>
+    <div id="summaryText" class="small mb-2"></div>
+    <div class="alert alert-info py-2 mb-2" id="selectionHint" style="display:none;">
+      Select the rows you want to insert, then click Commit Selected. Duplicates are pre-marked and will be skipped automatically.
+    </div>
+    <h6 class="mt-3">Charge Candidates</h6>
+    <div class="table-responsive" style="max-height:40vh;">
+      <table class="table table-sm table-bordered" id="importPreviewTable">
+        <thead class="table-light">
+          <tr>
+            <th><input type="checkbox" id="selectAll"></th>
+            <th>#</th><th>Date</th><th>Claim #</th><th>Description</th><th>CPT</th><th>Doctor</th><th>Location</th><th>Charged</th><th>Owed</th><th>Dup?</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="d-flex gap-2 mt-3">
+      <button class="btn btn-success btn-sm" id="commitBtn" disabled><i class="bi bi-check2-circle"></i> Commit Selected</button>
+      <button class="btn btn-outline-secondary btn-sm" id="resetPreview"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+    </div>
+    <div id="commitStatus" class="small mt-2"></div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function human(val){ if(val===null||val===undefined||val==='') return ''; return val; }
+function fmtCurrency(val){ if(val===null||val===undefined||val==='') return ''; const num = Number(val); if(isNaN(num)) return val; return num.toLocaleString('en-US',{style:'currency',currency:'USD'}); }
+let currentSessionId = null;
+let previewRows = [];
+let providerRows = [];
+
+async function submitJsonImport(e){
+  e.preventDefault();
+  const form = e.target;
+  const status = document.getElementById('importStatus');
+  status.textContent = 'Uploading & parsing (preview)...';
+  const fileInput = form.querySelector('input[name="file"]');
+  const jsonTextarea = form.querySelector('textarea[name="json_text"]');
+  const providerId = form.querySelector('[name="provider_id"]').value;
+  const familyMember = form.querySelector('[name="family_member"]').value;
+  const medicalType = form.querySelector('[name="medical_type"]').value;
+  let useFile = fileInput && fileInput.files && fileInput.files.length > 0;
+  let pasted = (jsonTextarea && jsonTextarea.value.trim().length > 0) ? jsonTextarea.value.trim() : null;
+  if(!useFile && !pasted){
+    status.innerHTML = '<span class="text-danger">Provide either a JSON file or pasted JSON.</span>';
+    return;
+  }
+  const btn = document.getElementById('previewBtn');
+  const prev = btn.innerHTML; btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm"></span> Working...';
+  let query = [];
+  if(providerId) query.push('provider_id='+encodeURIComponent(providerId));
+  if(familyMember) query.push('family_member='+encodeURIComponent(familyMember));
+  if(medicalType) query.push('medical_type='+encodeURIComponent(medicalType));
+  const url = '/api/charges/import-json' + (query.length?('?'+query.join('&')):'');
+  try {
+    let resp;
+    if(useFile){
+      const fd = new FormData();
+      fd.append('file', fileInput.files[0]);
+      if(providerId) fd.append('provider_id', providerId);
+      if(familyMember) fd.append('family_member', familyMember);
+      if(medicalType) fd.append('medical_type', medicalType);
+      resp = await fetch(url, { method:'POST', body: fd });
+    } else {
+      resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: pasted });
+    }
+    if(!resp.ok){
+      let msg='Import failed';
+      try {
+        const text = await resp.text();
+        try { const j = JSON.parse(text); if(j.detail) msg=j.detail; else msg = JSON.stringify(j); }
+        catch { msg = text; }
+      } catch{}
+      status.innerHTML='<span class="text-danger">'+msg+'</span>';
+      return;
+    }
+    const data = await resp.json();
+    currentSessionId = data.session_id;
+    previewRows = data.rows || [];
+    providerRows = data.providers || [];
+    status.innerHTML = '<span class="text-success">Preview ready: '+data.total_parsed+' rows ('+data.duplicate_count+' duplicates detected).</span>';
+    renderPreviewTables();
+  } catch(err){ status.innerHTML='<span class="text-danger">'+err+'</span>'; }
+  finally { btn.disabled=false; btn.innerHTML=prev; }
+}
+
+function renderPreviewTables(){
+  const tbody = document.querySelector('#importPreviewTable tbody');
+  tbody.innerHTML='';
+  // Sort previewRows by date (asc), then location name/id (asc), then charged desc
+  previewRows.sort((a,b)=>{
+    const da = a.service_date || '';
+    const db = b.service_date || '';
+    if(da !== db) return da < db ? -1 : 1;
+    const la = (a.facility_location_name || a.facility_location_id || '').toLowerCase();
+    const lb = (b.facility_location_name || b.facility_location_id || '').toLowerCase();
+    if(la !== lb) return la < lb ? -1 : 1;
+    const ca = Number(a.charged_amount||0);
+    const cb = Number(b.charged_amount||0);
+    return cb - ca; // higher charged first
+  });
+  previewRows.forEach(r => {
+    const tr=document.createElement('tr');
+    tr.dataset.index = r.index;
+    tr.innerHTML = `
+      <td><input type="checkbox" class="row-select" data-row="${r.index}" ${r.duplicate?'':'checked'} ${r.duplicate?'disabled':''}></td>
+      <td>${r.index}</td>
+      <td>${human(r.service_date||'')}</td>
+  <td>${human(r.eob_claim_num||'')}</td>
+  <td>${human(r.description||'')}</td>
+      <td>${human(r.cpt_code||'')}</td>
+      <td>${human(r.doctor_name||'')}</td>
+      <td>${human(r.facility_location_name || r.facility_location_id || '')}</td>
+      <td>${fmtCurrency(r.charged_amount)}</td>
+      <td>${fmtCurrency(r.owed_amount)}</td>
+      <td>${r.duplicate?'<span class="badge bg-warning text-dark">Yes</span>':'<span class="badge bg-success">No</span>'}</td>`;
+    tbody.appendChild(tr);
+  });
+  document.getElementById('resultsCard').classList.remove('d-none');
+  document.getElementById('summaryText').textContent = 'Select rows to commit. Duplicates are disabled.';
+  document.getElementById('selectionHint').style.display='block';
+
+  const providerSection = document.getElementById('providerSection');
+  const providerBody = document.querySelector('#providerPreviewTable tbody');
+  providerBody.innerHTML='';
+  if(providerRows.length){
+    // Sort providers by name case-insensitive
+    providerRows.sort((a,b)=>{
+      const na = (a.provider_name||'').toUpperCase();
+      const nb = (b.provider_name||'').toUpperCase();
+      if(na < nb) return -1; if(na > nb) return 1; return 0;
+    });
+    providerRows.forEach(p => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="checkbox" class="provider-select" data-loc="${p.location_id||''}" ${p.duplicate?'disabled':''} ${p.duplicate?'':'checked'}></td>
+        <td>${human(p.provider_name||'')}</td>
+        <td>${human(p.provider_address||'')}</td>
+        <td>${human(p.location_id||'')}</td>
+        <td>${p.duplicate?'<span class="badge bg-warning text-dark">Yes</span>':'<span class="badge bg-success">No</span>'}</td>`;
+      providerBody.appendChild(tr);
+    });
+    providerSection.classList.remove('d-none');
+    document.getElementById('providerSummary').textContent = `Providers: ${providerRows.length} (duplicates disabled in selection)`;
+  } else {
+    providerSection.classList.add('d-none');
+  }
+  updateCommitButtonState();
+}
+
+function updateCommitButtonState(){
+  const anyCharges = Array.from(document.querySelectorAll('.row-select')).some(cb=>cb.checked);
+  const anyProviders = providerRows.length ? Array.from(document.querySelectorAll('.provider-select')).some(cb=>cb.checked) : true;
+  document.getElementById('commitBtn').disabled = !(anyCharges && anyProviders && currentSessionId);
+}
+
+async function commitSelected(){
+  const commitStatus = document.getElementById('commitStatus');
+  commitStatus.textContent = 'Committing...';
+  const selectedCharges = Array.from(document.querySelectorAll('.row-select'))
+    .filter(cb=>cb.checked)
+    .map(cb=>parseInt(cb.getAttribute('data-row')));
+  const selectedProviders = Array.from(document.querySelectorAll('.provider-select'))
+    .filter(cb=>cb.checked)
+    .map(cb=>cb.getAttribute('data-loc'));
+  if(!selectedCharges.length){
+    commitStatus.innerHTML = '<span class="text-danger">No charge rows selected.</span>';
+    return;
+  }
+  try {
+    const resp = await fetch(`/api/charges/import-json/${currentSessionId}/commit`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ selected_indices: selectedCharges, selected_provider_location_ids: selectedProviders })
+    });
+    if(!resp.ok){
+      const txt = await resp.text();
+      commitStatus.innerHTML = '<span class="text-danger">Commit failed: '+txt+'</span>';
+      return;
+    }
+    const data = await resp.json();
+    commitStatus.innerHTML = '<span class="text-success">Inserted '+data.inserted_count+' charges. Skipped '+data.skipped_duplicates+' duplicates.</span>';
+  } catch(err){
+    commitStatus.innerHTML = '<span class="text-danger">'+err+'</span>';
+  }
+}
+
+function resetPreview(){
+  currentSessionId = null;
+  previewRows = [];
+  providerRows = [];
+  document.getElementById('resultsCard').classList.add('d-none');
+  document.getElementById('commitStatus').textContent='';
+  document.getElementById('importStatus').textContent='';
+  document.getElementById('jsonImportForm').reset();
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  document.getElementById('jsonImportForm').addEventListener('submit', submitJsonImport);
+  document.getElementById('commitBtn').addEventListener('click', (e)=>{ e.preventDefault(); commitSelected(); });
+  document.getElementById('resetPreview').addEventListener('click', (e)=>{ e.preventDefault(); resetPreview(); });
+  document.getElementById('selectAll').addEventListener('change', (e)=>{
+    const checked = e.target.checked;
+    document.querySelectorAll('.row-select:not(:disabled)').forEach(cb=>{ cb.checked = checked; });
+    updateCommitButtonState();
+  });
+  document.getElementById('selectAllProviders').addEventListener('change', (e)=>{
+    const checked = e.target.checked;
+    document.querySelectorAll('.provider-select:not(:disabled)').forEach(cb=>{ cb.checked = checked; });
+    updateCommitButtonState();
+  });
+  document.getElementById('importPreviewTable').addEventListener('change', (e)=>{
+    if(e.target.classList.contains('row-select')) updateCommitButtonState();
+  });
+  document.getElementById('providerPreviewTable').addEventListener('change', (e)=>{
+    if(e.target.classList.contains('provider-select')) updateCommitButtonState();
+  });
+});
+</script>
+{% endblock %}
