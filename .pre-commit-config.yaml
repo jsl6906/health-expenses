@@ -34,6 +34,6 @@ repos:
         name: Build Docker Image
         entry: powershell.exe -File scripts/pre-commit-docker-build.ps1
         language: system
-        files: '(Dockerfile|pyproject\.toml|src/.*|templates/.*|static/.*|main\.py|init_db\.py)$'
+        files: '(Dockerfile|pyproject\.toml|src/.*|templates/.*|static/.*|main\.py|init_db\.py|run_app\.py)$'
         pass_filenames: false
         always_run: false

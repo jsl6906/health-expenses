@@ -13,6 +13,8 @@ import uvicorn
 src_path = Path(__file__).parent / "src"
 sys.path.insert(0, str(src_path))
 
+# Test comment for Docker build trigger
+
 
 def main():
     """Run the FastAPI application with uvicorn."""

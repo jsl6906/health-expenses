@@ -28,17 +28,33 @@ $DockerTriggerPatterns = @(
 
 # Check if any of the staged files match our trigger patterns
 $RelevantFiles = @()
-foreach ($File in $Files) {
+
+if ($Files.Count -eq 0) {
+    # No files passed (pass_filenames: false), so check all relevant files in the repository
+    Write-Host "No specific files provided. Checking all Docker-relevant files..." -ForegroundColor Yellow
     foreach ($Pattern in $DockerTriggerPatterns) {
-        if ($File -like $Pattern) {
-            $RelevantFiles += $File
-            break
+        $FoundFiles = Get-ChildItem -Path . -Name $Pattern -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_ -notmatch "^\.venv[/\\]" -and $_ -notmatch "^__pycache__[/\\]" -and $_ -notmatch "\.pyc$" }
+        $RelevantFiles += $FoundFiles
+    }
+} else {
+    # Files were passed, check if any match our trigger patterns
+    foreach ($File in $Files) {
+        # Skip virtual environment and cache files
+        if ($File -match "^\.venv[/\\]" -or $File -match "^__pycache__[/\\]" -or $File -match "\.pyc$") {
+            continue
+        }
+        foreach ($Pattern in $DockerTriggerPatterns) {
+            if ($File -like $Pattern) {
+                $RelevantFiles += $File
+                break
+            }
         }
     }
 }
 
 if ($RelevantFiles.Count -eq 0) {
-    Write-Host "No Docker-relevant files changed. Skipping build." -ForegroundColor Green
+    Write-Host "No Docker-relevant files found. Skipping build." -ForegroundColor Green
     exit 0
 }
 
