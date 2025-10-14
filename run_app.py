@@ -31,15 +31,15 @@ def main():
         print("Loading application...")
         import importlib
 
-        module = importlib.import_module("app")
+        module = importlib.import_module("src.app")
         loaded_app = getattr(module, "app", None)
         if loaded_app is None:
-            raise RuntimeError("FastAPI 'app' instance not found in app module")
+            raise RuntimeError("FastAPI 'app' instance not found in src.app module")
         print(f"✅ Application loaded successfully! Title: {loaded_app.title}")
 
         # Run the server
         uvicorn.run(
-            "app:app",  # Use string import for proper reload
+            "src.app:app",  # Use full module path for proper reload and relative imports
             host="0.0.0.0",
             port=port,
             reload=False,  # Disable reload to avoid warnings
