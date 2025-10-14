@@ -35,7 +35,8 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/app/.venv/bin:$PATH"
 ENV VIRTUAL_ENV="/app/.venv"
-ENV PYTHONPATH="/app"
+# Include both /app (to import package `src`) and /app/src (to support top-level imports like `models`)
+ENV PYTHONPATH="/app:/app/src"
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
