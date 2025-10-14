@@ -89,7 +89,7 @@
             <div class="col-md-5">
                 <small class="text-muted">
                     <i class="bi bi-info-circle"></i>
-                    Potential duplicates are identified by matching service date, family member, medical type, and charged amount.
+                    Potential duplicates are identified by matching service date, family member, medical type, base fee and charged amounts.
                     Charges with "NO DUP" in notes are excluded.
                 </small>
             </div>
@@ -124,10 +124,11 @@
                                 <th class="sortable" data-column="3">Type <i class="bi bi-arrow-down-up"></i></th>
                                 <th class="sortable" data-column="4">Provider <i class="bi bi-arrow-down-up"></i></th>
                                 <th class="sortable" data-column="5">Description <i class="bi bi-arrow-down-up"></i></th>
-                                <th class="sortable" data-column="6">Charged <i class="bi bi-arrow-down-up"></i></th>
-                                <th class="sortable" data-column="7">Owed <i class="bi bi-arrow-down-up"></i></th>
-                                <th class="sortable" data-column="8">Paid <i class="bi bi-arrow-down-up"></i></th>
-                                <th class="sortable" data-column="9">Status <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="6">EOB / Claim # <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="7">Charged <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="8">Owed <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="9">Paid <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="10">Status <i class="bi bi-arrow-down-up"></i></th>
                                 <th>Attchs</th>
                             </tr>
                         </thead>
@@ -173,6 +174,7 @@
                                         {% if charge.cpt_code and charge.cpt_code.lower() not in ['???','na','n/a'] %}<span class="text-muted">({{ charge.cpt_code }})</span> {% endif %}{{ charge.charge_description or '-' }}
                                     </a>
                                 </td>
+                                <td>{{ charge.eob_claim_num or '-' }}</td>
                                 <td>{{ charge.charged_amount | currency }}</td>
                                 <td>{{ charge.owed_amount | currency }}</td>
                                 <td>{{ charge.paid_amount_agg | currency }}</td>
@@ -412,7 +414,7 @@ function sortTable(column) {
         if (column === 1) { // Service Date column (account for checkbox column)
             valueA = new Date(cellA || '1900-01-01');
             valueB = new Date(cellB || '1900-01-01');
-    } else if ([6,7,8].includes(column)) { // Amount columns (charged, owed, paid)
+        } else if ([7,8,9].includes(column)) { // Amount columns (charged, owed, paid)
             valueA = parseFloat(cellA.replace(/[$,]/g, '')) || 0;
             valueB = parseFloat(cellB.replace(/[$,]/g, '')) || 0;
         } else { // Text columns

@@ -61,7 +61,12 @@ app.include_router(pages_router)
 @app.on_event("startup")
 def startup_check_db():
     try:
-        ok = db_config.test_connection()
+        # call the module-level helper which executes a simple query
+        try:
+            from database_config import test_connection
+        except Exception:
+            from .database_config import test_connection  # type: ignore
+        ok = test_connection()
         if ok:
             print("\u2705 Database connectivity test passed on startup")
         else:

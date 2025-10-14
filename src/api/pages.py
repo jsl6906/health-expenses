@@ -334,13 +334,14 @@ async def charges_page(request: Request, db: Session = Depends(get_db)):
     annotate_charges_with_paid(db, charges)
 
     # Identify potential duplicates
-    # Group by service_date, family_member, medical_type, charged_amount
-    # and find groups with more than 1 charge
+    # Group by service_date, family_member, medical_type, base_fee_amount, charged_amount
+    # so both the base fee and charged amount are considered when detecting duplicates
     duplicate_groups = (
         db.query(
             ChargeModel.service_date,
             ChargeModel.family_member,
             ChargeModel.medical_type,
+            ChargeModel.base_fee_amount,
             ChargeModel.charged_amount,
             _func.array_agg(ChargeModel.id).label("charge_ids"),
         )
@@ -348,6 +349,7 @@ async def charges_page(request: Request, db: Session = Depends(get_db)):
             ChargeModel.service_date,
             ChargeModel.family_member,
             ChargeModel.medical_type,
+            ChargeModel.base_fee_amount,
             ChargeModel.charged_amount,
         )
         .having(_func.count(ChargeModel.id) > 1)
