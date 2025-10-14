@@ -8,6 +8,7 @@
     <a href="/charges" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to Charges</a>
     {% if provider %}<a href="/providers/{{ provider.id }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-building"></i> Provider</a>{% endif %}
     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editChargeModal"><i class="bi bi-pencil"></i> Edit</button>
+    <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#mergeChargeModal"><i class="bi bi-arrow-left-right"></i> Merge</button>
     <button class="btn btn-sm btn-outline-danger" id="deleteChargeBtn"><i class="bi bi-trash"></i> Delete</button>
   </div>
 </div>
@@ -26,7 +27,12 @@
       <div class="card-body small">
         <dl class="row mb-0">
           <dt class="col-5">Service Date</dt><dd class="col-7">{{ charge.service_date.strftime('%#m/%#d/%y') if charge.service_date else '-' }}</dd>
-          <dt class="col-5">Family Member</dt><dd class="col-7">{{ charge.family_member or '-' }}</dd>
+            <dt class="col-5">Family Member</dt><dd class="col-7">
+              {% set fm = charge.family_member or '' %}
+              {% set emoji_map = {'Alex': '👨', 'Jordan': '👩', 'Sam': '👦', 'Riley': '👧'} %}
+              {% set emoji = emoji_map.get(fm, '') %}
+              {% if emoji %}{{ emoji }} {{ fm }}{% else %}{{ fm or '-' }}{% endif %}
+            </dd>
           <dt class="col-5">Medical Type</dt><dd class="col-7">{{ charge.medical_type or '-' }}</dd>
           <dt class="col-5">Provider</dt><dd class="col-7">{% if provider %}<a href="/providers/{{ provider.id }}">{{ provider.provider_name }}</a>{% else %}-{% endif %}</dd>
           <dt class="col-5">Doctor</dt><dd class="col-7">{{ charge.doctor_name or '-' }}</dd>
@@ -115,7 +121,7 @@
 {% endblock %}
 
 {% block scripts %}
-<span id="chargeMeta" data-charge-id="{{ charge.id }}" data-provider-id="{{ provider.id if provider else '' }}" hidden></span>
+<span id="chargeMeta" data-charge-id="{{ charge.id }}" data-provider-id="{{ provider.id if provider else '' }}" data-family-member="{{ charge.family_member or '' }}" data-charged-amount="{{ charge.charged_amount or 0 }}" hidden></span>
 <script>
 function applyStriping(tableId){const t=document.getElementById(tableId);if(!t)return;const rows=[...t.querySelectorAll('tbody tr')].filter(r=>r.style.display!=='none');rows.forEach(r=>r.classList.remove('table-alt'));rows.forEach((r,i)=>{if(i%2===1)r.classList.add('table-alt');});}
 applyStriping('paymentsTable');
@@ -151,7 +157,7 @@ window.addEventListener('DOMContentLoaded',()=>{
     try{
       const resp=await fetch(`/api/charges/${chargeId}/apply-payment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
       if(resp.ok){location.reload();}else{const err=await resp.json();alert('Error: '+(err.detail||'applying payment'));}
-    }catch(ex){alert('Network error: '+ex.message);}  
+    }catch(ex){alert('Network error: '+ex.message);}
   });
 
   const attachmentsList=document.getElementById('attachmentsList');
@@ -217,8 +223,381 @@ window.addEventListener('DOMContentLoaded',()=>{
   if(delBtn){
     delBtn.addEventListener('click', async()=>{
       if(!confirm('Delete this charge? This will remove its attachments and unlink any payments.')) return;
-      try{const resp=await fetch(`/api/charges/${chargeId}`,{method:'DELETE'});if(resp.ok){window.location='/charges';}else{const j=await resp.json().catch(()=>({}));alert('Failed to delete charge: '+(j.detail||resp.status));}}catch(ex){alert('Network error deleting charge: '+ex.message);}    
+      try{const resp=await fetch(`/api/charges/${chargeId}`,{method:'DELETE'});if(resp.ok){window.location='/charges';}else{const j=await resp.json().catch(()=>({}));alert('Failed to delete charge: '+(j.detail||resp.status));}}catch(ex){alert('Network error deleting charge: '+ex.message);}
     });
+  }
+
+  // Merge Charge Modal functionality - Advanced merge like main charges table
+  const mergeChargeModal = document.getElementById('mergeChargeModal');
+  if (mergeChargeModal) {
+    // Get current charge details for filtering
+    const currentFamilyMember = meta.dataset.familyMember;
+    const currentChargedAmount = parseFloat(meta.dataset.chargedAmount);
+
+    // Load available charges when modal is shown
+    mergeChargeModal.addEventListener('show.bs.modal', async () => {
+      const select = document.getElementById('targetChargeSelect');
+
+      // Show loading state
+      select.innerHTML = '<option value="">Loading charges...</option>';
+
+      // Hide the merge preview initially
+      document.getElementById('mergePreview').style.display = 'none';
+
+      try {
+        const resp = await fetch('/api/charges/');
+
+        if (resp.ok) {
+          const allCharges = await resp.json();
+          console.log('Total charges received:', allCharges.length);
+          console.log('Current charge - Family:', currentFamilyMember, 'Amount:', currentChargedAmount);
+
+          // Filter charges: same family member, same charged amount, exclude current charge
+          const filteredCharges = allCharges.filter(c => {
+            const familyMatch = c.family_member === currentFamilyMember;
+            const amountDiff = Math.abs((c.charged_amount || 0) - currentChargedAmount);
+            const amountMatch = amountDiff < 0.01; // Allow small floating point differences
+            const notSelf = c.id !== chargeId;
+
+            console.log(`Charge #${c.id}: Family='${c.family_member}' (match: ${familyMatch}), Amount=${c.charged_amount} (diff: ${amountDiff}, match: ${amountMatch}), NotSelf: ${notSelf}`);
+
+            return notSelf && familyMatch && amountMatch;
+          });
+
+          console.log(`Filtered charges count: ${filteredCharges.length}`);
+          if (filteredCharges.length > 0) {
+            console.log('Filtered charges:', filteredCharges.map(c => `#${c.id} - ${c.charge_description}`));
+          }
+
+          if (filteredCharges.length === 0) {
+            select.innerHTML = '<option value="">No matching charges found</option>';
+            return;
+          }
+
+          renderChargeOptions(filteredCharges);
+
+          // Add the change event listener after options are populated
+          select.addEventListener('change', handleTargetChargeSelection);
+
+        } else {
+          select.innerHTML = '<option value="">Failed to load charges</option>';
+        }
+      } catch (err) {
+        select.innerHTML = '<option value="">Error loading charges</option>';
+      }
+    });
+
+    // Clean up event listener when modal is hidden
+    mergeChargeModal.addEventListener('hide.bs.modal', () => {
+      const select = document.getElementById('targetChargeSelect');
+      if (select) {
+        select.removeEventListener('change', handleTargetChargeSelection);
+      }
+    });
+
+    function renderChargeOptions(charges) {
+      const select = document.getElementById('targetChargeSelect');
+      select.innerHTML = '';
+
+      console.log('Rendering charge options for', charges.length, 'charges');
+
+      if (charges.length === 0) {
+        select.innerHTML = '<option value="">No matching charges found</option>';
+        return;
+      }
+
+      // Add a default empty option
+      const defaultOption = document.createElement('option');
+      defaultOption.value = '';
+      defaultOption.textContent = 'Select a charge to merge with...';
+      select.appendChild(defaultOption);
+
+      // Sort charges by service date (newest first)
+      charges.sort((a, b) => {
+        if (!a.service_date && !b.service_date) return 0;
+        if (!a.service_date) return 1;
+        if (!b.service_date) return -1;
+        return new Date(b.service_date) - new Date(a.service_date);
+      });
+
+      charges.forEach(c => {
+        const option = document.createElement('option');
+        option.value = c.id;
+
+        const serviceDate = c.service_date ? new Date(c.service_date).toLocaleDateString() : 'No date';
+        const description = c.charge_description || 'No description';
+        const cptCode = c.cpt_code ? `(${c.cpt_code})` : '';
+        const providerName = c.provider_name || 'No provider';
+
+        option.textContent = `#${c.id} - ${serviceDate} - ${description} ${cptCode} - ${providerName}`;
+        select.appendChild(option);
+
+        console.log(`Added option: #${c.id} - ${description}`);
+      });
+    }
+
+    // Handle charge selection to show merge preview
+    async function handleTargetChargeSelection(e) {
+      const targetChargeId = e.target.value;
+      console.log('Target charge selected:', targetChargeId);
+
+      if (!targetChargeId) {
+        document.getElementById('mergePreview').style.display = 'none';
+        return;
+      }
+
+      console.log('Fetching merge comparison for charges:', chargeId, targetChargeId);
+
+      try {
+        const resp = await fetch('/api/charges/merge-compare', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ charge_ids: [chargeId, parseInt(targetChargeId)] })
+        });
+
+        if (resp.ok) {
+          const data = await resp.json();
+          console.log('Merge comparison data received:', data);
+          populateChargeMergeModal(data.charges);
+          document.getElementById('mergePreview').style.display = 'block';
+        } else {
+          console.error('Failed to fetch merge comparison:', resp.status);
+        }
+      } catch (err) {
+        console.error('Error loading merge comparison:', err);
+      }
+    }
+
+    // Handle merge form submission with field selection
+    document.getElementById('mergeChargeForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const formData = new FormData(e.target);
+      const targetChargeId = formData.get('target_charge_id');
+      const statusEl = document.getElementById('mergeStatus');
+      const submitBtn = e.target.querySelector('button[type="submit"]');
+      const originalBtnText = submitBtn.innerHTML;
+
+      if (!targetChargeId) {
+        statusEl.innerHTML = '<span class="text-danger">Please select a target charge.</span>';
+        return;
+      }
+
+      // Check if merge preview is visible (field selection is shown)
+      const mergePreview = document.getElementById('mergePreview');
+      if (!mergePreview || mergePreview.style.display === 'none') {
+        statusEl.innerHTML = '<span class="text-danger">Please select a charge to see field comparison, then try again.</span>';
+        return;
+      }
+
+      // Collect merged field values from radio buttons
+      const mergedFields = {};
+      const radioInputs = e.target.querySelectorAll('input[type="radio"]:checked');
+
+      if (radioInputs.length === 0) {
+        statusEl.innerHTML = '<span class="text-danger">No field selections found. Please select a charge to compare fields.</span>';
+        return;
+      }
+
+      radioInputs.forEach(radio => {
+        mergedFields[radio.name] = radio.value || null;
+      });
+
+      console.log('Submitting merge with fields:', mergedFields);
+
+      // Show working indicator
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Merging...';
+      statusEl.innerHTML = '<span class="text-info">Merging charges...</span>';
+
+      // Determine which charge should be target vs source based on field selections
+      const charge1Selections = Object.values(mergedFields).filter(value => {
+        const matchingRadio = e.target.querySelector(`input[type="radio"][value="${value}"]:checked`);
+        return matchingRadio && matchingRadio.id.endsWith('_1');
+      }).length;
+
+      const charge2Selections = Object.values(mergedFields).filter(value => {
+        const matchingRadio = e.target.querySelector(`input[type="radio"][value="${value}"]:checked`);
+        return matchingRadio && matchingRadio.id.endsWith('_2');
+      }).length;
+
+      // Use the charge that contributes more fields as the target
+      let sourceChargeId, targetChargeIdFinal;
+      if (charge1Selections >= charge2Selections) {
+        targetChargeIdFinal = chargeId;  // Keep current charge, delete selected
+        sourceChargeId = parseInt(targetChargeId);
+      } else {
+        targetChargeIdFinal = parseInt(targetChargeId);  // Keep selected charge, delete current
+        sourceChargeId = chargeId;
+      }
+
+      try {
+        const resp = await fetch('/api/charges/merge-with-fields', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source_charge_id: sourceChargeId,
+            target_charge_id: targetChargeIdFinal,
+            merged_fields: mergedFields
+          })
+        });
+
+        if (resp.ok) {
+          const result = await resp.json();
+          statusEl.innerHTML = `<span class="text-success">Merge completed! Redirecting...</span>`;
+
+          // Redirect to the final target charge's detail page
+          setTimeout(() => {
+            window.location.href = `/charges/${targetChargeIdFinal}`;
+          }, 1500);
+        } else {
+          const errorData = await resp.json().catch(() => ({}));
+          statusEl.innerHTML = `<span class="text-danger">Merge failed: ${errorData.detail || 'Unknown error'}</span>`;
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = originalBtnText;
+        }
+      } catch (err) {
+        statusEl.innerHTML = `<span class="text-danger">Network error: ${err.message}</span>`;
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
+      }
+    });
+  }
+
+  // Merge modal population function (copied from charges.html)
+  function populateChargeMergeModal(charges) {
+    const [charge1, charge2] = charges;
+    const modalBody = document.getElementById('chargeMergeModalBody');
+
+    const fields = [
+        { key: 'service_date', label: 'Service Date', type: 'date' },
+        { key: 'family_member', label: 'Family Member', type: 'text' },
+        { key: 'medical_type', label: 'Medical Type', type: 'text' },
+        { key: 'provider_name', label: 'Provider', type: 'display', valueKey: 'provider_id' },
+        { key: 'doctor_name', label: 'Doctor Name', type: 'text' },
+        { key: 'charge_description', label: 'Description', type: 'text' },
+        { key: 'cpt_code', label: 'CPT Code', type: 'text' },
+        { key: 'charged_amount', label: 'Charged Amount', type: 'number' },
+        { key: 'owed_amount', label: 'Owed Amount', type: 'number' },
+        { key: 'base_fee_amount', label: 'Base Fee', type: 'number' },
+        { key: 'insurance_paid_amount', label: 'Insurance Paid', type: 'number' },
+        { key: 'insurance_discount_amount', label: 'Insurance Discount', type: 'number' },
+        { key: 'reimbursement_amount', label: 'Reimbursement', type: 'number' },
+        { key: 'eob_claim_num', label: 'EOB/Claim #', type: 'text' },
+        { key: 'notes', label: 'Notes', type: 'textarea' }
+    ];
+
+    // Helper function to format currency values
+    function formatCurrency(value) {
+        if (value === null || value === undefined || value === '') {
+            return '';
+        }
+        const num = parseFloat(value);
+        if (isNaN(num)) {
+            return value;
+        }
+        return num.toLocaleString('en-US', {
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: 2
+        });
+    }
+
+    // Determine which charge has more complete data
+    function getCompleteness(charge) {
+        let score = 0;
+        fields.forEach(field => {
+            const valueKey = field.valueKey || field.key;
+            const value = charge[valueKey];
+            // Count as complete if value exists and is not empty string
+            // Note: 0 and 0.0 are valid values for numeric fields
+            if (value !== null && value !== undefined && value !== '') {
+                score++;
+            }
+        });
+        return score;
+    }
+
+    const completeness1 = getCompleteness(charge1);
+    const completeness2 = getCompleteness(charge2);
+    const moreCompleteCharge = completeness1 >= completeness2 ? 1 : 2;
+
+    let html = `
+        <div class="mb-3">
+            <div class="alert alert-info">
+                <strong>Field Selection:</strong> Choose which values to keep for each field below.
+                <br><small class="text-muted">Auto-selected values from Charge #${moreCompleteCharge === 1 ? charge1.id : charge2.id} (more complete: ${Math.max(completeness1, completeness2)}/${fields.length} fields)</small>
+            </div>
+        </div>
+        <div class="row">
+            <div class="col-md-4"><strong>Field</strong></div>
+            <div class="col-md-4"><strong>Charge #${charge1.id}</strong> <small class="text-muted">(${completeness1}/${fields.length})</small></div>
+            <div class="col-md-4"><strong>Charge #${charge2.id}</strong> <small class="text-muted">(${completeness2}/${fields.length})</small></div>
+        </div>
+        <hr>
+    `;
+
+    fields.forEach(field => {
+        const valueKey = field.valueKey || field.key;
+        const actualVal1 = charge1[valueKey];
+        const actualVal2 = charge2[valueKey];
+
+        // Format display values based on field type
+        let val1, val2;
+        if (field.type === 'number') {
+            val1 = actualVal1 !== null && actualVal1 !== undefined && actualVal1 !== '' ? formatCurrency(actualVal1) : '';
+            val2 = actualVal2 !== null && actualVal2 !== undefined && actualVal2 !== '' ? formatCurrency(actualVal2) : '';
+        } else if (field.key === 'provider_name') {
+            val1 = charge1.provider_name || '';
+            val2 = charge2.provider_name || '';
+        } else {
+            val1 = actualVal1 || '';
+            val2 = actualVal2 || '';
+        }
+
+        // Determine which option to select by default
+        let defaultSelection = 1; // Default to charge 1
+
+        const hasVal1 = actualVal1 !== null && actualVal1 !== undefined && actualVal1 !== '';
+        const hasVal2 = actualVal2 !== null && actualVal2 !== undefined && actualVal2 !== '';
+
+        if (actualVal1 === actualVal2) {
+            // Values are the same, select either one
+            defaultSelection = 1;
+        } else if (!hasVal1 && hasVal2) {
+            // Only charge 2 has a value
+            defaultSelection = 2;
+        } else if (hasVal1 && !hasVal2) {
+            // Only charge 1 has a value
+            defaultSelection = 1;
+        } else if (hasVal1 && hasVal2) {
+            // Both have values, prefer the more complete charge
+            defaultSelection = moreCompleteCharge;
+        }
+
+        html += `
+            <div class="row mb-2 align-items-center">
+                <div class="col-md-4"><label class="form-label mb-0">${field.label}</label></div>
+                <div class="col-md-4">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="${field.key}" value="${actualVal1 || ''}" id="${field.key}_1" ${defaultSelection === 1 ? 'checked' : ''}>
+                        <label class="form-check-label" for="${field.key}_1">${val1 || '(empty)'}</label>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="${field.key}" value="${actualVal2 || ''}" id="${field.key}_2" ${defaultSelection === 2 ? 'checked' : ''}>
+                        <label class="form-check-label" for="${field.key}_2">${val2 || '(empty)'}</label>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+
+    modalBody.innerHTML = html;
+
+    // Store charge IDs for form submission
+    document.getElementById('mergeChargeForm').dataset.chargeIds = JSON.stringify([charge1.id, charge2.id]);
   }
 });
 </script>
@@ -241,8 +620,10 @@ window.addEventListener('DOMContentLoaded',()=>{
             <div class="col-md-4 mb-2">
               <label class="form-label">Family Member *</label>
               <select name="family_member" class="form-select" required>
-                {% for fm in ['Alex','Jordan','Sam','Riley'] %}
-                  <option value="{{ fm }}" {% if charge.family_member==fm %}selected{% endif %}>{{ fm }}</option>
+                {% for fm in ['Alex', 'Jordan', 'Sam', 'Riley'] %}
+                  <option value="{{ fm }}" {% if charge.family_member==fm %}selected{% endif %}>
+                    {% if fm=='Alex' %}👨{% elif fm=='Jordan' %}👩{% elif fm=='Sam' %}👦{% elif fm=='Riley' %}👧{% endif %} {{ fm }}
+                  </option>
                 {% endfor %}
               </select>
             </div>
@@ -303,7 +684,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       ['charged_amount','owed_amount','insurance_paid_amount','base_fee_amount','reimbursement_amount','insurance_discount_amount'].forEach(k=>{if(payload[k]!==null && payload[k]!=='' ) payload[k]=parseFloat(payload[k]);});
       try{const resp=await fetch(`/api/charges/${chargeId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
         if(resp.ok){location.reload();} else { const j=await resp.json().catch(()=>({})); alert('Update failed: '+(j.detail||resp.status));}}
-      catch(ex){alert('Network error updating charge: '+ex.message);}    
+      catch(ex){alert('Network error updating charge: '+ex.message);}
     });
   }
 });
@@ -353,6 +734,50 @@ document.addEventListener('DOMContentLoaded',()=>{
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
           <button type="submit" class="btn btn-primary">Save Payment</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Merge Charge Modal -->
+<div class="modal fade" id="mergeChargeModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Merge Charges</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="mergeChargeForm">
+        <div class="modal-body">
+          <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle"></i>
+            <strong>Advanced Merge:</strong> Select a charge to merge with, then choose which values to keep for each field.
+            All payments and attachments will be moved to the final merged charge.
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Select Charge to Merge With <span class="text-danger">*</span></label>
+            <select name="target_charge_id" class="form-select" id="targetChargeSelect" required>
+              <option value="">Loading charges...</option>
+            </select>
+            <div class="form-text">Only showing charges for <strong>{{ charge.family_member }}</strong> with the same amount <strong>${{ charge.charged_amount }}</strong>.</div>
+          </div>
+
+          <div id="mergePreview" style="display: none;">
+            <hr>
+            <h6>Field Selection:</h6>
+            <div id="chargeMergeModalBody">
+              <!-- Merge comparison will be populated here -->
+            </div>
+          </div>
+
+          <div id="mergeStatus" class="small mt-2"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-warning">
+            <i class="bi bi-arrow-left-right"></i> Merge Charges
+          </button>
         </div>
       </form>
     </div>

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import List, Optional
 
-from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 try:
     from models.database import Attachment  # type: ignore
@@ -41,12 +41,20 @@ def create_attachment(
 
 
 def list_attachments_for_charge(db: Session, charge_id: int) -> List[Attachment]:
-    stmt = select(Attachment).where(Attachment.charge_id == charge_id).order_by(Attachment.id.desc())
+    stmt = (
+        select(Attachment)
+        .where(Attachment.charge_id == charge_id)
+        .order_by(Attachment.id.desc())
+    )
     return list(db.scalars(stmt))
 
 
 def list_attachments_for_payment(db: Session, payment_id: int) -> List[Attachment]:
-    stmt = select(Attachment).where(Attachment.payment_id == payment_id).order_by(Attachment.id.desc())
+    stmt = (
+        select(Attachment)
+        .where(Attachment.payment_id == payment_id)
+        .order_by(Attachment.id.desc())
+    )
     return list(db.scalars(stmt))
 
 

@@ -9,7 +9,8 @@ All functions are read-only helpers working off the SQLAlchemy session and
 existing ORM models (Charge, Payment, ChargePaymentXref).
 """
 from __future__ import annotations
-from typing import Iterable, Dict, List, Any
+
+from typing import Any, Dict, Iterable, List
 
 from sqlalchemy.orm import Session
 
@@ -27,12 +28,18 @@ def even_allocation_map(db: Session, charge_ids: Iterable[int]) -> Dict[int, flo
     if not charge_ids:
         return {}
     try:
-        from models.database import ChargePaymentXref as XrefModel, Payment as PaymentModel  # type: ignore
+        from models.database import ChargePaymentXref as XrefModel  # type: ignore
+        from models.database import Payment as PaymentModel
     except ImportError:  # pragma: no cover
-        from .models.database import ChargePaymentXref as XrefModel, Payment as PaymentModel  # type: ignore
+        from .models.database import ChargePaymentXref as XrefModel  # type: ignore
+        from .models.database import Payment as PaymentModel
 
     # Fetch all xrefs for provided charge ids.
-    xrefs = db.query(XrefModel.payment_id, XrefModel.charge_id).filter(XrefModel.charge_id.in_(charge_ids)).all()
+    xrefs = (
+        db.query(XrefModel.payment_id, XrefModel.charge_id)
+        .filter(XrefModel.charge_id.in_(charge_ids))
+        .all()
+    )
     if not xrefs:
         return {cid: 0.0 for cid in charge_ids}
 
@@ -41,11 +48,13 @@ def even_allocation_map(db: Session, charge_ids: Iterable[int]) -> Dict[int, flo
     payments_map: Dict[int, float] = {}
     if payment_ids:
         for p in db.query(PaymentModel).filter(PaymentModel.id.in_(payment_ids)).all():
-            raw_amt = getattr(p, 'payment_amount', None)
+            raw_amt = getattr(p, "payment_amount", None)
             try:
-                payments_map[int(getattr(p, 'id'))] = float(raw_amt) if raw_amt is not None else 0.0
+                payments_map[int(getattr(p, "id"))] = (
+                    float(raw_amt) if raw_amt is not None else 0.0
+                )
             except Exception:
-                payments_map[int(getattr(p, 'id'))] = 0.0
+                payments_map[int(getattr(p, "id"))] = 0.0
 
     # Build mapping payment -> list of charge ids.
     payment_to_charges: Dict[int, List[int]] = {}
@@ -68,12 +77,12 @@ def annotate_charges_with_paid(db: Session, charges: List[Any]) -> None:
 
     Uses even_allocation_map for the set of charges.
     """
-    ids = [getattr(c, 'id', None) for c in charges]
+    ids = [getattr(c, "id", None) for c in charges]
     allocation = even_allocation_map(db, [cid for cid in ids if cid is not None])
     for ch in charges:
-        cid = getattr(ch, 'id', None)
+        cid = getattr(ch, "id", None)
         paid = allocation.get(cid, 0.0) if cid is not None else 0.0
-        setattr(ch, 'paid_amount_agg', paid)
+        setattr(ch, "paid_amount_agg", paid)
 
 
 def get_open_charges_for_provider(db: Session, provider_id: int) -> List[dict]:
@@ -94,22 +103,28 @@ def get_open_charges_for_provider(db: Session, provider_id: int) -> List[dict]:
 
     open_result: List[dict] = []
     for c in charges:
-        owed_raw = getattr(c, 'owed_amount', None)
+        owed_raw = getattr(c, "owed_amount", None)
         try:
             owed = float(owed_raw) if owed_raw is not None else 0.0
         except Exception:
             owed = 0.0
-        paid = getattr(c, 'paid_amount_agg', 0.0) or 0.0
+        paid = getattr(c, "paid_amount_agg", 0.0) or 0.0
         remaining = max(owed - paid, 0.0)
         if remaining > 0.0001:  # treat tiny fractional remainder as zero
-            open_result.append({
-                'id': getattr(c, 'id', None),
-                'service_date': c.service_date.isoformat() if getattr(c, 'service_date', None) else None,
-                'description': getattr(c, 'charge_description', None),
-                'remaining': remaining,
-                'owed': owed,
-                'paid_allocated': paid,
-            })
+            open_result.append(
+                {
+                    "id": getattr(c, "id", None),
+                    "service_date": c.service_date.isoformat()
+                    if getattr(c, "service_date", None)
+                    else None,
+                    "description": getattr(c, "charge_description", None),
+                    "remaining": remaining,
+                    "owed": owed,
+                    "paid_allocated": paid,
+                }
+            )
     # Sort most recent service_date then remaining desc
-    open_result.sort(key=lambda r: (r['service_date'] or '', -r['remaining']), reverse=True)
+    open_result.sort(
+        key=lambda r: (r["service_date"] or "", -r["remaining"]), reverse=True
+    )
     return open_result

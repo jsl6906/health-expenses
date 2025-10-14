@@ -5,80 +5,78 @@
   <h2><i class="bi bi-filetype-json"></i> Import Charges from JSON (FHIR Bundle)</h2>
   <a href="/charges" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to Charges</a>
 </div>
-<div class="card mb-3">
-  <div class="card-body">
-  <form id="jsonImportForm" class="row g-3" enctype="multipart/form-data">
+<div class="card mb-3" id="dropZoneCard">
+  <div class="card-body p-3">
+    <form id="jsonImportForm" class="row g-3" enctype="multipart/form-data">
+      <div class="col-12">
+        <div id="dropZone" class="p-4 border border-2 rounded text-center bg-light position-relative">
+          <input type="file" id="fileInput" name="file" accept="application/json" class="position-absolute w-100 h-100" style="opacity:0;left:0;top:0;cursor:pointer;" />
+          <div id="dropZoneContent">
+            <i class="bi bi-cloud-arrow-up" style="font-size:2rem;"></i>
+            <p class="mb-0"><strong>Drag & Drop</strong> your FHIR Bundle JSON here, or click to choose</p>
+            <p class="text-muted small mb-0">Only one file needed. We will first analyze providers.</p>
+            <p class="small mt-2 mb-0 text-primary" id="selectedFilename"></p>
+          </div>
+        </div>
+      </div>
       <div class="col-md-4">
-        <label class="form-label">JSON File (FHIR Bundle)</label>
-  <input type="file" class="form-control form-control-sm" name="file" accept="application/json">
-        <div class="form-text">Must be a FHIR Bundle containing ExplanationOfBenefit or Claim resources.</div>
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">Provider (override)</label>
-        <select name="provider_id" class="form-select form-select-sm">
-          <option value="">Auto / From Resource</option>
-          {% for provider in providers %}
-          <option value="{{ provider.id }}">{{ provider.provider_name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-3">
-        <label class="form-label">Default Family Member</label>
-        <select name="family_member" class="form-select form-select-sm">
-          <option value="">(None)</option>
+        <label class="form-label">Default Family Member <span class="text-danger">*</span></label>
+        <select name="family_member" class="form-select form-select-sm" id="familySelect" required>
+          <option value="">-- Select --</option>
           <option>Alex</option>
           <option>Jordan</option>
           <option>Sam</option>
           <option>Riley</option>
         </select>
       </div>
-      <div class="col-md-2">
-        <label class="form-label">Medical Type</label>
-        <select name="medical_type" class="form-select form-select-sm">
-          <option value="">Medical</option>
-          <option>Medical</option>
-          <option>Dental</option>
-          <option>Vision</option>
-          <option>Mental Health</option>
-          <option>Other</option>
+      <div class="col-md-4">
+        <label class="form-label">Medical Type <span class="text-danger">*</span></label>
+        <select name="medical_type" class="form-select form-select-sm" id="medicalTypeSelect" required>
+          <option value="">-- Select --</option>
+          <option value="Medical" selected>Medical</option>
+          <option value="Dental">Dental</option>
+          <option value="Vision">Vision</option>
+          <option value="Mental Health">Mental Health</option>
+          <option value="Other">Other</option>
         </select>
       </div>
-      <div class="col-12">
-        <label class="form-label mb-1">OR Paste Raw JSON (Bundle / charges array)</label>
-        <textarea class="form-control form-control-sm font-monospace" name="json_text" rows="6" placeholder='Paste FHIR Bundle or [ { "description": "..." } ] here. If provided and no file chosen, this will be used instead of the file upload.'></textarea>
-        <div class="form-text">If both a file and pasted JSON are provided, the file takes precedence.</div>
-      </div>
-      <div class="col-12 d-flex justify-content-end">
-        <button type="submit" class="btn btn-primary btn-sm" id="previewBtn"><i class="bi bi-search"></i> Preview</button>
+      <div class="col-md-4 d-flex align-items-end justify-content-end">
+        <button type="button" class="btn btn-primary btn-sm" id="analyzeProvidersBtn" disabled><i class="bi bi-search"></i> Analyze JSON</button>
       </div>
     </form>
-    <div id="importStatus" class="small mt-3 text-muted"></div>
+    <div id="importStatus" class="small mt-2 text-muted"></div>
   </div>
 </div>
-<div id="resultsCard" class="card d-none">
+
+<div id="providerResultsCard" class="card d-none mb-3">
   <div class="card-body py-3">
-    <h5 class="mb-2">Preview Results</h5>
-      <div id="providerSection" class="mb-3 d-none">
-        <h6 class="mb-2">Provider Candidates</h6>
-        <div class="table-responsive" style="max-height:25vh;">
-          <table class="table table-sm table-bordered" id="providerPreviewTable">
-            <thead class="table-light">
-              <tr>
-                <th><input type="checkbox" id="selectAllProviders"></th>
-                <th>Name</th><th>Address</th><th>Location ID</th><th>Duplicate?</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <div class="small text-muted" id="providerSummary"></div>
-        <hr/>
-      </div>
-    <div id="summaryText" class="small mb-2"></div>
-    <div class="alert alert-info py-2 mb-2" id="selectionHint" style="display:none;">
-      Select the rows you want to insert, then click Commit Selected. Duplicates are pre-marked and will be skipped automatically.
+    <h5 class="mb-2">Provider Candidates</h5>
+    <div class="table-responsive" style="max-height:30vh;">
+      <table class="table table-sm table-bordered" id="providerAnalyzeTable">
+        <thead class="table-light">
+          <tr>
+            <th><input type="checkbox" id="selectAllProviders2" /></th>
+            <th>Name</th><th>Address</th><th>Full Ref</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
     </div>
-    <h6 class="mt-3">Charge Candidates</h6>
+    <div id="providerAnalyzeSummary" class="small text-muted mb-2"></div>
+    <div class="d-flex gap-2">
+      <button class="btn btn-success btn-sm" id="addProvidersBtn" disabled><i class="bi bi-plus-circle"></i> Add Providers</button>
+      <button class="btn btn-outline-secondary btn-sm" id="skipProvidersBtn"><i class="bi bi-forward"></i> Skip Provider Add</button>
+    </div>
+    <div id="providerAddStatus" class="small mt-2"></div>
+  </div>
+</div>
+
+<div id="chargeResultsCard" class="card d-none">
+  <div class="card-body py-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h5 class="mb-0">Charge Candidates</h5>
+      <button class="btn btn-outline-primary btn-sm" id="reanalyzeChargesBtn"><i class="bi bi-arrow-clockwise"></i> Re-Analyze</button>
+    </div>
     <div class="table-responsive" style="max-height:40vh;">
       <table class="table table-sm table-bordered" id="importPreviewTable">
         <thead class="table-light">
@@ -90,9 +88,10 @@
         <tbody></tbody>
       </table>
     </div>
+    <div id="chargeSummaryText" class="small text-muted mb-2"></div>
     <div class="d-flex gap-2 mt-3">
       <button class="btn btn-success btn-sm" id="commitBtn" disabled><i class="bi bi-check2-circle"></i> Commit Selected</button>
-      <button class="btn btn-outline-secondary btn-sm" id="resetPreview"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+      <button class="btn btn-outline-secondary btn-sm" id="resetAll"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
     </div>
     <div id="commitStatus" class="small mt-2"></div>
   </div>
@@ -100,198 +99,357 @@
 {% endblock %}
 {% block scripts %}
 <script>
+// --- Utility helpers ---
 function human(val){ if(val===null||val===undefined||val==='') return ''; return val; }
 function fmtCurrency(val){ if(val===null||val===undefined||val==='') return ''; const num = Number(val); if(isNaN(num)) return val; return num.toLocaleString('en-US',{style:'currency',currency:'USD'}); }
-let currentSessionId = null;
-let previewRows = [];
-let providerRows = [];
 
-async function submitJsonImport(e){
-  e.preventDefault();
-  const form = e.target;
+let currentSessionId = null;
+let providerCandidates = [];
+let chargeRows = [];
+let providersAdded = false;
+let globalDraggedFile = null; // track file if dropped outside the explicit drop zone
+
+function updateAnalyzeButtonState(){
+  const fam = document.getElementById('familySelect').value.trim();
+  const med = document.getElementById('medicalTypeSelect').value.trim();
+  const fileInput = document.getElementById('fileInput');
+  const fileReady = (fileInput.files && fileInput.files.length === 1) || !!globalDraggedFile;
+  document.getElementById('analyzeProvidersBtn').disabled = !(fam && med && fileReady);
+  const nameEl = document.getElementById('selectedFilename');
+  if(nameEl){
+    if(fileInput.files && fileInput.files.length){
+      nameEl.textContent = fileInput.files[0].name;
+    } else if(globalDraggedFile){
+      nameEl.textContent = globalDraggedFile.name;
+    } else {
+      nameEl.textContent = '';
+    }
+  }
+}
+
+async function analyzeProviders(){
   const status = document.getElementById('importStatus');
-  status.textContent = 'Uploading & parsing (preview)...';
-  const fileInput = form.querySelector('input[name="file"]');
-  const jsonTextarea = form.querySelector('textarea[name="json_text"]');
-  const providerId = form.querySelector('[name="provider_id"]').value;
-  const familyMember = form.querySelector('[name="family_member"]').value;
-  const medicalType = form.querySelector('[name="medical_type"]').value;
-  let useFile = fileInput && fileInput.files && fileInput.files.length > 0;
-  let pasted = (jsonTextarea && jsonTextarea.value.trim().length > 0) ? jsonTextarea.value.trim() : null;
-  if(!useFile && !pasted){
-    status.innerHTML = '<span class="text-danger">Provide either a JSON file or pasted JSON.</span>';
+  const fileInput = document.getElementById('fileInput');
+  const fileToUse = fileInput.files[0] || globalDraggedFile;
+  if(!fileToUse){
+    status.innerHTML = '<span class="text-danger">Please choose or drop a JSON file first.</span>';
     return;
   }
-  const btn = document.getElementById('previewBtn');
-  const prev = btn.innerHTML; btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm"></span> Working...';
-  let query = [];
-  if(providerId) query.push('provider_id='+encodeURIComponent(providerId));
-  if(familyMember) query.push('family_member='+encodeURIComponent(familyMember));
-  if(medicalType) query.push('medical_type='+encodeURIComponent(medicalType));
-  const url = '/api/charges/import-json' + (query.length?('?'+query.join('&')):'');
+
+  status.textContent = 'Analyzing providers...';
+  const btn = document.getElementById('analyzeProvidersBtn');
+  const prev = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Working...';
+
   try {
-    let resp;
-    if(useFile){
-      const fd = new FormData();
-      fd.append('file', fileInput.files[0]);
-      if(providerId) fd.append('provider_id', providerId);
-      if(familyMember) fd.append('family_member', familyMember);
-      if(medicalType) fd.append('medical_type', medicalType);
-      resp = await fetch(url, { method:'POST', body: fd });
-    } else {
-      resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: pasted });
-    }
+    // Read file as text and send as JSON body (backend supports both multipart and JSON body)
+    const fileText = await fileToUse.text();
+
+    const resp = await fetch('/api/charges/analyze-json/providers', {
+      method:'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: fileText
+    });
+
     if(!resp.ok){
-      let msg='Import failed';
+      let errorMsg = 'Upload failed';
       try {
-        const text = await resp.text();
-        try { const j = JSON.parse(text); if(j.detail) msg=j.detail; else msg = JSON.stringify(j); }
-        catch { msg = text; }
-      } catch{}
-      status.innerHTML='<span class="text-danger">'+msg+'</span>';
+        const errorData = await resp.json();
+        errorMsg = errorData.detail || JSON.stringify(errorData);
+      } catch {
+        errorMsg = await resp.text();
+      }
+      status.innerHTML = '<span class="text-danger">'+errorMsg+'</span>';
       return;
     }
     const data = await resp.json();
     currentSessionId = data.session_id;
-    previewRows = data.rows || [];
-    providerRows = data.providers || [];
-    status.innerHTML = '<span class="text-success">Preview ready: '+data.total_parsed+' rows ('+data.duplicate_count+' duplicates detected).</span>';
-    renderPreviewTables();
-  } catch(err){ status.innerHTML='<span class="text-danger">'+err+'</span>'; }
-  finally { btn.disabled=false; btn.innerHTML=prev; }
+    providerCandidates = data.providers || [];
+
+    // DEBUG: Log provider analysis results
+    console.log('Provider analysis results:', {
+      sessionId: currentSessionId,
+      totalCandidates: providerCandidates.length,
+      candidates: providerCandidates
+    });
+
+    renderProviderCandidates();
+    status.innerHTML = '<span class="text-success">Found '+providerCandidates.length+' provider candidates.</span>';
+  } catch(err){
+    status.innerHTML = '<span class="text-danger">Error: '+err.message+'</span>';
+  } finally {
+    btn.disabled = false; btn.innerHTML = prev;
+  }
+}function renderProviderCandidates(){
+  const card = document.getElementById('providerResultsCard');
+  const tbody = document.querySelector('#providerAnalyzeTable tbody');
+  tbody.innerHTML='';
+  providerCandidates.sort((a,b)=> (a.provider_name||'').localeCompare(b.provider_name||''));
+  providerCandidates.forEach(pc => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input type="checkbox" class="provider-select2" data-loc="${pc.location_id||''}" ${pc.duplicate?'disabled':''} ${pc.duplicate?'':'checked'}></td>
+      <td>${human(pc.provider_name||'')}</td>
+      <td>${human(pc.provider_address||'')}</td>
+      <td><code class="small">${human(pc.full_url||'')}</code></td>
+      <td>${pc.duplicate?'<span class="badge bg-warning text-dark">Existing</span>':'<span class="badge bg-success">New</span>'}</td>`;
+    tbody.appendChild(tr);
+  });
+  document.getElementById('providerAnalyzeSummary').textContent = providerCandidates.length?`${providerCandidates.length} provider candidates (${providerCandidates.filter(p=>p.duplicate).length} existing, ${providerCandidates.filter(p=>!p.duplicate).length} new). Select which new providers to add.`:'No provider candidates.';
+  card.classList.remove('d-none');
+  updateProviderAddButtonState();
 }
 
-function renderPreviewTables(){
+function updateProviderAddButtonState(){
+  const any = Array.from(document.querySelectorAll('.provider-select2')).some(cb=>cb.checked);
+  document.getElementById('addProvidersBtn').disabled = !any;
+}
+
+async function addSelectedProviders(){
+  const status = document.getElementById('providerAddStatus');
+  const btn = document.getElementById('addProvidersBtn');
+  const prevHtml = btn.innerHTML;
+
+  const selected = Array.from(document.querySelectorAll('.provider-select2')).filter(cb=>cb.checked).map(cb=>cb.getAttribute('data-loc'));
+  if(!selected.length){
+    status.innerHTML = '<span class="text-danger">Select at least one provider (or click Skip).</span>';
+    return;
+  }
+
+  // Show working indicator
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Adding...';
+  status.textContent = 'Adding providers...';
+
+  try {
+    const resp = await fetch('/api/charges/analyze-json/providers/add', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ session_id: currentSessionId, selected_provider_location_ids: selected }) });
+    if(!resp.ok){
+      const txt = await resp.text();
+      status.innerHTML = '<span class="text-danger">'+txt+'</span>';
+      btn.innerHTML = prevHtml;
+      btn.disabled = false;
+      return;
+    }
+    const data = await resp.json();
+    providersAdded = true;
+    status.innerHTML = '<span class="text-success">Inserted '+data.inserted_count+' providers ('+data.skipped_existing+' existing).</span>';
+
+    // Update button to show completion
+    btn.innerHTML = '<i class="bi bi-check2-circle"></i> Added';
+    btn.disabled = true;
+
+    analyzeCharges();
+  } catch(err){
+    status.innerHTML = '<span class="text-danger">'+err+'</span>';
+    btn.innerHTML = prevHtml;
+    btn.disabled = false;
+  }
+}
+
+function skipProviders(){
+  providersAdded = false;
+  analyzeCharges();
+}
+
+async function analyzeCharges(){
+  if(!currentSessionId){ return; }
+  const fam = document.getElementById('familySelect').value.trim();
+  const med = document.getElementById('medicalTypeSelect').value.trim();
+  if(!fam || !med){
+    document.getElementById('importStatus').innerHTML = '<span class="text-danger">Family member and medical type required.</span>';
+    return;
+  }
+
+  const status = document.getElementById('importStatus');
+  const btn = document.getElementById('reanalyzeChargesBtn');
+  const prevHtml = btn ? btn.innerHTML : '';
+
+  // Show working indicator
+  status.textContent = 'Analyzing charge candidates...';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Analyzing...';
+  }
+
+  try {
+    const params = new URLSearchParams({ session_id: currentSessionId, family_member: fam, medical_type: med });
+    const resp = await fetch('/api/charges/analyze-json/charges?'+params.toString(), { method:'POST' });
+    if(!resp.ok){
+      const txt = await resp.text();
+      status.innerHTML = '<span class="text-danger">'+txt+'</span>';
+      if (btn) {
+        btn.innerHTML = prevHtml;
+        btn.disabled = false;
+      }
+      return;
+    }
+    const data = await resp.json();
+    chargeRows = data.rows || [];
+
+    // DEBUG: Log charge analysis results with debug info
+    console.log('Charge analysis results:', {
+      sessionId: currentSessionId,
+      totalRows: chargeRows.length,
+      sampleRowsWithDebug: chargeRows.slice(0, 3).map(r => ({
+        index: r.index,
+        description: r.description,
+        facility_name: r.facility_location_name,
+        facility_id: r.facility_location_id,
+        debug: r._debug_info
+      }))
+    });
+
+    renderChargeRows();
+    status.innerHTML = '<span class="text-success">Parsed '+chargeRows.length+' potential charges.</span>';
+  } catch(err){
+    status.innerHTML = '<span class="text-danger">'+err+'</span>';
+  } finally {
+    // Restore button state
+    if (btn) {
+      btn.innerHTML = prevHtml;
+      btn.disabled = false;
+    }
+  }
+}
+
+function renderChargeRows(){
+  const card = document.getElementById('chargeResultsCard');
   const tbody = document.querySelector('#importPreviewTable tbody');
   tbody.innerHTML='';
-  // Sort previewRows by date (asc), then location name/id (asc), then charged desc
-  previewRows.sort((a,b)=>{
-    const da = a.service_date || '';
-    const db = b.service_date || '';
-    if(da !== db) return da < db ? -1 : 1;
-    const la = (a.facility_location_name || a.facility_location_id || '').toLowerCase();
-    const lb = (b.facility_location_name || b.facility_location_id || '').toLowerCase();
-    if(la !== lb) return la < lb ? -1 : 1;
-    const ca = Number(a.charged_amount||0);
-    const cb = Number(b.charged_amount||0);
-    return cb - ca; // higher charged first
-  });
-  previewRows.forEach(r => {
-    const tr=document.createElement('tr');
-    tr.dataset.index = r.index;
+  chargeRows.sort((a,b)=>{
+    const da = a.service_date||''; const db = b.service_date||''; if(da!==db) return da<db?-1:1; const la=(a.facility_location_name||a.facility_location_id||'').toLowerCase(); const lb=(b.facility_location_name||b.facility_location_id||'').toLowerCase(); if(la!==lb) return la<lb?-1:1; return Number(b.charged_amount||0)-Number(a.charged_amount||0); });
+  chargeRows.forEach(r=>{
+    const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><input type="checkbox" class="row-select" data-row="${r.index}" ${r.duplicate?'':'checked'} ${r.duplicate?'disabled':''}></td>
+      <td><input type="checkbox" class="row-select" data-row="${r.index}" ${r.duplicate?'disabled':''} ${r.duplicate?'':'checked'}></td>
       <td>${r.index}</td>
       <td>${human(r.service_date||'')}</td>
-  <td>${human(r.eob_claim_num||'')}</td>
-  <td>${human(r.description||'')}</td>
+      <td>${human(r.eob_claim_num||'')}</td>
+      <td>${human(r.description||'')}</td>
       <td>${human(r.cpt_code||'')}</td>
       <td>${human(r.doctor_name||'')}</td>
-      <td>${human(r.facility_location_name || r.facility_location_id || '')}</td>
+      <td>${human(r.facility_location_name||r.facility_location_id||'')}</td>
       <td>${fmtCurrency(r.charged_amount)}</td>
       <td>${fmtCurrency(r.owed_amount)}</td>
       <td>${r.duplicate?'<span class="badge bg-warning text-dark">Yes</span>':'<span class="badge bg-success">No</span>'}</td>`;
     tbody.appendChild(tr);
   });
-  document.getElementById('resultsCard').classList.remove('d-none');
-  document.getElementById('summaryText').textContent = 'Select rows to commit. Duplicates are disabled.';
-  document.getElementById('selectionHint').style.display='block';
-
-  const providerSection = document.getElementById('providerSection');
-  const providerBody = document.querySelector('#providerPreviewTable tbody');
-  providerBody.innerHTML='';
-  if(providerRows.length){
-    // Sort providers by name case-insensitive
-    providerRows.sort((a,b)=>{
-      const na = (a.provider_name||'').toUpperCase();
-      const nb = (b.provider_name||'').toUpperCase();
-      if(na < nb) return -1; if(na > nb) return 1; return 0;
-    });
-    providerRows.forEach(p => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><input type="checkbox" class="provider-select" data-loc="${p.location_id||''}" ${p.duplicate?'disabled':''} ${p.duplicate?'':'checked'}></td>
-        <td>${human(p.provider_name||'')}</td>
-        <td>${human(p.provider_address||'')}</td>
-        <td>${human(p.location_id||'')}</td>
-        <td>${p.duplicate?'<span class="badge bg-warning text-dark">Yes</span>':'<span class="badge bg-success">No</span>'}</td>`;
-      providerBody.appendChild(tr);
-    });
-    providerSection.classList.remove('d-none');
-    document.getElementById('providerSummary').textContent = `Providers: ${providerRows.length} (duplicates disabled in selection)`;
-  } else {
-    providerSection.classList.add('d-none');
-  }
+  document.getElementById('chargeSummaryText').textContent = chargeRows.length?`${chargeRows.length} charge candidates (${chargeRows.filter(r=>r.duplicate).length} existing, ${chargeRows.filter(r=>!r.duplicate).length} new). Select which charges to add.`:'No charge candidates.';
+  card.classList.remove('d-none');
   updateCommitButtonState();
 }
 
 function updateCommitButtonState(){
-  const anyCharges = Array.from(document.querySelectorAll('.row-select')).some(cb=>cb.checked);
-  const anyProviders = providerRows.length ? Array.from(document.querySelectorAll('.provider-select')).some(cb=>cb.checked) : true;
-  document.getElementById('commitBtn').disabled = !(anyCharges && anyProviders && currentSessionId);
+  const btn = document.getElementById('commitBtn');
+  const any = Array.from(document.querySelectorAll('.row-select')).some(cb=>cb.checked);
+
+  // Don't re-enable if the commit was already completed
+  if (btn.innerHTML.includes('Committed')) {
+    return;
+  }
+
+  btn.disabled = !(any && currentSessionId);
 }
 
 async function commitSelected(){
-  const commitStatus = document.getElementById('commitStatus');
-  commitStatus.textContent = 'Committing...';
-  const selectedCharges = Array.from(document.querySelectorAll('.row-select'))
-    .filter(cb=>cb.checked)
-    .map(cb=>parseInt(cb.getAttribute('data-row')));
-  const selectedProviders = Array.from(document.querySelectorAll('.provider-select'))
-    .filter(cb=>cb.checked)
-    .map(cb=>cb.getAttribute('data-loc'));
+  const status = document.getElementById('commitStatus');
+  const btn = document.getElementById('commitBtn');
+  const prevHtml = btn.innerHTML;
+
+  // Show working indicator
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Committing...';
+  status.textContent = 'Processing charges...';
+
+  const selectedCharges = Array.from(document.querySelectorAll('.row-select')).filter(cb=>cb.checked).map(cb=>parseInt(cb.getAttribute('data-row')));
   if(!selectedCharges.length){
-    commitStatus.innerHTML = '<span class="text-danger">No charge rows selected.</span>';
+    status.innerHTML='<span class="text-danger">No rows selected.</span>';
+    btn.innerHTML = prevHtml;
+    btn.disabled = false;
     return;
   }
+
   try {
-    const resp = await fetch(`/api/charges/import-json/${currentSessionId}/commit`, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ selected_indices: selectedCharges, selected_provider_location_ids: selectedProviders })
-    });
+    const resp = await fetch(`/api/charges/import-json/${currentSessionId}/commit`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ selected_indices: selectedCharges }) });
     if(!resp.ok){
       const txt = await resp.text();
-      commitStatus.innerHTML = '<span class="text-danger">Commit failed: '+txt+'</span>';
+      status.innerHTML='<span class="text-danger">Commit failed: '+txt+'</span>';
       return;
     }
     const data = await resp.json();
-    commitStatus.innerHTML = '<span class="text-success">Inserted '+data.inserted_count+' charges. Skipped '+data.skipped_duplicates+' duplicates.</span>';
+    status.innerHTML = '<span class="text-success">Inserted '+data.inserted_count+' charges. Skipped '+data.skipped_duplicates+' duplicates.</span>';
+
+    // Disable further commits since the operation is complete
+    btn.innerHTML = '<i class="bi bi-check2-circle"></i> Committed';
+    btn.disabled = true;
+
   } catch(err){
-    commitStatus.innerHTML = '<span class="text-danger">'+err+'</span>';
+    status.innerHTML='<span class="text-danger">'+err+'</span>';
+    btn.innerHTML = prevHtml;
+    btn.disabled = false;
   }
 }
 
-function resetPreview(){
-  currentSessionId = null;
-  previewRows = [];
-  providerRows = [];
-  document.getElementById('resultsCard').classList.add('d-none');
+function resetAll(){
+  currentSessionId = null; providerCandidates=[]; chargeRows=[]; providersAdded=false; globalDraggedFile=null;
+  document.getElementById('providerResultsCard').classList.add('d-none');
+  document.getElementById('chargeResultsCard').classList.add('d-none');
+  document.getElementById('providerAddStatus').textContent='';
   document.getElementById('commitStatus').textContent='';
   document.getElementById('importStatus').textContent='';
+
+  // Reset commit button to original state
+  const commitBtn = document.getElementById('commitBtn');
+  commitBtn.innerHTML = '<i class="bi bi-check2-circle"></i> Commit Selected';
+  commitBtn.disabled = true;
   document.getElementById('jsonImportForm').reset();
+  updateAnalyzeButtonState();
+  document.body.classList.remove('global-drag-active');
 }
 
-document.addEventListener('DOMContentLoaded',()=>{
-  document.getElementById('jsonImportForm').addEventListener('submit', submitJsonImport);
-  document.getElementById('commitBtn').addEventListener('click', (e)=>{ e.preventDefault(); commitSelected(); });
-  document.getElementById('resetPreview').addEventListener('click', (e)=>{ e.preventDefault(); resetPreview(); });
-  document.getElementById('selectAll').addEventListener('change', (e)=>{
-    const checked = e.target.checked;
-    document.querySelectorAll('.row-select:not(:disabled)').forEach(cb=>{ cb.checked = checked; });
-    updateCommitButtonState();
+// Drag & drop visual feedback
+function initDragDrop(){
+  const dz = document.getElementById('dropZone');
+  const input = document.getElementById('fileInput');
+  const highlight = ()=>{ dz.classList.add('dragging'); document.body.classList.add('global-drag-active'); };
+  const unhighlight = ()=>{ dz.classList.remove('dragging'); document.body.classList.remove('global-drag-active'); };
+  ['dragenter','dragover'].forEach(ev=>{
+    document.addEventListener(ev, e=>{ e.preventDefault(); highlight(); });
   });
-  document.getElementById('selectAllProviders').addEventListener('change', (e)=>{
-    const checked = e.target.checked;
-    document.querySelectorAll('.provider-select:not(:disabled)').forEach(cb=>{ cb.checked = checked; });
-    updateCommitButtonState();
+  ['dragleave','drop'].forEach(ev=>{
+    document.addEventListener(ev, e=>{ e.preventDefault(); if(ev==='drop') handleDrop(e); unhighlight(); });
   });
-  document.getElementById('importPreviewTable').addEventListener('change', (e)=>{
-    if(e.target.classList.contains('row-select')) updateCommitButtonState();
-  });
-  document.getElementById('providerPreviewTable').addEventListener('change', (e)=>{
-    if(e.target.classList.contains('provider-select')) updateCommitButtonState();
-  });
+  function handleDrop(e){
+    const files = e.dataTransfer.files; if(files && files.length){
+      // Attempt direct assignment; keep a reference if not possible
+      try { input.files = files; globalDraggedFile = files[0]; } catch(_){ globalDraggedFile = files[0]; }
+      updateAnalyzeButtonState();
+    }
+  }
+  input.addEventListener('change', ()=>{ globalDraggedFile=null; updateAnalyzeButtonState(); });
+}
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  initDragDrop();
+  document.getElementById('familySelect').addEventListener('change', updateAnalyzeButtonState);
+  document.getElementById('medicalTypeSelect').addEventListener('change', updateAnalyzeButtonState);
+  document.getElementById('analyzeProvidersBtn').addEventListener('click', analyzeProviders);
+  document.getElementById('selectAllProviders2').addEventListener('change', e=>{ const chk=e.target.checked; document.querySelectorAll('.provider-select2:not(:disabled)').forEach(cb=>cb.checked=chk); updateProviderAddButtonState(); });
+  document.getElementById('providerAnalyzeTable').addEventListener('change', e=>{ if(e.target.classList.contains('provider-select2')) updateProviderAddButtonState(); });
+  document.getElementById('addProvidersBtn').addEventListener('click', addSelectedProviders);
+  document.getElementById('skipProvidersBtn').addEventListener('click', skipProviders);
+  document.getElementById('reanalyzeChargesBtn').addEventListener('click', analyzeCharges);
+  document.getElementById('selectAll').addEventListener('change', e=>{ const chk=e.target.checked; document.querySelectorAll('.row-select:not(:disabled)').forEach(cb=>cb.checked=chk); updateCommitButtonState(); });
+  document.getElementById('importPreviewTable').addEventListener('change', e=>{ if(e.target.classList.contains('row-select')) updateCommitButtonState(); });
+  document.getElementById('commitBtn').addEventListener('click', e=>{ e.preventDefault(); commitSelected(); });
+  document.getElementById('resetAll').addEventListener('click', e=>{ e.preventDefault(); resetAll(); });
+  updateAnalyzeButtonState();
 });
 </script>
+<style>
+  #dropZone.dragging { border-color:#0d6efd!important; background:#e7f1ff; }
+  body.global-drag-active #dropZone { border-color:#0d6efd!important; background:#e7f1ff; }
+  #selectedFilename { font-weight:600; }
+</style>
 {% endblock %}

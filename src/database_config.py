@@ -5,10 +5,11 @@ Database configuration and connection management.
 import os
 import urllib.parse
 from typing import Generator
-from sqlalchemy import create_engine, text
-from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.exc import SQLAlchemyError
+
 from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session, sessionmaker
 
 # Handle imports whether running as module or script
 try:
@@ -48,12 +49,18 @@ class DatabaseConfig:
         # Host / Port
         self.db_host = first(f"{prefix}_DB_HOST", "DB_HOST", default="localhost")
         self.db_port = first(f"{prefix}_DB_PORT", "DB_PORT", default="5432")
-        self.db_name = first(f"{prefix}_DB_NAME", "DB_NAME", default="personal_expenses")
+        self.db_name = first(
+            f"{prefix}_DB_NAME", "DB_NAME", default="personal_expenses"
+        )
         self.db_user = first(f"{prefix}_DB_USER", "DB_USER", default="postgres")
         self.db_password = first(f"{prefix}_DB_PASSWORD", "DB_PASSWORD", default="")
 
         # Safety: If TEST mode but host looks like a prod host (heuristic), warn.
-        if self.env_mode == "TEST" and self.db_host not in {"localhost", "127.0.0.1", "192.0.2.10"}:
+        if self.env_mode == "TEST" and self.db_host not in {
+            "localhost",
+            "127.0.0.1",
+            "192.0.2.10",
+        }:
             print(f"WARNING: ENV_MODE=TEST but host={self.db_host} is not local.")
 
         # Connection pool settings
@@ -77,7 +84,7 @@ engine = create_engine(
     pool_size=db_config.pool_size,
     max_overflow=db_config.max_overflow,
     pool_pre_ping=True,  # Verify connections before use
-    echo=bool(os.getenv("DB_ECHO", "False").lower() == "true")  # SQL logging
+    echo=bool(os.getenv("DB_ECHO", "False").lower() == "true"),  # SQL logging
 )
 
 # Create session factory
@@ -87,7 +94,7 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def get_db() -> Generator[Session, None, None]:
     """
     Get database session.
-    
+
     Yields:
         Database session
     """

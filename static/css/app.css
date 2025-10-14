@@ -103,13 +103,13 @@ body.drag-attachments-active::after { content:""; position:fixed; inset:0; point
 
 /* === EOB Parsed Table Input Sizing === */
 /* Compact form-aligned primary button to visually match form-control-sm height */
-.btn-form-sm { 
+.btn-form-sm {
   padding: 0.15rem 0.50rem; /* match visual height of form-control-sm */
-  font-size: 0.70rem; 
-  line-height: 1.2; 
-  border-radius: 0.25rem; 
-  display: inline-flex; 
-  align-items: center; 
+  font-size: 0.70rem;
+  line-height: 1.2;
+  border-radius: 0.25rem;
+  display: inline-flex;
+  align-items: center;
   gap: 0.25rem;
 }
 .btn-form-sm i { font-size: 0.75rem; line-height:1; }

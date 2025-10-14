@@ -9,7 +9,7 @@ wheels/
 # Virtual environments
 .venv
 
-# Windows shortcuts 
+# Windows shortcuts
 *.Ink
 
 # Database dumps

@@ -10,18 +10,19 @@ All CRUD JSON endpoints now reside in dedicated routers under api/.
 """
 
 from pathlib import Path
-from fastapi import FastAPI, Depends, HTTPException
+
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session  # retained for diagnostic endpoint dependency
 
 from api.attachments import router as attachments_router
-from api.providers import router as providers_router
 from api.charges import router as charges_router
-from api.payments import router as payments_router
-from api.premiums import router as premiums_router
 from api.imports import router as imports_router
 from api.pages import router as pages_router
+from api.payments import router as payments_router
+from api.premiums import router as premiums_router
+from api.providers import router as providers_router
 
 try:  # Prefer absolute imports when running as a module
     from database_config import db_config, get_db
@@ -32,8 +33,9 @@ app = FastAPI(title="Personal Health Expenses Management System", version="1.0.0
 
 project_root = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(project_root / "templates"))
-templates.env.globals['ENV_MODE'] = getattr(db_config, 'env_mode', 'PROD')
+templates.env.globals["ENV_MODE"] = getattr(db_config, "env_mode", "PROD")
 app.mount("/static", StaticFiles(directory=str(project_root / "static")), name="static")
+
 
 def format_currency(value):
     try:
@@ -43,7 +45,8 @@ def format_currency(value):
     except Exception:
         return "$0.00"
 
-templates.env.filters['currency'] = format_currency
+
+templates.env.filters["currency"] = format_currency
 
 app.include_router(attachments_router)
 app.include_router(providers_router)
@@ -65,6 +68,7 @@ def list_money_columns(db: Session = Depends(get_db)):
     Helps explain recurring 'Unknown PG numeric type: 790' errors when SQLAlchemy cannot map legacy money columns.
     """
     from sqlalchemy import text
+
     # Query pg_catalog to find columns whose atttypid resolves to 'money'
     sql = text(
         """--sql
@@ -106,4 +110,7 @@ def list_money_columns(db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+# Test comment for Docker build

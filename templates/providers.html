@@ -52,25 +52,53 @@
         <div class="card">
             <div class="card-body">
                 <div class="table-responsive">
+                    <div id="bulkActionsBar" class="d-none mb-2">
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+                            <span id="selectedCount" class="fw-semibold"></span>
+                            <button id="bulkAddToGroupBtn" class="btn btn-sm btn-outline-primary" disabled>
+                                <i class="bi bi-people"></i> Add to Group
+                            </button>
+                            <button id="bulkClearGroupBtn" class="btn btn-sm btn-outline-warning" disabled>
+                                <i class="bi bi-x-circle"></i> Clear Group
+                            </button>
+                            <button id="bulkCancelBtn" class="btn btn-sm btn-outline-secondary">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
                     <table class="table manual-striped" id="providersTable">
                         <thead>
                             <tr>
-                                <th class="sortable" data-column="0">Provider (Group) <i class="bi bi-arrow-down-up"></i></th>
-                                <th class="sortable" data-column="1">Distance (miles) <i class="bi bi-arrow-down-up"></i></th>
-                                <th class="sortable" data-column="2">Total Owed <i class="bi bi-arrow-down-up"></i></th>
-                                <th class="sortable" data-column="3">Total Payments <i class="bi bi-arrow-down-up"></i></th>
-                                <th class="sortable" data-column="4">Net Amount <i class="bi bi-arrow-down-up"></i></th>
-                                <th class="sortable" data-column="5">Active <i class="bi bi-arrow-down-up"></i></th>
+                                <th style="width:32px;">
+                                    <input type="checkbox" id="selectAllProviders" aria-label="Select all providers">
+                                </th>
+                                <th class="sortable" data-column="1">Group: Provider <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="2">Distance (miles) <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="3">Last Charge <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="4">Last Payment <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="5">Total Owed <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="6">Total Payments <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="7">Net Amount <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="8">Active <i class="bi bi-arrow-down-up"></i></th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for provider in providers %}
-                            <tr data-group="{{ provider.provider_group|lower if provider.provider_group else '' }}">
-                                    <td data-field="provider_name" data-group="{{ provider.provider_group or '' }}">
+                            <tr data-provider-id="{{ provider.id }}" data-group="{{ provider.provider_group|lower if provider.provider_group else '' }}">
+                                <td>
+                                    <input type="checkbox" class="provider-select" value="{{ provider.id }}" aria-label="Select provider {{ provider.provider_name }}">
+                                </td>
+                                <td data-field="provider_name" data-group="{{ provider.provider_group or '' }}">
+                                    {% if provider.provider_group %}
+                                        <span class="text-muted">{{ provider.provider_group }}:</span>
+                                        <a href="/providers/{{ provider.id }}" class="text-decoration-none ms-1">{{ provider.provider_name }}</a>
+                                    {% else %}
                                         <a href="/providers/{{ provider.id }}" class="text-decoration-none">{{ provider.provider_name }}</a>
-                                    {% if provider.provider_group %}<span class="text-muted"> ({{ provider.provider_group }})</span>{% endif %}
+                                    {% endif %}
                                 </td>
                                 <td>{{ provider.one_way_miles|round|int if provider.one_way_miles else '-' }}</td>
+                                <td>{{ provider.last_charge_date.strftime('%m/%d/%y') if provider.last_charge_date else '-' }}</td>
+                                <td>{{ provider.last_payment_date.strftime('%m/%d/%y') if provider.last_payment_date else '-' }}</td>
                                 <td>{{ provider.total_owed | currency }}</td>
                                 <td>{{ provider.total_payments | currency }}</td>
                                 <td>
@@ -141,36 +169,34 @@
 <script>
 // Table enhancement functionality
 let currentSort = { column: -1, direction: 'asc' };
+let bulkMode = false;
 
 // Initialize table enhancements
 document.addEventListener('DOMContentLoaded', function() {
     initializeTableEnhancements();
+    setupBulkSelection();
     setupFormSubmission();
     applyStriping('providersTable');
     setupProviderNameValidation();
     setupProviderGroupAutocomplete();
-    // Default to Active Only view
-    const activeFilter = document.getElementById('activeFilter');
-    if (activeFilter) {
-        activeFilter.value = 'active';
-        filterTable();
-    }
+    restoreFiltersFromQuery();
+    filterTable();
 });
 
 function initializeTableEnhancements() {
     // Setup search
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
-        searchInput.addEventListener('input', filterTable);
+        let t=null; searchInput.addEventListener('input', ()=>{clearTimeout(t); t=setTimeout(()=>{updateQueryFromFilters(); filterTable();},300);});
     }
-    
+
     // Setup filters
     const groupFilter = document.getElementById('groupFilter');
     const activeFilter = document.getElementById('activeFilter');
-    
-    if (groupFilter) groupFilter.addEventListener('change', filterTable);
-    if (activeFilter) activeFilter.addEventListener('change', filterTable);
-    
+
+    if (groupFilter) groupFilter.addEventListener('change', () => {updateQueryFromFilters(); filterTable();});
+    if (activeFilter) activeFilter.addEventListener('change', () => {updateQueryFromFilters(); filterTable();});
+
     // Setup sortable headers
     const sortableHeaders = document.querySelectorAll('.sortable');
     sortableHeaders.forEach(header => {
@@ -183,51 +209,67 @@ function sortTable(column) {
     const table = document.getElementById('providersTable');
     const tbody = table.querySelector('tbody');
     const rows = Array.from(tbody.querySelectorAll('tr'));
-    
+
     // Determine sort direction
     let direction = 'asc';
     if (currentSort.column === column && currentSort.direction === 'asc') {
         direction = 'desc';
     }
-    
+
     // Update sort indicators
     document.querySelectorAll('.sortable i').forEach(icon => {
         icon.className = 'bi bi-arrow-down-up';
     });
-    
+
     const currentHeader = document.querySelector(`[data-column="${column}"] i`);
     if (direction === 'asc') {
         currentHeader.className = 'bi bi-arrow-up';
     } else {
         currentHeader.className = 'bi bi-arrow-down';
     }
-    
+
     currentSort = { column, direction };
-    
+
     // Sort rows
     rows.sort((a, b) => {
         const cellA = a.cells[column].textContent.trim();
         const cellB = b.cells[column].textContent.trim();
-        
+
         // Handle different data types
         let valueA, valueB;
-        
-        if (column === 1) { // Distance column (after removing Address)
+
+        if (column === 2) { // Distance column (account for checkbox column)
             valueA = parseFloat(cellA) || 0;
             valueB = parseFloat(cellB) || 0;
-        } else if (column === 2 || column === 3 || column === 4) { // Financial columns (owed, payments, net)
+        } else if (column === 3 || column === 4) { // Date columns (last charge, last payment)
+            // Parse dates in MM/DD/YY format, treating '-' as null dates
+            const parseDate = (dateStr) => {
+                if (dateStr === '-' || !dateStr) return new Date(0); // Epoch for sorting null dates to bottom
+                const parts = dateStr.split('/');
+                if (parts.length === 3) {
+                    const month = parseInt(parts[0]) - 1; // months are 0-indexed
+                    const day = parseInt(parts[1]);
+                    let year = parseInt(parts[2]);
+                    if (year < 100) year += 2000; // convert 2-digit years
+                    return new Date(year, month, day);
+                }
+                return new Date(0);
+            };
+            valueA = parseDate(cellA);
+            valueB = parseDate(cellB);
+        } else if (column === 5 || column === 6 || column === 7) { // Financial columns (owed, payments, net)
             valueA = parseFloat(cellA.replace(/[$,]/g, '')) || 0;
             valueB = parseFloat(cellB.replace(/[$,]/g, '')) || 0;
         } else { // Text columns
             valueA = cellA.toLowerCase();
             valueB = cellB.toLowerCase();
         }
-        
+
         if (valueA < valueB) return direction === 'asc' ? -1 : 1;
         if (valueA > valueB) return direction === 'asc' ? 1 : -1;
         return 0;
     });
-    
+
     // Re-append sorted rows
     rows.forEach(row => tbody.appendChild(row));
     applyStriping('providersTable');
@@ -237,13 +279,13 @@ function filterTable() {
     const searchTerm = document.getElementById('searchInput').value.toLowerCase();
     const groupFilter = document.getElementById('groupFilter').value.toLowerCase();
     const activeFilter = document.getElementById('activeFilter').value;
-    
+
     const table = document.getElementById('providersTable');
     const rows = table.querySelectorAll('tbody tr');
-    
+
     rows.forEach(row => {
         let visible = true;
-        
+
         // Text search filter
         if (searchTerm) {
             const rowText = row.textContent.toLowerCase();
@@ -251,38 +293,126 @@ function filterTable() {
                 visible = false;
             }
         }
-        
+
         // Group filter
         if (visible && groupFilter) {
             const groupAttr = (row.getAttribute('data-group') || '').toLowerCase();
             if (!groupAttr.includes(groupFilter)) visible = false;
         }
-        
+
         // Active status filter
         if (visible && activeFilter) {
-            const statusCell = row.cells[5]; // Active column after removing Address
+            const statusCell = row.cells[8]; // Active column after adding new date columns
             const isActive = statusCell.textContent.includes('Active');
-            
             if (activeFilter === 'active' && !isActive) {
                 visible = false;
             } else if (activeFilter === 'inactive' && isActive) {
                 visible = false;
             }
         }
-        
+
         row.style.display = visible ? '' : 'none';
     });
-    
-    // Update visible row count
+
     updateRowCount();
     applyStriping('providersTable');
+}
+
+// --- Bulk selection & group assignment ---
+function setupBulkSelection() {
+    const table = document.getElementById('providersTable');
+    const selectAll = document.getElementById('selectAllProviders');
+    const bulkBar = document.getElementById('bulkActionsBar');
+    const addBtn = document.getElementById('bulkAddToGroupBtn');
+    const clearBtn = document.getElementById('bulkClearGroupBtn');
+    const cancelBtn = document.getElementById('bulkCancelBtn');
+    const countSpan = document.getElementById('selectedCount');
+    if (!table || !selectAll) return;
+
+    function updateState() {
+        const checkboxes = table.querySelectorAll('tbody .provider-select');
+        const selected = Array.from(checkboxes).filter(cb => cb.checked);
+        const total = Array.from(checkboxes).filter(cb => cb.closest('tr').style.display !== 'none').length;
+        selectAll.checked = selected.length && selected.length === total;
+        if (selected.length > 0) {
+            bulkBar.classList.remove('d-none');
+            addBtn.disabled = false;
+            clearBtn.disabled = false;
+            countSpan.textContent = `${selected.length} selected`;
+        } else {
+            addBtn.disabled = true;
+            clearBtn.disabled = true;
+            countSpan.textContent = '';
+            bulkBar.classList.add('d-none');
+        }
+    }
+
+    selectAll.addEventListener('change', () => {
+        const visibleRows = table.querySelectorAll('tbody tr');
+        visibleRows.forEach(r => {
+            if (r.style.display === 'none') return; // skip hidden
+            const cb = r.querySelector('.provider-select');
+            if (cb) cb.checked = selectAll.checked;
+        });
+        updateState();
+    });
+
+    table.addEventListener('change', (e) => {
+        if (e.target.classList.contains('provider-select')) {
+            updateState();
+        }
+    });
+
+    addBtn.addEventListener('click', async () => {
+        const ids = getSelectedProviderIds();
+        if (!ids.length) return;
+        const groupName = prompt('Enter group name to assign to selected providers:');
+        if (groupName === null) return; // user cancelled
+        await bulkSetGroup(ids, groupName);
+    });
+
+    clearBtn.addEventListener('click', async () => {
+        const ids = getSelectedProviderIds();
+        if (!ids.length) return;
+        if (!confirm('Clear group for selected providers?')) return;
+        await bulkSetGroup(ids, '');
+    });
+
+    cancelBtn.addEventListener('click', () => {
+        const cbs = table.querySelectorAll('tbody .provider-select');
+        cbs.forEach(cb => cb.checked = false);
+        updateState();
+    });
+}
+
+function getSelectedProviderIds() {
+    const table = document.getElementById('providersTable');
+    return Array.from(table.querySelectorAll('tbody .provider-select:checked')).map(cb => parseInt(cb.value));
+}
+
+async function bulkSetGroup(ids, groupName) {
+    try {
+        const resp = await fetch('/api/providers/bulk/set-group', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider_ids: ids, group_name: groupName })
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            alert('Bulk update failed: ' + (err.detail || resp.status));
+            return;
+        }
+        location.reload();
+    } catch (e) {
+        alert('Bulk update error: ' + e.message);
+    }
 }
 
 function updateRowCount() {
     const table = document.getElementById('providersTable');
     const allRows = table.querySelectorAll('tbody tr');
     const visibleRows = Array.from(allRows).filter(r => r.style.display !== 'none');
-    
+
     // Add/update row count display
     let countDisplay = document.getElementById('rowCount');
     if (!countDisplay) {
@@ -302,6 +432,7 @@ function clearFilters() {
     document.getElementById('searchInput').value = '';
     document.getElementById('groupFilter').value = '';
     document.getElementById('activeFilter').value = '';
+    updateQueryFromFilters();
     filterTable();
 }
 
@@ -412,7 +543,7 @@ function setupProviderGroupAutocomplete() {
 function setupFormSubmission() {
     document.getElementById('addProviderForm').addEventListener('submit', async function(e) {
         e.preventDefault();
-        
+
         const formData = new FormData(e.target);
         const data = {
             provider_name: formData.get('provider_name'),
@@ -421,7 +552,7 @@ function setupFormSubmission() {
             one_way_miles: formData.get('one_way_miles') ? parseFloat(formData.get('one_way_miles')) : null,
             active_provider_flag: formData.get('active_provider_flag') === 'on'
         };
-        
+
         try {
             const response = await fetch('/api/providers/', {
                 method: 'POST',
@@ -430,7 +561,7 @@ function setupFormSubmission() {
                 },
                 body: JSON.stringify(data)
             });
-            
+
             if (response.ok) {
                 location.reload();
             } else {
@@ -445,6 +576,36 @@ function setupFormSubmission() {
             alert('Error creating provider: ' + error.message);
         }
     });
+}
+
+// --- URL query param sync ---
+function updateQueryFromFilters() {
+    const params = new URLSearchParams(window.location.search);
+    const searchVal = document.getElementById('searchInput').value.trim();
+    const groupVal = document.getElementById('groupFilter').value.trim();
+    const statusVal = document.getElementById('activeFilter').value.trim();
+    if (searchVal) params.set('q', searchVal); else params.delete('q');
+    if (groupVal) params.set('group', groupVal); else params.delete('group');
+    if (statusVal) params.set('status', statusVal); else params.delete('status');
+    const newUrl = window.location.pathname + (params.toString() ? ('?' + params.toString()) : '');
+    window.history.replaceState({}, '', newUrl);
+}
+
+function restoreFiltersFromQuery() {
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('q');
+    const group = params.get('group');
+    const status = params.get('status');
+    const searchInput = document.getElementById('searchInput');
+    const groupFilter = document.getElementById('groupFilter');
+    const activeFilter = document.getElementById('activeFilter');
+    if (q && searchInput) searchInput.value = q;
+    if (group && groupFilter) groupFilter.value = group;
+    if (status && activeFilter) {
+        activeFilter.value = status;
+    } else if (activeFilter && !status) {
+        activeFilter.value = 'active';
+    }
 }
 
 </script>

@@ -117,13 +117,13 @@ window.addEventListener('DOMContentLoaded',()=>{
     const btn=e.target.closest('button[data-action="delete-payment-att"]');
     if(!btn) return;const attId=btn.dataset.attId; if(!attId) return; if(!confirm('Delete this attachment?')) return;
     try{const resp=await fetch(`/api/attachments/${attId}`,{method:'DELETE'}); if(resp.ok){ const li=listWrapper.querySelector(`li[data-att-id="${attId}"]`); if(li) li.remove(); if(!listWrapper.querySelector('li[data-att-id]')){listWrapper.innerHTML='<div class="text-muted fst-italic">No attachments yet.</div>';}} else {alert('Failed to delete attachment');}}
-    catch(ex){alert('Network error deleting attachment: '+ex.message);}  
+    catch(ex){alert('Network error deleting attachment: '+ex.message);}
   });
   // Drag & Drop (Payment) - entire card
   const dz=document.getElementById('paymentAttachmentCard');
   const hiddenInput=document.getElementById('paymentHiddenFileInput');
   function uploadFiles(files){
-    if(!files||files.length===0) return; 
+    if(!files||files.length===0) return;
     [...files].forEach(async f=>{
       const fd=new FormData();
       fd.append('payment_id', paymentId);
@@ -167,7 +167,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   if(delBtn){
     delBtn.addEventListener('click', async()=>{
       if(!confirm('Delete this payment? This will unlink it from any charges and remove its attachments.')) return;
-      try{const resp=await fetch(`/api/payments/${paymentId}`,{method:'DELETE'});if(resp.ok){window.location='/payments';}else{const j=await resp.json().catch(()=>({}));alert('Failed to delete payment: '+(j.detail||resp.status));}}catch(ex){alert('Network error deleting payment: '+ex.message);}    
+      try{const resp=await fetch(`/api/payments/${paymentId}`,{method:'DELETE'});if(resp.ok){window.location='/payments';}else{const j=await resp.json().catch(()=>({}));alert('Failed to delete payment: '+(j.detail||resp.status));}}catch(ex){alert('Network error deleting payment: '+ex.message);}
     });
   }
 });
@@ -232,7 +232,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       fd.forEach((v,k)=>{payload[k]=v||null;});
       ['payment_amount','reimbursement_amount','provider_id'].forEach(k=>{if(payload[k]==='') payload[k]=null; if(['payment_amount','reimbursement_amount'].includes(k) && payload[k]!==null) payload[k]=parseFloat(payload[k]); if(k==='provider_id' && payload[k]!==null) payload[k]=parseInt(payload[k]);});
       try{const resp=await fetch(`/api/payments/${paymentId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); if(resp.ok){location.reload();} else { const j=await resp.json().catch(()=>({})); alert('Update failed: '+(j.detail||resp.status)); }}
-      catch(ex){alert('Network error updating payment: '+ex.message);}  
+      catch(ex){alert('Network error updating payment: '+ex.message);}
     });
   }
 });

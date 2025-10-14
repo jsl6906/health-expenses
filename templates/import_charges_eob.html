@@ -63,7 +63,7 @@
           <th>Charged</th>
           <th>Ins Paid</th>
           <th>Owed</th>
-          <th>Family Member</th>
+          <th>Mem.</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -162,12 +162,12 @@ async function loadSession() {
     <td><input type="number" step="0.01" class="form-control form-control-sm inspaid-input amt-input eob-amt" value="${r.insurance_paid_amount ?? ''}" data-index="${r.index}" /></td>
     <td><input type="number" step="0.01" class="form-control form-control-sm owed-input amt-input eob-amt" value="${r.owed_amount ?? ''}" data-index="${r.index}" /></td>
         <td>
-          <select class="form-select form-select-sm fam-input" style="min-width:140px" data-index="${r.index}">
+          <select class="form-select form-select-sm fam-input" style="min-width:100px" data-index="${r.index}">
             <option value="">(None)</option>
-            <option ${r.family_member==='Alex'?'selected':''}>Alex</option>
-            <option ${r.family_member==='Jordan'?'selected':''}>Jordan</option>
-            <option ${r.family_member==='Sam'?'selected':''}>Sam</option>
-            <option ${r.family_member==='Riley'?'selected':''}>Riley</option>
+            <option value="Alex" ${r.family_member==='Alex'?'selected':''}>👨 Alex</option>
+            <option value="Jordan" ${r.family_member==='Jordan'?'selected':''}>👩 Jordan</option>
+            <option value="Sam" ${r.family_member==='Sam'?'selected':''}>👦 Sam</option>
+            <option value="Riley" ${r.family_member==='Riley'?'selected':''}>👧 Riley</option>
           </select>
         </td>`;
       tbody.appendChild(tr);

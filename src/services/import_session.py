@@ -1,12 +1,22 @@
 """Session management for JSON/FHIR import previews (and EOB if desired)."""
 from __future__ import annotations
-from typing import Dict
-from pydantic import BaseModel
-import uuid
+
 import datetime as _dt
+import uuid
+from typing import Dict
+
+from pydantic import BaseModel
 
 
 class JSONImportRow(BaseModel):
+    """Row representation for a candidate charge parsed from JSON / FHIR.
+
+    This mirrors the original structure but is split out so we can run a
+    provider-only analyze step first, then later generate these rows once
+    providers have optionally been inserted and a family member / medical type
+    have been chosen.
+    """
+
     index: int
     service_date: str | None = None
     description: str | None = None
@@ -21,6 +31,7 @@ class JSONImportRow(BaseModel):
     facility_location_id: str | None = None
     facility_location_name: str | None = None
     duplicate: bool = False
+    resolved_provider_id: int | None = None  # Removed underscore prefix
 
 
 class JSONImportPreview(BaseModel):
@@ -32,6 +43,34 @@ class JSONImportPreview(BaseModel):
     source_mode: str | None = None
     providers: list[dict] | None = None
     provider_duplicate_count: int | None = None
+
+
+class JSONProviderAnalyzeResponse(BaseModel):
+    """Response model for the provider-only analyze step.
+
+    We keep it intentionally simple: just the candidate providers and counts.
+    """
+
+    session_id: str
+    total_candidates: int
+    existing_count: int
+    new_count: int
+    providers: list[dict]
+    parse_mode: str | None = None
+    source_mode: str | None = None
+
+
+class JSONChargeAnalyzeResponse(BaseModel):
+    """Response model for the charge analyze step performed after providers are added."""
+
+    session_id: str
+    total_parsed: int
+    duplicate_count: int
+    rows: list[JSONImportRow]
+    family_member: str | None = None
+    medical_type: str | None = None
+    parse_mode: str | None = None
+    source_mode: str | None = None
 
 
 class JSONImportCommitRequest(BaseModel):
@@ -61,6 +100,11 @@ class ImportSessionStore:
     def get(self, session_id: str) -> dict | None:
         return self._sessions.get(session_id)
 
+    def update(self, session_id: str, data: dict) -> None:
+        """Update an existing session with new data."""
+        if session_id in self._sessions:
+            self._sessions[session_id].update(data)
+
     def delete(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
 
@@ -82,6 +126,8 @@ json_import_sessions = ImportSessionStore()
 __all__ = [
     "JSONImportRow",
     "JSONImportPreview",
+    "JSONProviderAnalyzeResponse",
+    "JSONChargeAnalyzeResponse",
     "JSONImportCommitRequest",
     "JSONImportCommitResult",
     "json_import_sessions",

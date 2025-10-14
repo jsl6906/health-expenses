@@ -6,9 +6,10 @@ stored in-process; sessions are lost on restart (acceptable for MVP).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Dict, Any
-from uuid import uuid4
 from datetime import date
+from typing import Any, Dict, List
+from uuid import uuid4
+
 _LLM_IMPORT_ERROR: str | None = None
 _llm_parse = None
 try:
@@ -50,7 +51,9 @@ class ParsedChargeRow:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "index": self.index,
-            "service_date": self.service_date.isoformat() if self.service_date else None,
+            "service_date": self.service_date.isoformat()
+            if self.service_date
+            else None,
             "cpt_code": self.cpt_code,
             "description": self.description,
             "charged_amount": self.charged_amount,
@@ -86,8 +89,9 @@ class EOBImportSession:
 _SESSIONS: Dict[str, EOBImportSession] = {}
 
 
-
-def create_session(filename: str, file_bytes: bytes, content_type: str | None = None) -> EOBImportSession:
+def create_session(
+    filename: str, file_bytes: bytes, content_type: str | None = None
+) -> EOBImportSession:
     session_id = uuid4().hex
     session = EOBImportSession(id=session_id, filename=filename)
     parsed_rows: list[ParsedChargeRow] = []
@@ -108,26 +112,29 @@ def create_session(filename: str, file_bytes: bytes, content_type: str | None = 
                 svc = r.get("service_date")
                 if svc:
                     from datetime import date as _d
-                    parts = str(svc).split('-')
+
+                    parts = str(svc).split("-")
                     if len(parts) == 3:
                         try:
                             svc_date = _d(int(parts[0]), int(parts[1]), int(parts[2]))
                         except Exception:
                             svc_date = None
-                parsed_rows.append(ParsedChargeRow(
-                    index=idx,
-                    service_date=svc_date,
-                    cpt_code=r.get("cpt_code"),
-                    description=r.get("description") or "(No description)",
-                    charged_amount=r.get("charged_amount"),
-                    owed_amount=r.get("owed_amount"),
-                    provider_name=r.get("provider_name"),
-                    family_member=r.get("family_member"),
-                    insurance_paid_amount=r.get("insurance_paid_amount"),
-                    insurance_discount_amount=r.get("insurance_discount_amount"),
-                    base_fee_amount=r.get("base_fee_amount"),
-                    reimbursement_amount=r.get("reimbursement_amount"),
-                ))
+                parsed_rows.append(
+                    ParsedChargeRow(
+                        index=idx,
+                        service_date=svc_date,
+                        cpt_code=r.get("cpt_code"),
+                        description=r.get("description") or "(No description)",
+                        charged_amount=r.get("charged_amount"),
+                        owed_amount=r.get("owed_amount"),
+                        provider_name=r.get("provider_name"),
+                        family_member=r.get("family_member"),
+                        insurance_paid_amount=r.get("insurance_paid_amount"),
+                        insurance_discount_amount=r.get("insurance_discount_amount"),
+                        base_fee_amount=r.get("base_fee_amount"),
+                        reimbursement_amount=r.get("reimbursement_amount"),
+                    )
+                )
             except Exception:
                 continue
     else:

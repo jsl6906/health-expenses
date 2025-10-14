@@ -3,10 +3,11 @@ Pydantic schemas for API request and response models.
 """
 
 from datetime import date
-from typing import Optional
 from decimal import Decimal
-from pydantic import BaseModel, ConfigDict
 from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict
 
 
 class FamilyMemberEnum(str, Enum):
@@ -59,7 +60,9 @@ class ProviderUpdate(BaseModel):
 
 class Provider(ProviderBase):
     id: int
-    
+    last_charge_date: Optional[date] = None
+    last_payment_date: Optional[date] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -113,7 +116,7 @@ class ChargeUpdate(BaseModel):
 class Charge(ChargeBase):
     id: int
     provider: Optional[Provider] = None
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -151,7 +154,7 @@ class PaymentUpdate(BaseModel):
 class Payment(PaymentBase):
     id: int
     provider: Optional[Provider] = None
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 
@@ -178,7 +181,7 @@ class PremiumUpdate(BaseModel):
 
 class Premium(PremiumBase):
     id: int
-    
+
     model_config = ConfigDict(from_attributes=True)
 
 

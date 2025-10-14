@@ -11,17 +11,18 @@ If GEMINI_API_KEY is not configured, a graceful fallback returning an empty
 list (so caller can decide to use mock parser) is provided.
 """
 from __future__ import annotations
+
 import json
-from typing import List, Dict, Any
-from io import BytesIO
-from datetime import date
 import re
+from datetime import date
+from io import BytesIO
+from typing import Any, Dict, List
 
 from ..llm_config import (
-    get_gemini_api_key,
-    get_gemini_model_name,
     get_eob_debug_preview_enabled,
     get_eob_use_file_upload,
+    get_gemini_api_key,
+    get_gemini_model_name,
 )
 
 # Lazy import google.generativeai so the app can start without the dependency
@@ -46,7 +47,7 @@ JSON_EXAMPLE = {
     "insurance_paid_amount": 60.00,
     "insurance_discount_amount": 34.77,
     "base_fee_amount": 140.00,
-    "reimbursement_amount": 0.00
+    "reimbursement_amount": 0.00,
 }
 
 PROMPT_TEMPLATE = (
@@ -63,10 +64,10 @@ DATE_PAT = re.compile(r"(20\d{2}|19\d{2})[-/](\d{1,2})[-/](\d{1,2})")
 
 def _extract_text(content_type: str | None, file_bytes: bytes) -> str:
     # Try PDF first
-    if (content_type and 'pdf' in content_type.lower()) or (file_bytes[:5] == b'%PDF-'):
+    if (content_type and "pdf" in content_type.lower()) or (file_bytes[:5] == b"%PDF-"):
         if PdfReader:
             try:
-                reader = PdfReader.from_bytes(file_bytes) if hasattr(PdfReader, 'from_bytes') else PdfReader(BytesIO(file_bytes))  # type: ignore
+                reader = PdfReader.from_bytes(file_bytes) if hasattr(PdfReader, "from_bytes") else PdfReader(BytesIO(file_bytes))  # type: ignore
             except Exception:
                 # fallback attempt via temp file not implemented (avoid FS writes)
                 reader = None
@@ -82,7 +83,7 @@ def _extract_text(content_type: str | None, file_bytes: bytes) -> str:
                     return joined
         # fallback basic decode subset for PDF if pypdf absent
     # Generic heuristic decoding
-    for enc in ('utf-8', 'latin-1'):  # minimal attempts
+    for enc in ("utf-8", "latin-1"):  # minimal attempts
         try:
             return file_bytes.decode(enc)
         except Exception:
@@ -122,21 +123,21 @@ def call_gemini_for_rows(text: str) -> tuple[List[Dict[str, Any]], dict]:
     meta["attempted"] = True
     try:
         resp = model.generate_content(prompt)
-        raw = getattr(resp, 'text', None) or ''
+        raw = getattr(resp, "text", None) or ""
     except Exception as ex:
         meta["reasons"].append("generation_exception")
         meta["error"] = str(ex)
         return [], meta
-    raw = raw.strip().strip('`')
+    raw = raw.strip().strip("`")
     meta["raw_text_chars"] = len(raw)
     if get_eob_debug_preview_enabled():
         meta["raw_snippet"] = raw[:600]
-    first = raw.find('[')
-    last = raw.rfind(']')
+    first = raw.find("[")
+    last = raw.rfind("]")
     if first == -1 or last == -1 or last < first:
         meta["reasons"].append("no_json_array_found")
         return [], meta
-    json_str = raw[first:last+1]
+    json_str = raw[first : last + 1]
     try:
         data = json.loads(json_str)
         if isinstance(data, list):
@@ -152,9 +153,11 @@ def call_gemini_for_rows(text: str) -> tuple[List[Dict[str, Any]], dict]:
 def normalize_rows(raw_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     for r in raw_rows:
+
         def g(k):
             return r.get(k)
-        svc = g('service_date')
+
+        svc = g("service_date")
         svc_date = None
         if isinstance(svc, str) and svc.strip():
             m = DATE_PAT.search(svc)
@@ -164,32 +167,44 @@ def normalize_rows(raw_rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     svc_date = date(int(y), int(mth), int(d))
                 except Exception:
                     svc_date = None
+
         def to_f(v):
             if isinstance(v, (int, float)):
                 return float(v)
             if isinstance(v, str):
                 try:
-                    return float(v.replace('$','').replace(',','').strip())
+                    return float(v.replace("$", "").replace(",", "").strip())
                 except Exception:
                     return None
             return None
-        out.append({
-            "service_date": svc_date.isoformat() if svc_date else None,
-            "cpt_code": (g('cpt_code') or None) if isinstance(g('cpt_code'), str) else None,
-            "description": (g('description') or '')[:160],
-            "charged_amount": to_f(g('charged_amount')),
-            "owed_amount": to_f(g('owed_amount')),
-            "provider_name": g('provider_name') if isinstance(g('provider_name'), str) else None,
-            "family_member": g('family_member') if isinstance(g('family_member'), str) else None,
-            "insurance_paid_amount": to_f(g('insurance_paid_amount')),
-            "insurance_discount_amount": to_f(g('insurance_discount_amount')),
-            "base_fee_amount": to_f(g('base_fee_amount')),
-            "reimbursement_amount": to_f(g('reimbursement_amount')),
-        })
+
+        out.append(
+            {
+                "service_date": svc_date.isoformat() if svc_date else None,
+                "cpt_code": (g("cpt_code") or None)
+                if isinstance(g("cpt_code"), str)
+                else None,
+                "description": (g("description") or "")[:160],
+                "charged_amount": to_f(g("charged_amount")),
+                "owed_amount": to_f(g("owed_amount")),
+                "provider_name": g("provider_name")
+                if isinstance(g("provider_name"), str)
+                else None,
+                "family_member": g("family_member")
+                if isinstance(g("family_member"), str)
+                else None,
+                "insurance_paid_amount": to_f(g("insurance_paid_amount")),
+                "insurance_discount_amount": to_f(g("insurance_discount_amount")),
+                "base_fee_amount": to_f(g("base_fee_amount")),
+                "reimbursement_amount": to_f(g("reimbursement_amount")),
+            }
+        )
     return out
 
 
-def parse_eob_bytes(filename: str, file_bytes: bytes, content_type: str | None) -> tuple[List[Dict[str, Any]], dict]:
+def parse_eob_bytes(
+    filename: str, file_bytes: bytes, content_type: str | None
+) -> tuple[List[Dict[str, Any]], dict]:
     model_name = get_gemini_model_name()
     meta: dict = {
         "model": model_name,
@@ -200,12 +215,19 @@ def parse_eob_bytes(filename: str, file_bytes: bytes, content_type: str | None) 
     # Attempt file upload path if enabled
     upload_enabled = get_eob_use_file_upload()
     meta["upload_enabled"] = upload_enabled
-    if upload_enabled and genai is not None and content_type and 'pdf' in content_type.lower():
+    if (
+        upload_enabled
+        and genai is not None
+        and content_type
+        and "pdf" in content_type.lower()
+    ):
         meta["upload_used"] = True
         try:
             # Upload file (Gemini API: may vary by version; using generic method name)
-            file_obj = genai.upload_file({'file_name': filename, 'data': file_bytes})  # type: ignore[attr-defined]
-            meta["upload_file_id"] = getattr(file_obj, 'name', None) or getattr(file_obj, 'id', None)
+            file_obj = genai.upload_file({"file_name": filename, "data": file_bytes})  # type: ignore[attr-defined]
+            meta["upload_file_id"] = getattr(file_obj, "name", None) or getattr(
+                file_obj, "id", None
+            )
             prompt = (
                 "You are an expert at reading medical Explanation of Benefits (EOB) PDFs. "
                 "Return ONLY a JSON array; each element object with keys: service_date, cpt_code, description, charged_amount, owed_amount, provider_name, family_member, insurance_paid_amount, insurance_discount_amount, base_fee_amount, reimbursement_amount. "
@@ -213,15 +235,15 @@ def parse_eob_bytes(filename: str, file_bytes: bytes, content_type: str | None) 
             )
             try:
                 resp = genai.GenerativeModel(model_name).generate_content([file_obj, prompt])  # type: ignore[attr-defined]
-                raw_text = getattr(resp, 'text', '') or ''
+                raw_text = getattr(resp, "text", "") or ""
                 meta["upload_raw_text_chars"] = len(raw_text)
                 if get_eob_debug_preview_enabled():
                     meta["upload_raw_snippet"] = raw_text[:600]
-                raw_text = raw_text.strip().strip('`')
-                first = raw_text.find('[')
-                last = raw_text.rfind(']')
+                raw_text = raw_text.strip().strip("`")
+                first = raw_text.find("[")
+                last = raw_text.rfind("]")
                 if first != -1 and last != -1 and last > first:
-                    json_str = raw_text[first:last+1]
+                    json_str = raw_text[first : last + 1]
                     try:
                         data = json.loads(json_str)
                         if isinstance(data, list):
@@ -252,7 +274,10 @@ def parse_eob_bytes(filename: str, file_bytes: bytes, content_type: str | None) 
             meta["response_mode"] = meta.get("response_mode", "text_extraction")
         else:
             # Distinguish model returning [] explicitly
-            if meta.get("raw_text_chars") == 2 and meta.get("raw_snippet", "") in ("[]", "[ ]"):
+            if meta.get("raw_text_chars") == 2 and meta.get("raw_snippet", "") in (
+                "[]",
+                "[ ]",
+            ):
                 meta.setdefault("reasons", []).append("model_returned_empty_array")
     if not rows:
         meta["status"] = "no_rows"

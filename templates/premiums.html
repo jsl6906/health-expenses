@@ -182,18 +182,18 @@ function initializeTableEnhancements() {
     if (searchInput) {
         searchInput.addEventListener('input', filterTable);
     }
-    
+
     // Setup filters
     const yearFilter = document.getElementById('yearFilter');
     const minAmount = document.getElementById('minAmount');
     const maxAmount = document.getElementById('maxAmount');
     const premiumType = document.getElementById('premiumType');
-    
+
     if (yearFilter) yearFilter.addEventListener('change', filterTable);
     if (minAmount) minAmount.addEventListener('input', filterTable);
     if (maxAmount) maxAmount.addEventListener('input', filterTable);
     if (premiumType) premiumType.addEventListener('change', filterTable);
-    
+
     // Setup sortable headers
     const sortableHeaders = document.querySelectorAll('.sortable');
     sortableHeaders.forEach(header => {
@@ -206,17 +206,17 @@ function populateYearFilter() {
     const table = document.getElementById('premiumsTable');
     const rows = table.querySelectorAll('tbody tr');
     const years = new Set();
-    
+
     rows.forEach(row => {
         const yearCell = row.cells[0].textContent.trim();
         if (yearCell) {
             years.add(yearCell);
         }
     });
-    
+
     const yearFilter = document.getElementById('yearFilter');
     const sortedYears = Array.from(years).sort((a, b) => b - a); // Descending order
-    
+
     sortedYears.forEach(year => {
         const option = document.createElement('option');
         option.value = year;
@@ -229,35 +229,35 @@ function sortTable(column) {
     const table = document.getElementById('premiumsTable');
     const tbody = table.querySelector('tbody');
     const rows = Array.from(tbody.querySelectorAll('tr'));
-    
+
     // Determine sort direction
     let direction = 'asc';
     if (currentSort.column === column && currentSort.direction === 'asc') {
         direction = 'desc';
     }
-    
+
     // Update sort indicators
     document.querySelectorAll('.sortable i').forEach(icon => {
         icon.className = 'bi bi-arrow-down-up';
     });
-    
+
     const currentHeader = document.querySelector(`[data-column="${column}"] i`);
     if (direction === 'asc') {
         currentHeader.className = 'bi bi-arrow-up';
     } else {
         currentHeader.className = 'bi bi-arrow-down';
     }
-    
+
     currentSort = { column, direction };
-    
+
     // Sort rows
     rows.sort((a, b) => {
         const cellA = a.cells[column].textContent.trim();
         const cellB = b.cells[column].textContent.trim();
-        
+
         // Handle different data types
         let valueA, valueB;
-        
+
         if (column === 0) { // Year column
             valueA = parseInt(cellA) || 0;
             valueB = parseInt(cellB) || 0;
@@ -268,12 +268,12 @@ function sortTable(column) {
             valueA = cellA.toLowerCase();
             valueB = cellB.toLowerCase();
         }
-        
+
         if (valueA < valueB) return direction === 'asc' ? -1 : 1;
         if (valueA > valueB) return direction === 'asc' ? 1 : -1;
         return 0;
     });
-    
+
     // Re-append sorted rows
     rows.forEach(row => tbody.appendChild(row));
     applyStriping('premiumsTable');
@@ -285,13 +285,13 @@ function filterTable() {
     const minAmount = parseFloat(document.getElementById('minAmount').value) || 0;
     const maxAmount = parseFloat(document.getElementById('maxAmount').value) || Infinity;
     const premiumType = document.getElementById('premiumType').value;
-    
+
     const table = document.getElementById('premiumsTable');
     const rows = table.querySelectorAll('tbody tr');
-    
+
     rows.forEach(row => {
         let visible = true;
-        
+
         // Text search filter
         if (searchTerm) {
             const rowText = row.textContent.toLowerCase();
@@ -299,7 +299,7 @@ function filterTable() {
                 visible = false;
             }
         }
-        
+
         // Year filter
         if (visible && yearFilter) {
             const yearCell = row.cells[0].textContent.trim();
@@ -307,21 +307,21 @@ function filterTable() {
                 visible = false;
             }
         }
-        
+
         // Amount range filter
         if (visible && (minAmount > 0 || maxAmount < Infinity)) {
             const medicalAmount = parseFloat(row.cells[1].textContent.replace(/[$,]/g, '')) || 0;
             const dentalAmount = parseFloat(row.cells[2].textContent.replace(/[$,]/g, '')) || 0;
             const visionAmount = parseFloat(row.cells[3].textContent.replace(/[$,]/g, '')) || 0;
             const hsaAmount = parseFloat(row.cells[4].textContent.replace(/[$,]/g, '')) || 0;
-            
+
             const maxRowAmount = Math.max(medicalAmount, dentalAmount, visionAmount, hsaAmount);
-            
+
             if (maxRowAmount < minAmount || maxRowAmount > maxAmount) {
                 visible = false;
             }
         }
-        
+
         // Premium type filter
         if (visible && premiumType) {
             let hasMatchingType = false;
@@ -329,7 +329,7 @@ function filterTable() {
             const dentalAmount = parseFloat(row.cells[2].textContent.replace(/[$,]/g, '')) || 0;
             const visionAmount = parseFloat(row.cells[3].textContent.replace(/[$,]/g, '')) || 0;
             const hsaAmount = parseFloat(row.cells[4].textContent.replace(/[$,]/g, '')) || 0;
-            
+
             switch (premiumType) {
                 case 'medical':
                     hasMatchingType = medicalAmount > 0;
@@ -344,15 +344,15 @@ function filterTable() {
                     hasMatchingType = hsaAmount > 0;
                     break;
             }
-            
+
             if (!hasMatchingType) {
                 visible = false;
             }
         }
-        
+
         row.style.display = visible ? '' : 'none';
     });
-    
+
     // Update visible row count
     updateRowCount();
     applyStriping('premiumsTable');
@@ -362,7 +362,7 @@ function updateRowCount() {
     const table = document.getElementById('premiumsTable');
     const allRows = table.querySelectorAll('tbody tr');
     const visibleRows = table.querySelectorAll('tbody tr:not([style*="display: none"])');
-    
+
     // Add/update row count display
     let countDisplay = document.getElementById('rowCount');
     if (!countDisplay) {
@@ -400,7 +400,7 @@ function applyStriping(tableId) {
 function setupFormSubmission() {
     document.getElementById('addPremiumForm').addEventListener('submit', async function(e) {
         e.preventDefault();
-        
+
         const formData = new FormData(e.target);
         const data = {
             year: parseInt(formData.get('year')),
@@ -409,7 +409,7 @@ function setupFormSubmission() {
             vision_premium: formData.get('vision_premium') ? parseFloat(formData.get('vision_premium')) : null,
             hsa_fsa_paid: formData.get('hsa_fsa_paid') ? parseFloat(formData.get('hsa_fsa_paid')) : null
         };
-        
+
         try {
             const response = await fetch('/api/premiums/', {
                 method: 'POST',
@@ -418,7 +418,7 @@ function setupFormSubmission() {
                 },
                 body: JSON.stringify(data)
             });
-            
+
             if (response.ok) {
                 location.reload();
             } else {
@@ -498,7 +498,7 @@ async function deletePremium(id) {
             const response = await fetch(`/api/premiums/${id}`, {
                 method: 'DELETE'
             });
-            
+
             if (response.ok) {
                 location.reload();
             } else {

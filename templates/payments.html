@@ -225,6 +225,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // Force state so first call sorts descending
     currentSort = { column: 0, direction: 'asc' }; // so calling sortTable(0) flips to desc
     sortTable(0);
+    restoreFiltersFromQuery();
+    filterTable();
     // Default payment date to today when opening modal
     const addPaymentModal = document.getElementById('addPaymentModal');
     if (addPaymentModal) {
@@ -245,27 +247,27 @@ function initializeTableEnhancements() {
     // Setup search
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
-        searchInput.addEventListener('input', filterTable);
+        let t=null; searchInput.addEventListener('input', ()=>{clearTimeout(t); t=setTimeout(()=>{updateQueryFromFilters(); filterTable();},300);});
     }
-    
+
     // Setup filters
     const expenseTypeFilter = document.getElementById('expenseTypeFilter');
     const providerFilter = document.getElementById('providerFilter');
     const dateFrom = document.getElementById('dateFrom');
     const dateTo = document.getElementById('dateTo');
-    
-    if (expenseTypeFilter) expenseTypeFilter.addEventListener('change', filterTable);
-    if (providerFilter) providerFilter.addEventListener('change', filterTable);
-    if (dateFrom) dateFrom.addEventListener('change', filterTable);
-    if (dateTo) dateTo.addEventListener('change', filterTable);
-    
+
+    if (expenseTypeFilter) expenseTypeFilter.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
+    if (providerFilter) providerFilter.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
+    if (dateFrom) dateFrom.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
+    if (dateTo) dateTo.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
+
     // Setup sortable headers
     const sortableHeaders = document.querySelectorAll('.sortable');
     sortableHeaders.forEach(header => {
         header.style.cursor = 'pointer';
         header.addEventListener('click', () => sortTable(parseInt(header.dataset.column)));
     });
-    
+
     // Action buttons removed; modifications now handled in detail view.
 }
 
@@ -273,35 +275,35 @@ function sortTable(column) {
     const table = document.getElementById('paymentsTable');
     const tbody = table.querySelector('tbody');
     const rows = Array.from(tbody.querySelectorAll('tr'));
-    
+
     // Determine sort direction
     let direction = 'asc';
     if (currentSort.column === column && currentSort.direction === 'asc') {
         direction = 'desc';
     }
-    
+
     // Update sort indicators
     document.querySelectorAll('.sortable i').forEach(icon => {
         icon.className = 'bi bi-arrow-down-up';
     });
-    
+
     const currentHeader = document.querySelector(`[data-column="${column}"] i`);
     if (direction === 'asc') {
         currentHeader.className = 'bi bi-arrow-up';
     } else {
         currentHeader.className = 'bi bi-arrow-down';
     }
-    
+
     currentSort = { column, direction };
-    
+
     // Sort rows
     rows.sort((a, b) => {
         const cellA = a.cells[column].textContent.trim();
         const cellB = b.cells[column].textContent.trim();
-        
+
         // Handle different data types
         let valueA, valueB;
-        
+
         if (column === 0) { // Date column
             const rawA = a.cells[column].getAttribute('data-date');
             const rawB = b.cells[column].getAttribute('data-date');
@@ -317,12 +319,12 @@ function sortTable(column) {
             valueA = cellA.toLowerCase();
             valueB = cellB.toLowerCase();
         }
-        
+
         if (valueA < valueB) return direction === 'asc' ? -1 : 1;
         if (valueA > valueB) return direction === 'asc' ? 1 : -1;
         return 0;
     });
-    
+
     // Re-append sorted rows
     rows.forEach(row => tbody.appendChild(row));
     applyStriping('paymentsTable');
@@ -334,13 +336,13 @@ function filterTable() {
     const provider = document.getElementById('providerFilter').value.toLowerCase();
     const dateFrom = document.getElementById('dateFrom').value;
     const dateTo = document.getElementById('dateTo').value;
-    
+
     const table = document.getElementById('paymentsTable');
     const rows = table.querySelectorAll('tbody tr');
-    
+
     rows.forEach(row => {
         let visible = true;
-        
+
         // Text search filter
         if (searchTerm) {
             const rowText = row.textContent.toLowerCase();
@@ -348,7 +350,7 @@ function filterTable() {
                 visible = false;
             }
         }
-        
+
         // Expense type filter
         if (visible && expenseType) {
             const expenseTypeCell = row.cells[2].textContent.toLowerCase().trim();
@@ -356,7 +358,7 @@ function filterTable() {
                 visible = false;
             }
         }
-        
+
         // Provider filter
         if (visible && provider) {
             const providerCell = row.cells[3].textContent.toLowerCase().trim();
@@ -364,13 +366,13 @@ function filterTable() {
                 visible = false;
             }
         }
-        
+
         // Date range filter
         if (visible && (dateFrom || dateTo)) {
             const paymentDateCell = row.cells[0].textContent.trim();
             if (paymentDateCell && paymentDateCell !== '-') {
                 const paymentDate = new Date(paymentDateCell);
-                
+
                 if (dateFrom && paymentDate < new Date(dateFrom)) {
                     visible = false;
                 }
@@ -382,10 +384,10 @@ function filterTable() {
                 visible = false;
             }
         }
-        
+
         row.style.display = visible ? '' : 'none';
     });
-    
+
     // Update visible row count
     updateRowCount();
     applyStriping('paymentsTable');
@@ -395,7 +397,7 @@ function updateRowCount() {
     const table = document.getElementById('paymentsTable');
     const allRows = table.querySelectorAll('tbody tr');
     const visibleRows = table.querySelectorAll('tbody tr:not([style*="display: none"])');
-    
+
     // Add/update row count display
     let countDisplay = document.getElementById('rowCount');
     if (!countDisplay) {
@@ -417,6 +419,7 @@ function clearFilters() {
     document.getElementById('providerFilter').value = '';
     document.getElementById('dateFrom').value = '';
     document.getElementById('dateTo').value = '';
+    updateQueryFromFilters();
     filterTable();
 }
 
@@ -433,7 +436,7 @@ function applyStriping(tableId) {
 function setupFormSubmission() {
     document.getElementById('addPaymentForm').addEventListener('submit', async function(e) {
         e.preventDefault();
-        
+
         const formData = new FormData(e.target);
         // Basic client-side guard for required fields (HTML5 should also enforce)
         const requiredFields = ['expense_type', 'provider_id', 'has_receipt_indicator'];
@@ -454,7 +457,7 @@ function setupFormSubmission() {
         };
         // Gather selected charge ids
         const selectedCharges = Array.from(document.querySelectorAll('#openChargesContainer input[type="checkbox"][data-charge-id]:checked')).map(cb => parseInt(cb.dataset.chargeId));
-        
+
         try {
             let response;
             if (selectedCharges.length > 0) {
@@ -470,7 +473,7 @@ function setupFormSubmission() {
                     body: JSON.stringify(data)
                 });
             }
-            
+
             if (response.ok) {
                 const result = await response.json();
                 const paymentId = result.payment_id || result.id;
@@ -500,6 +503,41 @@ function setupFormSubmission() {
             alert('Error creating payment: ' + error.message);
         }
     });
+}
+
+// --- URL Query Sync ---
+function updateQueryFromFilters() {
+    const params = new URLSearchParams(window.location.search);
+    const q = document.getElementById('searchInput').value.trim();
+    const et = document.getElementById('expenseTypeFilter').value.trim();
+    const prov = document.getElementById('providerFilter').value.trim();
+    const df = document.getElementById('dateFrom').value.trim();
+    const dt = document.getElementById('dateTo').value.trim();
+    q ? params.set('q', q) : params.delete('q');
+    et ? params.set('type', et) : params.delete('type');
+    prov ? params.set('provider', prov) : params.delete('provider');
+    df ? params.set('from', df) : params.delete('from');
+    dt ? params.set('to', dt) : params.delete('to');
+    const newUrl = window.location.pathname + (params.toString() ? ('?' + params.toString()) : '');
+    window.history.replaceState({}, '', newUrl);
+}
+
+function restoreFiltersFromQuery() {
+    const params = new URLSearchParams(window.location.search);
+    const map = {
+        q: 'searchInput',
+        type: 'expenseTypeFilter',
+        provider: 'providerFilter',
+        from: 'dateFrom',
+        to: 'dateTo'
+    };
+    for (const [key, id] of Object.entries(map)) {
+        const val = params.get(key);
+        if (val !== null) {
+            const el = document.getElementById(id);
+            if (el) el.value = val;
+        }
+    }
 }
 
 // Load open charges when provider changes
@@ -537,7 +575,7 @@ async function deletePayment(id) {
             const response = await fetch(`/api/payments/${id}`, {
                 method: 'DELETE'
             });
-            
+
             if (response.ok) {
                 location.reload();
             } else {

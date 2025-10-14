@@ -4,13 +4,19 @@ Run this file to start the Personal Health Expenses Management System.
 """
 
 import uvicorn
+
 from src.app import app
 
 if __name__ == "__main__":
+    # Determine if we're in development mode
+    import os
+
+    is_dev = os.getenv("ENV_MODE", "PROD").upper() == "DEV"
+
     uvicorn.run(
         "src.app:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,
-        log_level="info"
+        reload=is_dev,  # Only reload in development
+        log_level="info",
     )
