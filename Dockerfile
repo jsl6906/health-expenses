@@ -21,7 +21,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 WORKDIR /app
 
 # Copy Python configuration files
-COPY pyproject.toml ./
+COPY pyproject.toml README.md ./
 
 # Install dependencies using uv
 RUN uv venv && \

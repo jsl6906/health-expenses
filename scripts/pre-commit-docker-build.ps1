@@ -62,7 +62,15 @@ foreach ($File in $RelevantFiles) {
     }
 }
 $HashString = $HashInputs -join "|"
-$CurrentHash = (Get-FileHash -InputObject ([System.Text.Encoding]::UTF8.GetBytes($HashString)) -Algorithm MD5).Hash
+
+# Create a temporary file to hash the string content
+$TempFile = [System.IO.Path]::GetTempFileName()
+try {
+    [System.IO.File]::WriteAllText($TempFile, $HashString, [System.Text.Encoding]::UTF8)
+    $CurrentHash = (Get-FileHash -Path $TempFile -Algorithm MD5).Hash
+} finally {
+    Remove-Item $TempFile -Force -ErrorAction SilentlyContinue
+}
 
 # Check if hash file exists and compare
 $HashFile = Join-Path $DistDir "last-build.hash"
