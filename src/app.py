@@ -57,6 +57,19 @@ app.include_router(imports_router)
 app.include_router(pages_router)
 
 
+# Startup event: test DB connectivity and log result so container logs are helpful
+@app.on_event("startup")
+def startup_check_db():
+    try:
+        ok = db_config.test_connection()
+        if ok:
+            print("\u2705 Database connectivity test passed on startup")
+        else:
+            print("\u26A0\ufe0f Database connectivity test failed on startup")
+    except Exception as e:
+        print(f"\u274c Exception during DB startup test: {e}")
+
+
 ## HTML page routes moved to pages router (api/pages.py)
 
 

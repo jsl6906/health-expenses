@@ -95,6 +95,18 @@ cp .env.docker.example .env
 | `DB_MAX_OVERFLOW` | Max overflow connections | `10` |
 | `DB_ECHO` | SQL query logging | `false` |
 
+### Database Connection Options
+
+**Option 1: Use Azure PostgreSQL (Recommended for Docker)**
+- Set `ENV_MODE=PROD` (default in Docker)
+- Uses your Azure database configuration
+- Works seamlessly in Docker containers
+
+**Option 2: Use Local Database**
+- Set `ENV_MODE=TEST`
+- Requires host networking: add `network_mode: host` to docker-compose.yml
+- Only works if your local database is accessible from the container
+
 ### Security Considerations
 
 1. **Never commit `.env` files** to version control
@@ -175,6 +187,26 @@ docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
 - Configure proper backup strategies
 
 ## Troubleshooting
+
+#### `/charges` endpoint not working in Docker
+
+**Problem**: The `/charges` page loads locally but not in Docker.
+
+**Solution**: Check your database configuration:
+1. **For Azure PostgreSQL**: Ensure `ENV_MODE=PROD` (default in Docker)
+2. **For local database**: Add `network_mode: host` to your `docker-compose.yml` and set `ENV_MODE=TEST`
+
+**Check database connectivity**:
+```bash
+# Check if the app can connect to the database
+docker-compose logs app | grep -i "database\|connect\|error"
+```
+
+**Test database connection**:
+```bash
+# Connect to your database directly
+psql -h your-db-host -U your-username -d your-database
+```
 
 ### Common Issues
 

@@ -31,7 +31,7 @@ services:
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-10}
 
       # Application Configuration
-      ENV_MODE: ${ENV_MODE:-PROD}
+      ENV_MODE: PROD  # Force PROD mode for Docker to use Azure database
       DB_ECHO: ${DB_ECHO:-false}
       APP_HOST: ${APP_HOST:-0.0.0.0}
       APP_PORT: ${APP_PORT:-8080}
