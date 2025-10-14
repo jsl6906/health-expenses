@@ -3,9 +3,9 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from crud.premium import premium_crud
-from database_config import get_db
-from schemas.schemas import Premium, PremiumCreate, PremiumUpdate
+from ..crud.premium import premium_crud
+from ..database_config import get_db
+from ..schemas.schemas import Premium, PremiumCreate, PremiumUpdate
 
 router = APIRouter(tags=["premiums"], prefix="/api")
 

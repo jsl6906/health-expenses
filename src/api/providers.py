@@ -5,9 +5,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from crud.provider import provider_crud
-from database_config import get_db
-from schemas.schemas import Provider, ProviderCreate, ProviderUpdate
+from ..crud.provider import provider_crud
+from ..database_config import get_db
+from ..schemas.schemas import Provider, ProviderCreate, ProviderUpdate
 
 
 class BulkSetGroupRequest(BaseModel):

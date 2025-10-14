@@ -16,13 +16,13 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session  # retained for diagnostic endpoint dependency
 
-from api.attachments import router as attachments_router
-from api.charges import router as charges_router
-from api.imports import router as imports_router
-from api.pages import router as pages_router
-from api.payments import router as payments_router
-from api.premiums import router as premiums_router
-from api.providers import router as providers_router
+from .api.attachments import router as attachments_router
+from .api.charges import router as charges_router
+from .api.imports import router as imports_router
+from .api.pages import router as pages_router
+from .api.payments import router as payments_router
+from .api.premiums import router as premiums_router
+from .api.providers import router as providers_router
 
 try:  # Prefer absolute imports when running as a module
     from database_config import db_config, get_db

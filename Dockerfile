@@ -35,6 +35,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/app/.venv/bin:$PATH"
 ENV VIRTUAL_ENV="/app/.venv"
+ENV PYTHONPATH="/app"
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \

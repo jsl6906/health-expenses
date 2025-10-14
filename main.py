@@ -15,7 +15,7 @@ if __name__ == "__main__":
     port = int(os.getenv("APP_PORT", "8080"))
 
     uvicorn.run(
-        "src.app:app",
+        app,
         host="0.0.0.0",
         port=port,
         reload=is_dev,  # Only reload in development

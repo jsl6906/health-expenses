@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Uplo
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from crud.attachment import create_attachment  # needed for bulk attach
-from crud.charge import charge_crud
-from database_config import get_db
-from schemas.schemas import Charge, ChargeCreate, ChargeUpdate
+from ..crud.attachment import create_attachment  # needed for bulk attach
+from ..crud.charge import charge_crud
+from ..database_config import get_db
+from ..schemas.schemas import Charge, ChargeCreate, ChargeUpdate
 
 router = APIRouter(tags=["charges"], prefix="/api")
 

@@ -12,9 +12,12 @@ If Docker images are available from the dist/ directory:
 # Load the latest image
 docker load -i dist/personal-expenses-latest.tar
 
-# Copy and configure docker-compose
+# Copy and configure docker-compose and environment
 cp docker-compose.example.yml docker-compose.yml
-# Edit docker-compose.yml to set your passwords and configuration
+cp .env.docker.example .env
+
+# Edit .env file to set your passwords and configuration
+# REQUIRED: Set DB_PASSWORD and other sensitive values
 
 # Start the application
 docker-compose up -d
@@ -34,7 +37,11 @@ cd personal-expenses
 
 # Configure and run
 cp docker-compose.example.yml docker-compose.yml
-# Edit docker-compose.yml with your configuration
+cp .env.docker.example .env
+
+# Edit .env file to set your passwords and configuration
+# REQUIRED: Set DB_PASSWORD and other sensitive values
+
 docker-compose up -d
 ```
 
@@ -57,32 +64,52 @@ git commit -m "Your changes"  # This will trigger the Docker build
 
 ### Environment Variables
 
-Edit your `docker-compose.yml` file to configure:
+The application now uses `.env` files for configuration. Copy `.env.docker.example` to `.env` and customize the values:
+
+```bash
+cp .env.docker.example .env
+# Edit .env file with your specific configuration
+```
+
+**Required Variables:**
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `DB_HOST` | External PostgreSQL host | - | ✅ Yes |
+| `DB_PASSWORD` | PostgreSQL password | - | ✅ Yes |
+| `DB_NAME` | Database name | `personal_expenses` | No |
+| `DB_USER` | Database user | `postgres` | No |
+| `DB_PORT` | PostgreSQL port | `5432` | No |
+
+**Optional Variables:**
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DB_HOST` | PostgreSQL host | `postgres` |
-| `DB_PORT` | PostgreSQL port | `5432` |
-| `DB_NAME` | Database name | `personal_expenses` |
-| `DB_USER` | Database user | `postgres` |
-| `DB_PASSWORD` | Database password | **CHANGE THIS** |
-| `ENV_MODE` | Environment mode | `PROD` |
-| `GOOGLE_API_KEY` | Gemini API key (optional) | - |
+| `ENV_MODE` | Environment mode (`PROD`/`TEST`) | `PROD` |
+| `APP_HOST` | Application host | `0.0.0.0` |
+| `APP_PORT` | Application port | `8080` |
+| `APP_DEBUG` | Debug mode | `false` |
+| `GEMINI_API_KEY` | Gemini API key for EOB parsing | - |
+| `GEMINI_MODEL_NAME` | Gemini model | `gemini-1.5-flash` |
+| `DB_POOL_SIZE` | Connection pool size | `5` |
+| `DB_MAX_OVERFLOW` | Max overflow connections | `10` |
+| `DB_ECHO` | SQL query logging | `false` |
 
 ### Security Considerations
 
-1. **Change all default passwords** in `docker-compose.yml`
-2. **Generate secure random passwords** for PostgreSQL and pgAdmin
-3. **Use environment files** for sensitive data in production
-4. **Enable HTTPS** with a reverse proxy (nginx/traefik) in production
+1. **Never commit `.env` files** to version control
+2. **Use strong passwords** for `DB_PASSWORD` (minimum 12 characters)
+3. **Keep API keys secure** - don't share your `GEMINI_API_KEY`
+4. **Use HTTPS** with a reverse proxy in production
+5. **Enable firewall rules** to restrict database access
 
 ## Services
 
 The docker-compose setup includes:
 
 - **app**: Personal Expenses web application (port 8080)
-- **postgres**: PostgreSQL database (port 5432)
-- **pgadmin**: Database administration interface (port 5050, optional)
+
+The application connects to an external PostgreSQL database based on your configuration in the `.env` file.
 
 ## Build Scripts
 
@@ -169,10 +196,10 @@ docker-compose logs -f app
 
 ### Database Access
 ```bash
-# Connect to PostgreSQL directly
-docker-compose exec postgres psql -U postgres -d personal_expenses
+# Connect to your external PostgreSQL database directly
+psql -h your-database-host.com -U postgres -d personal_expenses
 
-# Or use pgAdmin at http://localhost:5050
+# Or use your preferred database administration tool
 ```
 
 ## Pre-commit Integration

@@ -4,15 +4,15 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from crud.attachment import (
+from ..crud.attachment import (
     create_attachment,
     delete_attachment,
     get_attachment,
     list_attachments_for_charge,
     list_attachments_for_payment,
 )
-from database_config import get_db
-from schemas.schemas import Attachment
+from ..database_config import get_db
+from ..schemas.schemas import Attachment
 
 router = APIRouter(tags=["attachments"], prefix="/api")
 
