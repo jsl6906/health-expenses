@@ -142,11 +142,45 @@ try {
         }
 
     } else {
-        Write-Host "Docker build failed!" -ForegroundColor Red
-        Write-Host $BuildOutput -ForegroundColor Gray
-        Write-Host ""
-        Write-Host "Tip: Fix the build errors above and try committing again." -ForegroundColor Yellow
-        exit 1
+        # Check if the image was actually created despite non-zero exit code (warnings)
+        $ImageExists = & docker images --format "{{.Repository}}:{{.Tag}}" | Where-Object { $_ -eq $ImageTag }
+
+        if ($ImageExists) {
+            Write-Host "Build completed with warnings but image was created." -ForegroundColor Yellow
+
+            # Save the Docker image to dist directory
+            $ImageFile = Join-Path $DistDir "$ImageName-$Timestamp.tar"
+            Write-Host "Saving image to: $ImageFile" -ForegroundColor Gray
+
+            $SaveProcess = Start-Process -FilePath "docker" -ArgumentList @("save", "-o", $ImageFile, $ImageTag) -NoNewWindow -PassThru -Wait
+
+            if ($SaveProcess.ExitCode -eq 0) {
+                Write-Host "Image saved successfully!" -ForegroundColor Green
+
+                # Update hash file to avoid rebuilding
+                Set-Content -Path $HashFile -Value $CurrentHash
+
+                # Clean up intermediate image to save space
+                $RemoveProcess = Start-Process -FilePath "docker" -ArgumentList @("rmi", $ImageTag) -NoNewWindow -PassThru -Wait
+                if ($RemoveProcess.ExitCode -eq 0) {
+                    Write-Host "Cleaned up intermediate image." -ForegroundColor Gray
+                }
+
+                Write-Host ""
+                Write-Host "Docker image built and saved to dist/$ImageName-$Timestamp.tar" -ForegroundColor Green
+                Write-Host "Use 'docker load -i dist/$ImageName-$Timestamp.tar' to load the image" -ForegroundColor Cyan
+
+            } else {
+                Write-Host "Failed to save Docker image!" -ForegroundColor Red
+                exit 1
+            }
+        } else {
+            Write-Host "Docker build failed!" -ForegroundColor Red
+            Write-Host $BuildOutput -ForegroundColor Gray
+            Write-Host ""
+            Write-Host "Tip: Fix the build errors above and try committing again." -ForegroundColor Yellow
+            exit 1
+        }
     }
 
 } catch {

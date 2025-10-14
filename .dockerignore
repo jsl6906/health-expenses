@@ -58,7 +58,6 @@ Thumbs.db
 
 # Project specific
 scripts/
-README.md
 AGENTS.md
 data_model.dbml
 *.log
