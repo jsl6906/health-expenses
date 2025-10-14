@@ -109,8 +109,11 @@ def list_money_columns(db: Session = Depends(get_db)):
 
 
 if __name__ == "__main__":
+    import os
+
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("APP_PORT", "8080"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
 
-# Successfully configured pre-commit Docker builds!
+# Successfully configured pre-commit Docker builds! Now running on port 8080.

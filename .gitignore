@@ -14,3 +14,6 @@ wheels/
 
 # Database dumps
 .db_dumps/
+
+# Environment files
+.env

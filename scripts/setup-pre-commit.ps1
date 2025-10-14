@@ -30,12 +30,6 @@ if (!(Test-Path ".pre-commit-config.yaml")) {
     exit 1
 }
 
-# Use Windows-specific config if it exists
-if (Test-Path ".pre-commit-config.windows.yaml") {
-    Write-Host "Using Windows-specific pre-commit configuration..." -ForegroundColor Cyan
-    Copy-Item ".pre-commit-config.windows.yaml" ".pre-commit-config.yaml" -Force
-}
-
 # Check if Python is available
 try {
     $PythonVersion = python --version 2>&1

@@ -16,9 +16,13 @@ sys.path.insert(0, str(src_path))
 
 def main():
     """Run the FastAPI application with uvicorn."""
+    import os
+
+    port = int(os.getenv("APP_PORT", "8080"))
+
     print("Starting Personal Health Expenses Management System...")
-    print("Web Interface: http://localhost:8000")
-    print("API Documentation: http://localhost:8000/docs")
+    print(f"Web Interface: http://localhost:{port}")
+    print(f"API Documentation: http://localhost:{port}/docs")
     print("Press Ctrl+C to stop the server")
     print("-" * 50)
 
@@ -37,7 +41,7 @@ def main():
         uvicorn.run(
             "app:app",  # Use string import for proper reload
             host="0.0.0.0",
-            port=8000,
+            port=port,
             reload=False,  # Disable reload to avoid warnings
             log_level="info",
         )

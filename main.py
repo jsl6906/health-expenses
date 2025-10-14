@@ -12,11 +12,12 @@ if __name__ == "__main__":
     import os
 
     is_dev = os.getenv("ENV_MODE", "PROD").upper() == "DEV"
+    port = int(os.getenv("APP_PORT", "8080"))
 
     uvicorn.run(
         "src.app:app",
         host="0.0.0.0",
-        port=8000,
+        port=port,
         reload=is_dev,  # Only reload in development
         log_level="info",
     )

@@ -80,7 +80,7 @@ Edit your `docker-compose.yml` file to configure:
 
 The docker-compose setup includes:
 
-- **app**: Personal Expenses web application (port 8000)
+- **app**: Personal Expenses web application (port 8080)
 - **postgres**: PostgreSQL database (port 5432)
 - **pgadmin**: Database administration interface (port 5050, optional)
 
