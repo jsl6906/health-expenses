@@ -502,6 +502,19 @@ window.addEventListener('DOMContentLoaded',()=>{
             minimumFractionDigits: 2
         });
     }
+  // Helper to normalize EOB/Claim numbers: collapse leading zeros after a dash
+  // e.g. '0-0001614' -> '0-1614', 'ABC-000123' -> 'ABC-123', and '0-000' -> '0-0'
+  function normalizeEobString(s) {
+    if (s === null || s === undefined) return '';
+    let str = s.toString();
+    // Trim whitespace and normalize non-breaking spaces
+    str = str.replace(/\u00A0/g, ' ').trim();
+    // Replace any dash followed by leading zeros then digits: -0+digits -> -digits
+    str = str.replace(/-0+(\d+)/g, '-$1');
+    // If the string ends with dash followed by zeros only, collapse to '-0'
+    str = str.replace(/-0+$/g, '-0');
+    return str;
+  }
 
     // Determine which charge has more complete data
     function getCompleteness(charge) {
@@ -547,41 +560,97 @@ window.addEventListener('DOMContentLoaded',()=>{
         if (field.type === 'number') {
             val1 = actualVal1 !== null && actualVal1 !== undefined && actualVal1 !== '' ? formatCurrency(actualVal1) : '';
             val2 = actualVal2 !== null && actualVal2 !== undefined && actualVal2 !== '' ? formatCurrency(actualVal2) : '';
-        } else if (field.key === 'provider_name') {
-            val1 = charge1.provider_name || '';
-            val2 = charge2.provider_name || '';
+    } else if (field.key === 'provider_name') {
+      val1 = charge1.provider_name || '';
+      val2 = charge2.provider_name || '';
+    } else if (field.key === 'eob_claim_num') {
+      // normalize display of EOB/Claim numbers for consistency
+      val1 = normalizeEobString(actualVal1) || '';
+      val2 = normalizeEobString(actualVal2) || '';
         } else {
             val1 = actualVal1 || '';
             val2 = actualVal2 || '';
         }
 
-        // Determine which option to select by default
-        let defaultSelection = 1; // Default to charge 1
+    // Determine which option to select by default
+    let defaultSelection = 1; // Default to charge 1
 
-        const hasVal1 = actualVal1 !== null && actualVal1 !== undefined && actualVal1 !== '';
-        const hasVal2 = actualVal2 !== null && actualVal2 !== undefined && actualVal2 !== '';
+    const hasVal1 = actualVal1 !== null && actualVal1 !== undefined && actualVal1 !== '';
+    const hasVal2 = actualVal2 !== null && actualVal2 !== undefined && actualVal2 !== '';
 
-        if (actualVal1 === actualVal2) {
-            // Values are the same, select either one
-            defaultSelection = 1;
+    // For comparison purposes we may need to normalize certain fields (e.g. EOB/Claim #)
+    let compareVal1 = actualVal1;
+    let compareVal2 = actualVal2;
+    if (field.key === 'eob_claim_num') {
+      // normalize EOB/Claim strings for comparison (collapse leading zeros after a dash)
+      compareVal1 = normalizeEobString(actualVal1);
+      compareVal2 = normalizeEobString(actualVal2);
+    }
+
+    if (field.key === 'provider_name') {
+      // Provider special-case: if one provider name contains a slash "/", prefer the other entry
+      const name1 = (val1 || '').toString();
+      const name2 = (val2 || '').toString();
+      const name1HasSlash = name1.indexOf('/') !== -1;
+      const name2HasSlash = name2.indexOf('/') !== -1;
+      if (name1HasSlash && !name2HasSlash) {
+        defaultSelection = 2;
+      } else if (name2HasSlash && !name1HasSlash) {
+        defaultSelection = 1;
+      } else {
+        // fallback to the general selection logic below using normalized compare values
+        if (compareVal1 === compareVal2) {
+          defaultSelection = 1;
         } else if (!hasVal1 && hasVal2) {
-            // Only charge 2 has a value
-            defaultSelection = 2;
+          defaultSelection = 2;
         } else if (hasVal1 && !hasVal2) {
-            // Only charge 1 has a value
-            defaultSelection = 1;
+          defaultSelection = 1;
         } else if (hasVal1 && hasVal2) {
-            // Both have values, prefer the more complete charge
-            defaultSelection = moreCompleteCharge;
+          defaultSelection = moreCompleteCharge;
         }
+      }
+    } else {
+      // Generic selection logic (use compareVal for fields with normalization)
+      if (compareVal1 === compareVal2) {
+        defaultSelection = 1;
+      } else if (!hasVal1 && hasVal2) {
+        defaultSelection = 2;
+      } else if (hasVal1 && !hasVal2) {
+        defaultSelection = 1;
+      } else if (hasVal1 && hasVal2) {
+        defaultSelection = moreCompleteCharge;
+      }
+    }
 
-    // highlight when the two values differ so it's obvious to the user
-    const differ = (actualVal1 !== actualVal2);
+  // highlight when the two values differ so it's obvious to the user
+  // For EOB/Claim comparisons, normalize "0-000" -> "0-" so semantically-equal variants don't show as different
+  let differ;
+  if (field.key === 'eob_claim_num') {
+    const n1 = normalizeEobString(actualVal1);
+    const n2 = normalizeEobString(actualVal2);
+    differ = n1 !== n2;
+  } else {
+    differ = (actualVal1 !== actualVal2);
+  }
     const labelClass = differ ? 'merge-different' : '';
   const diffHint1 = differ ? `Different from Charge #${charge2.id}` : '';
   const diffHint2 = differ ? `Different from Charge #${charge1.id}` : '';
 
+  if (field.key === 'eob_claim_num') {
+    try {
+      const raw1 = (actualVal1 === null || actualVal1 === undefined) ? '' : actualVal1.toString();
+      const raw2 = (actualVal2 === null || actualVal2 === undefined) ? '' : actualVal2.toString();
+      const norm1 = normalizeEobString(raw1);
+      const norm2 = normalizeEobString(raw2);
+      const codes1 = Array.from(norm1).map(c => c.charCodeAt(0));
+      const codes2 = Array.from(norm2).map(c => c.charCodeAt(0));
+      console.log('merge-compare field', field.key, 'differ=', differ, 'raw1=', raw1, 'raw2=', raw2, 'norm1=', norm1, 'norm2=', norm2, 'codes1=', codes1, 'codes2=', codes2);
+    } catch (dbgErr) {
+      console.log('merge-compare field', field.key, 'differ=', differ, 'val1=', val1, 'val2=', val2);
+    }
+  } else {
     console.log('merge-compare field', field.key, 'differ=', differ, 'val1=', val1, 'val2=', val2);
+  }
 
     html += `
       <div class="row mb-2 align-items-center">
@@ -622,8 +691,14 @@ function highlightMergeDifferencesOnDetail() {
       if (cols.length < 3) return;
       const left = cols[1];
       const right = cols[2];
-      const leftText = left.textContent.trim();
-      const rightText = right.textContent.trim();
+      let leftText = left.textContent.trim();
+      let rightText = right.textContent.trim();
+
+      // Normalize EOB/Claim formatting: collapse leading zeros after dash for comparisons
+      try {
+        leftText = normalizeEobString(leftText);
+        rightText = normalizeEobString(rightText);
+      } catch (e) {}
 
       const looksNumeric = s => !!s && /^[\s$]?[-+]?\d[\d,]*(\.\d+)?\s*$/.test(s);
       const parseNum = s => parseFloat(s.replace(/[^0-9.\-]/g, ''));

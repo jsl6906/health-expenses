@@ -407,6 +407,17 @@ function initializeTableEnhancements() {
     });
 }
 
+// Helper to normalize EOB/Claim numbers: collapse leading zeros after a dash
+// e.g. '0-0001614' -> '0-1614', 'ABC-000123' -> 'ABC-123'
+function normalizeEobString(s) {
+    if (s === null || s === undefined) return '';
+    let str = s.toString();
+    str = str.replace(/\u00A0/g, ' ').trim();
+    str = str.replace(/-0+(\d+)/g, '-$1');
+    str = str.replace(/-0+$/g, '-0');
+    return str;
+}
+
 function sortTable(column) {
     const table = document.getElementById('chargesTable');
     const tbody = table.querySelector('tbody');
@@ -1062,6 +1073,17 @@ function populateChargeMergeModal(charges) {
         });
     }
 
+    // Helper to normalize EOB/Claim numbers: collapse leading zeros after a dash
+    // e.g. '0-0001614' -> '0-1614', 'ABC-000123' -> 'ABC-123'
+    function normalizeEobString(s) {
+        if (s === null || s === undefined) return '';
+        let str = s.toString();
+        str = str.replace(/\u00A0/g, ' ').trim();
+        str = str.replace(/-0+(\d+)/g, '-$1');
+        str = str.replace(/-0+$/g, '-0');
+        return str;
+    }
+
     fields.forEach(field => {
         const valueKey = field.valueKey || field.key;
         const actualVal1 = charge1[valueKey];
@@ -1087,39 +1109,82 @@ function populateChargeMergeModal(charges) {
         const hasVal1 = actualVal1 !== null && actualVal1 !== undefined && actualVal1 !== '';
         const hasVal2 = actualVal2 !== null && actualVal2 !== undefined && actualVal2 !== '';
 
-        if (actualVal1 === actualVal2) {
-            // Values are the same, select either one
-            defaultSelection = 1;
-        } else if (!hasVal1 && hasVal2) {
-            // Only charge 2 has a value
-            defaultSelection = 2;
-        } else if (hasVal1 && !hasVal2) {
-            // Only charge 1 has a value
-            defaultSelection = 1;
-        } else if (hasVal1 && hasVal2) {
-            // Both have values. Special-case reimbursement: pick the larger reimbursed amount
-            if (field.key === 'reimbursement_amount') {
-                try {
-                    const num1 = parseFloat(actualVal1) || 0;
-                    const num2 = parseFloat(actualVal2) || 0;
-                    defaultSelection = num1 >= num2 ? 1 : 2;
-                } catch (e) {
-                    // Fallback to moreCompleteCharge if parsing fails
+        // For comparison/selection, allow normalized EOB comparisons
+        let compareVal1 = actualVal1;
+        let compareVal2 = actualVal2;
+        if (field.key === 'eob_claim_num') {
+            compareVal1 = normalizeEobString(actualVal1);
+            compareVal2 = normalizeEobString(actualVal2);
+        }
+
+        if (field.key === 'provider_id') {
+            // provider display values are provider_name; prefer the one without a slash
+            const name1 = (charge1.provider_name || '').toString();
+            const name2 = (charge2.provider_name || '').toString();
+            const name1HasSlash = name1.indexOf('/') !== -1;
+            const name2HasSlash = name2.indexOf('/') !== -1;
+            if (name1HasSlash && !name2HasSlash) {
+                defaultSelection = 2;
+            } else if (name2HasSlash && !name1HasSlash) {
+                defaultSelection = 1;
+            } else {
+                // fallback to general logic
+                if (compareVal1 === compareVal2) {
+                    defaultSelection = 1;
+                } else if (!hasVal1 && hasVal2) {
+                    defaultSelection = 2;
+                } else if (hasVal1 && !hasVal2) {
+                    defaultSelection = 1;
+                } else if (hasVal1 && hasVal2) {
+                    if (field.key === 'reimbursement_amount') {
+                        try { const num1 = parseFloat(actualVal1) || 0; const num2 = parseFloat(actualVal2) || 0; defaultSelection = num1 >= num2 ? 1 : 2; } catch(e) { defaultSelection = moreCompleteCharge; }
+                    } else {
+                        defaultSelection = moreCompleteCharge;
+                    }
+                }
+            }
+        } else {
+            if (compareVal1 === compareVal2) {
+                defaultSelection = 1;
+            } else if (!hasVal1 && hasVal2) {
+                defaultSelection = 2;
+            } else if (hasVal1 && !hasVal2) {
+                defaultSelection = 1;
+            } else if (hasVal1 && hasVal2) {
+                if (field.key === 'reimbursement_amount') {
+                    try { const num1 = parseFloat(actualVal1) || 0; const num2 = parseFloat(actualVal2) || 0; defaultSelection = num1 >= num2 ? 1 : 2; } catch(e) { defaultSelection = moreCompleteCharge; }
+                } else {
                     defaultSelection = moreCompleteCharge;
                 }
-            } else {
-                // For other fields, prefer the more complete charge
-                defaultSelection = moreCompleteCharge;
             }
         }
 
         // highlight cells when values differ to make it obvious in the UI
-        const differ = (actualVal1 !== actualVal2);
+        let differ;
+        if (field.key === 'eob_claim_num') {
+            differ = normalizeEobString(actualVal1) !== normalizeEobString(actualVal2);
+        } else {
+            differ = (actualVal1 !== actualVal2);
+        }
         const labelClass = differ ? 'merge-different' : '';
     const diffHint1 = differ ? `Different from Charge #${charge2.id}` : '';
     const diffHint2 = differ ? `Different from Charge #${charge1.id}` : '';
 
-    console.log('merge-compare field', field.key, 'differ=', differ, 'val1=', val1, 'val2=', val2);
+    if (field.key === 'eob_claim_num') {
+        try {
+            const raw1 = (actualVal1 === null || actualVal1 === undefined) ? '' : actualVal1.toString();
+            const raw2 = (actualVal2 === null || actualVal2 === undefined) ? '' : actualVal2.toString();
+            const norm1 = normalizeEobString(raw1);
+            const norm2 = normalizeEobString(raw2);
+            const codes1 = Array.from(norm1).map(c => c.charCodeAt(0));
+            const codes2 = Array.from(norm2).map(c => c.charCodeAt(0));
+            console.log('merge-compare field', field.key, 'differ=', differ, 'raw1=', raw1, 'raw2=', raw2, 'norm1=', norm1, 'norm2=', norm2, 'codes1=', codes1, 'codes2=', codes2);
+        } catch (dbgErr) {
+            console.log('merge-compare field', field.key, 'differ=', differ, 'val1=', val1, 'val2=', val2);
+        }
+    } else {
+        console.log('merge-compare field', field.key, 'differ=', differ, 'val1=', val1, 'val2=', val2);
+    }
 
         html += `
             <div class="row mb-2 align-items-center">
@@ -1192,8 +1257,10 @@ function highlightMergeDifferences() {
             const rightCol = cols[2];
             const leftLabel = leftCol.querySelector('.form-check-label');
             const rightLabel = rightCol.querySelector('.form-check-label');
-            const leftText = leftLabel ? leftLabel.textContent.trim() : leftCol.textContent.trim();
-            const rightText = rightLabel ? rightLabel.textContent.trim() : rightCol.textContent.trim();
+            let leftText = leftLabel ? leftLabel.textContent.trim() : leftCol.textContent.trim();
+            let rightText = rightLabel ? rightLabel.textContent.trim() : rightCol.textContent.trim();
+            // Normalize EOB/Claim formatting for comparison
+            try { leftText = normalizeEobString(leftText); rightText = normalizeEobString(rightText); } catch (e) {}
 
             // Only attempt numeric comparison when strings look like numbers/currency
             const looksNumeric = s => !!s && /^[\s$]?[-+]?\d[\d,]*(\.\d+)?\s*$/.test(s);
