@@ -187,16 +187,14 @@ async def provider_detail_page(
     )
     (charge_count, total_charged, total_owed, total_ins_paid) = charge_totals
 
-    payment_totals = (
-        db.query(
-            func.coalesce(func.count(PaymentModel.id), 0),
-            cast(func.sum(PaymentModel.payment_amount), Numeric(18, 2)),
-            cast(func.sum(PaymentModel.reimbursement_amount), Numeric(18, 2)),
-        )
-        .filter(PaymentModel.provider_id == provider_id)
-        .one()
-    )
-    (payment_count, total_payments, total_reimbursed) = payment_totals
+    # NOTE: payment_totals will be computed from the payments list below so
+    # that the financial summary matches the payments table. We intentionally
+    # avoid a separate aggregation query here because payments shown include
+    # payments linked to this provider's charges even when the payment's
+    # provider_id is not set.
+    payment_count = 0
+    total_payments = 0
+    total_reimbursed = 0
 
     charges = (
         db.query(ChargeModel)
@@ -230,12 +228,39 @@ async def provider_detail_page(
     for ch in charges:
         setattr(ch, "attachment_count", att_count_map.get(ch.id, 0))
 
-    payments = (
-        db.query(PaymentModel)
-        .filter(PaymentModel.provider_id == provider_id)
-        .order_by(PaymentModel.payment_date.desc())
-        .all()
-    )
+    # Include payments that are either directly assigned to this provider
+    # (Payment.provider_id == provider_id) OR payments that are linked to
+    # charges belonging to this provider via the ChargePaymentXref table.
+    # Historically only payments with the provider_id were shown which meant
+    # payments allocated to charges for this provider but missing the
+    # provider_id didn't surface on the provider detail page.
+    from sqlalchemy import or_
+
+    payment_ids_linked_to_charges = []
+    if charge_ids:
+        try:
+            linked_rows = (
+                db.query(XrefModel.payment_id)
+                .filter(XrefModel.charge_id.in_(charge_ids))
+                .distinct()
+                .all()
+            )
+            payment_ids_linked_to_charges = [pid for (pid,) in linked_rows]
+        except Exception:
+            payment_ids_linked_to_charges = []
+
+    payments_query = db.query(PaymentModel)
+    if payment_ids_linked_to_charges:
+        payments_query = payments_query.filter(
+            or_(
+                PaymentModel.provider_id == provider_id,
+                PaymentModel.id.in_(payment_ids_linked_to_charges),
+            )
+        )
+    else:
+        payments_query = payments_query.filter(PaymentModel.provider_id == provider_id)
+
+    payments = payments_query.order_by(PaymentModel.payment_date.desc()).all()
 
     # Add attachment counts for payments
     payment_ids = [p.id for p in payments]
@@ -287,6 +312,30 @@ async def provider_detail_page(
             setattr(p, "linked_charge_ids", [])
             setattr(p, "linked_charge_links", [])
 
+    # Recompute payment aggregates from the payments list so totals reflect the
+    # exact set of payments being displayed (including linked payments).
+    try:
+        payment_count = int(len(payments))
+        tp = 0.0
+        tr = 0.0
+        for p in payments:
+            raw_amt = getattr(p, "payment_amount", None)
+            try:
+                tp += float(raw_amt) if raw_amt is not None else 0.0
+            except Exception:
+                pass
+            raw_reim = getattr(p, "reimbursement_amount", None)
+            try:
+                tr += float(raw_reim) if raw_reim is not None else 0.0
+            except Exception:
+                pass
+        total_payments = float(tp)
+        total_reimbursed = float(tr)
+    except Exception:
+        payment_count = int(len(payments) if payments is not None else 0)
+        total_payments = float(0)
+        total_reimbursed = float(0)
+
     provider_summary = {
         "id": provider.id,
         "provider_name": provider.provider_name,
@@ -303,7 +352,8 @@ async def provider_detail_page(
         "total_ins_paid": float(total_ins_paid or 0),
         "total_payments": float(total_payments or 0),
         "total_reimbursed": float(total_reimbursed or 0),
-        "net_outstanding": float((total_owed or 0) - (total_payments or 0)),
+        # Ensure numeric types are compatible (SQLAlchemy may return Decimal)
+        "net_outstanding": float((float(total_owed or 0) - float(total_payments or 0))),
     }
     return templates.TemplateResponse(
         "provider_detail.html",
@@ -356,21 +406,28 @@ async def charges_page(request: Request, db: Session = Depends(get_db)):
         .all()
     )
 
-    # Build set of potential duplicate charge IDs, excluding those with 'NO DUP' in notes
+    # Build set of potential duplicate charge IDs.
+    # Note: Historically we excluded any group if any charge had 'NO DUP' in notes.
+    # Per requested behavior, only exclude a duplicate group when ALL charges in
+    # the group include the 'NO DUP' marker in their notes. If at least one
+    # charge lacks the marker, the group remains a potential duplicate.
     potential_duplicate_ids = set()
     for group in duplicate_groups:
         group_charge_ids = group.charge_ids
-        # Check if any charge in this group has 'NO DUP' in notes
+        # Load charges in this group and determine NO DUP markers
         charges_in_group = (
             db.query(ChargeModel).filter(ChargeModel.id.in_(group_charge_ids)).all()
         )
-        has_no_dup_marker = any(
-            charge.notes and "NO DUP" in charge.notes.upper()
+
+        # Only exclude the group if ALL charges explicitly contain 'NO DUP' in their notes.
+        # If any charge does NOT have the marker, the group should still be considered
+        # potential duplicates (per the requested behavior).
+        all_have_no_dup = all(
+            (charge.notes is not None) and ("NO DUP" in charge.notes.upper())
             for charge in charges_in_group
         )
 
-        # If no 'NO DUP' marker found, all charges in this group are potential duplicates
-        if not has_no_dup_marker:
+        if not all_have_no_dup:
             potential_duplicate_ids.update(group_charge_ids)
 
     # Annotate charges with duplicate status

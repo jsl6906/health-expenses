@@ -101,11 +101,17 @@
     <div class="col-12">
         <div class="card">
             <div class="card-body">
+                <!-- Debug banner (hidden by default) -->
+                <div id="chargesDebugBanner" class="alert alert-info d-none mb-2" role="status" aria-live="polite"></div>
+
                 <div id="chargeActionsBar" class="d-none mb-2">
                     <div class="d-flex flex-wrap align-items-center gap-2">
                         <span id="selectedChargeCount" class="fw-semibold"></span>
                         <button id="mergeChargesBtn" class="btn btn-sm btn-outline-warning" disabled>
                             <i class="bi bi-arrow-left-right"></i> Merge Charges
+                        </button>
+                        <button id="markNoDupBtn" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-tag"></i> Mark as NO DUP
                         </button>
                         <button id="cancelChargeSelectionBtn" class="btn btn-sm btn-outline-secondary">
                             Cancel
@@ -340,12 +346,24 @@ let currentSort = { column: -1, direction: 'asc' };
 
 // Initialize table enhancements
 document.addEventListener('DOMContentLoaded', function() {
-    initializeTableEnhancements();
-    setupChargeSelection();
-    setupFormSubmission();
-    applyStriping('chargesTable');
-    restoreFiltersFromQuery();
-    filterTable();
+    try {
+        // indicate init started
+        const dbg = document.getElementById('chargesDebugBanner');
+        if (dbg) { dbg.classList.remove('d-none'); dbg.textContent = 'Initializing charges UI...'; }
+        initializeTableEnhancements();
+        setupChargeSelection();
+        setupFormSubmission();
+        applyStriping('chargesTable');
+        restoreFiltersFromQuery();
+        filterTable();
+        if (dbg) { dbg.textContent = 'Charges UI initialized successfully'; setTimeout(()=>{ dbg.classList.add('d-none'); }, 1500); }
+    } catch (e) {
+        // Surface JS initialization errors so the user can see them immediately
+        try { alert('Charges page initialization error: ' + (e && e.message ? e.message : e)); } catch (_) {}
+        console && console.error && console.error('Charges page init error', e);
+        const dbg = document.getElementById('chargesDebugBanner');
+        if (dbg) { dbg.classList.remove('d-none'); dbg.textContent = 'Initialization error: ' + (e && e.message ? e.message : e); }
+    }
 });
 
 function initializeTableEnhancements() {
@@ -691,13 +709,37 @@ function restoreFiltersFromQuery() {
         from: 'dateFrom',
         to: 'dateTo'
     };
+    // Track whether the URL provided explicit from/to values
+    let hadFrom = false;
+    let hadTo = false;
     for (const [key, id] of Object.entries(map)) {
         const val = params.get(key);
         if (val !== null) {
             const el = document.getElementById(id);
             if (el) el.value = val;
+            if (key === 'from') hadFrom = true;
+            if (key === 'to') hadTo = true;
         }
     }
+
+    // If the user did not provide a date range in the URL, default to past 6 months -> today
+    const dateFromEl = document.getElementById('dateFrom');
+    const dateToEl = document.getElementById('dateTo');
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0,10);
+    if (dateToEl && !hadTo) {
+        dateToEl.value = todayStr;
+    }
+    if (dateFromEl && !hadFrom) {
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        // Normalize to ISO date string YYYY-MM-DD
+        const fromStr = sixMonthsAgo.toISOString().slice(0,10);
+        dateFromEl.value = fromStr;
+    }
+
+    // Reflect defaults back into the URL so links/bookmarks include the default range
+    updateQueryFromFilters();
 }
 
 // Inline attachment upload per charge row
@@ -738,6 +780,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // --- Charge Selection & Merge ---
 function setupChargeSelection() {
+    try {
+        // guard to surface any synchronous errors during setup
+    } catch (setupErr) {
+        try { alert('setupChargeSelection error: ' + (setupErr && setupErr.message ? setupErr.message : setupErr)); } catch (_) {}
+        console && console.error && console.error('setupChargeSelection error', setupErr);
+        return;
+    }
     const table = document.getElementById('chargesTable');
     const selectAll = document.getElementById('selectAllCharges');
     const actionsBar = document.getElementById('chargeActionsBar');
@@ -790,6 +839,38 @@ function setupChargeSelection() {
         await showChargeMergeModal(selectedIds);
     });
 
+    // Mark as NO DUP button handler
+    const markNoDupBtn = document.getElementById('markNoDupBtn');
+    if (markNoDupBtn) {
+        markNoDupBtn.addEventListener('click', async () => {
+            const selectedIds = getSelectedChargeIds();
+            if (selectedIds.length === 0) {
+                alert('Please select at least one charge to mark as NO DUP.');
+                return;
+            }
+            const proceed = confirm(`Mark ${selectedIds.length} selected charge(s) as NO DUP? This will append ' NO DUP' to their notes.`);
+            if (!proceed) return;
+
+            try {
+                const resp = await fetch('/api/charges/mark-no-dup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ charge_ids: selectedIds })
+                });
+
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    alert('Failed to mark charges: ' + (err.detail || resp.status));
+                    return;
+                }
+
+                // Success - reload to reflect updated notes and duplicate flags
+                location.reload();
+            } catch (e) {
+                alert('Error marking charges: ' + e.message);
+            }
+        });
+    }
     cancelBtn.addEventListener('click', () => {
         const cbs = table.querySelectorAll('tbody .charge-select');
         cbs.forEach(cb => cb.checked = false);
@@ -934,8 +1015,20 @@ function populateChargeMergeModal(charges) {
             // Only charge 1 has a value
             defaultSelection = 1;
         } else if (hasVal1 && hasVal2) {
-            // Both have values, prefer the more complete charge
-            defaultSelection = moreCompleteCharge;
+            // Both have values. Special-case reimbursement: pick the larger reimbursed amount
+            if (field.key === 'reimbursement_amount') {
+                try {
+                    const num1 = parseFloat(actualVal1) || 0;
+                    const num2 = parseFloat(actualVal2) || 0;
+                    defaultSelection = num1 >= num2 ? 1 : 2;
+                } catch (e) {
+                    // Fallback to moreCompleteCharge if parsing fails
+                    defaultSelection = moreCompleteCharge;
+                }
+            } else {
+                // For other fields, prefer the more complete charge
+                defaultSelection = moreCompleteCharge;
+            }
         }
 
         html += `

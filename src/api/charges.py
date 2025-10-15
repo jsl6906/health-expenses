@@ -581,3 +581,19 @@ def merge_charges_with_fields(
         "moved_payments": moved_payments,
         "moved_attachments": moved_attachments,
     }
+
+
+class MarkNoDupRequest(BaseModel):
+    charge_ids: List[int]
+
+
+@router.post("/charges/mark-no-dup")
+def mark_charges_no_dup(payload: MarkNoDupRequest, db: Session = Depends(get_db)):
+    """Append ' NO DUP' to notes for the provided charge IDs.
+
+    Returns the list of IDs that were updated.
+    """
+    if not payload.charge_ids:
+        raise HTTPException(status_code=400, detail="No charge_ids provided")
+    updated = charge_crud.mark_as_no_dup(db, payload.charge_ids)
+    return {"updated_ids": updated, "requested": payload.charge_ids}

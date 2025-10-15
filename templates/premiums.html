@@ -150,13 +150,15 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeTableEnhancements();
     setupFormSubmission();
     populateYearFilter();
+    // Restore filters from URL (after populating year options)
+    restoreFiltersFromQuery();
     setupPremiumActionDelegation();
     setupPremiumYearValidation();
 
-    // Set current year as default
+    // Set current year as default (if not filled by restore)
     const currentYear = new Date().getFullYear();
     const yearInput = document.getElementById('year');
-    if (yearInput) yearInput.value = currentYear;
+    if (yearInput && !yearInput.value) yearInput.value = currentYear;
     applyStriping('premiumsTable');
 });
 
@@ -180,7 +182,8 @@ function initializeTableEnhancements() {
     // Setup search
     const searchInput = document.getElementById('searchInput');
     if (searchInput) {
-        searchInput.addEventListener('input', filterTable);
+        let t = null;
+        searchInput.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => { updateQueryFromFilters(); filterTable(); }, 300); });
     }
 
     // Setup filters
@@ -193,6 +196,12 @@ function initializeTableEnhancements() {
     if (minAmount) minAmount.addEventListener('input', filterTable);
     if (maxAmount) maxAmount.addEventListener('input', filterTable);
     if (premiumType) premiumType.addEventListener('change', filterTable);
+
+    // Ensure filter changes update the URL
+    if (yearFilter) yearFilter.addEventListener('change', () => { updateQueryFromFilters(); filterTable(); });
+    if (minAmount) minAmount.addEventListener('input', () => { updateQueryFromFilters(); filterTable(); });
+    if (maxAmount) maxAmount.addEventListener('input', () => { updateQueryFromFilters(); filterTable(); });
+    if (premiumType) premiumType.addEventListener('change', () => { updateQueryFromFilters(); filterTable(); });
 
     // Setup sortable headers
     const sortableHeaders = document.querySelectorAll('.sortable');
@@ -384,7 +393,43 @@ function clearFilters() {
     document.getElementById('minAmount').value = '';
     document.getElementById('maxAmount').value = '';
     document.getElementById('premiumType').value = '';
+    updateQueryFromFilters();
     filterTable();
+}
+
+// --- URL Query Sync ---
+function updateQueryFromFilters() {
+    const params = new URLSearchParams(window.location.search);
+    const q = document.getElementById('searchInput').value.trim();
+    const yr = document.getElementById('yearFilter').value.trim();
+    const min = document.getElementById('minAmount').value.trim();
+    const max = document.getElementById('maxAmount').value.trim();
+    const type = document.getElementById('premiumType').value.trim();
+    q ? params.set('q', q) : params.delete('q');
+    yr ? params.set('year', yr) : params.delete('year');
+    min ? params.set('min', min) : params.delete('min');
+    max ? params.set('max', max) : params.delete('max');
+    type ? params.set('type', type) : params.delete('type');
+    const newUrl = window.location.pathname + (params.toString() ? ('?' + params.toString()) : '');
+    window.history.replaceState({}, '', newUrl);
+}
+
+function restoreFiltersFromQuery() {
+    const params = new URLSearchParams(window.location.search);
+    const map = {
+        q: 'searchInput',
+        year: 'yearFilter',
+        min: 'minAmount',
+        max: 'maxAmount',
+        type: 'premiumType'
+    };
+    for (const [key, id] of Object.entries(map)) {
+        const val = params.get(key);
+        if (val !== null) {
+            const el = document.getElementById(id);
+            if (el) el.value = val;
+        }
+    }
 }
 
 function applyStriping(tableId) {

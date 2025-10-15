@@ -48,6 +48,34 @@ class ChargeCRUD(BaseCRUD[Charge]):
         """Get charges with outstanding amount owed."""
         return db.query(Charge).filter(Charge.owed_amount > 0).all()
 
+    def mark_as_no_dup(self, db: Session, charge_ids: List[int]) -> List[int]:
+        """Append ' NO DUP' to the notes field for the given charge IDs.
+
+        Returns a list of charge IDs that were updated.
+        The method avoids appending duplicate markers if 'NO DUP' (case-insensitive)
+        already appears in the notes.
+        """
+        updated: List[int] = []
+        for cid in charge_ids:
+            obj = db.query(Charge).filter(Charge.id == cid).first()
+            if not obj:
+                continue
+            current_notes = (obj.notes or "").strip()
+            # If NO DUP already mentioned, skip
+            if "NO DUP" in current_notes.upper():
+                continue
+            # Append with a leading space if there are existing notes
+            if current_notes:
+                obj.notes = f"{current_notes} NO DUP"
+            else:
+                obj.notes = "NO DUP"
+            updated.append(cid)
+
+        if updated:
+            db.commit()
+            # Optionally refresh objects if needed
+        return updated
+
 
 # Create instance
 charge_crud = ChargeCRUD()

@@ -71,10 +71,10 @@
             <tbody>
               {% for p in payments %}
               <tr>
-                <td>{{ p.payment_date.strftime('%#m/%#d/%y') if p.payment_date else '-' }}</td>
-                <td class="text-end">{{ p.allocated_share | currency }}</td>
+                <td><a href="/payments/{{ p.id }}" class="text-decoration-none">{{ p.payment_date.strftime('%#m/%#d/%y') if p.payment_date else '-' }}</a></td>
+                <td class="text-end"><a href="/payments/{{ p.id }}" class="text-decoration-none">{{ p.allocated_share | currency }}</a></td>
                 <td>{{ p.expense_type or '-' }}</td>
-                <td>{% if p.has_receipt_indicator %}{{ p.has_receipt_indicator }}{% else %}-{% endif %}</td>
+                <td>{% if p.has_receipt_indicator %}<a href="/payments/{{ p.id }}" class="text-decoration-none">{{ p.has_receipt_indicator }}</a>{% else %}-{% endif %}</td>
               </tr>
               {% endfor %}
               {% if payments|length == 0 %}

@@ -73,185 +73,168 @@ async def import_charges_from_json_preview(
         if upload is not None:
             content_bytes = await upload.read()
             if not content_bytes:
-                raise HTTPException(status_code=400, detail="Uploaded file is empty")
-            try:
-                text = content_bytes.decode("utf-8-sig")
-            except Exception:
-                try:
-                    text = content_bytes.decode("latin-1")
-                except Exception as ex:
-                    raise HTTPException(
-                        status_code=400, detail=f"Unable to decode file bytes: {ex}"
-                    )
-            stripped = text.lstrip()
-            if not stripped:
-                raise HTTPException(
-                    status_code=400, detail="Uploaded file only contains whitespace"
-                )
 
-            # Store original data
-            original_filename = upload.filename or "uploaded_file.json"
-            original_json_text = stripped
+                def extract_relevant_fhir_entries(json_obj, charge_row):
+                    """Extract only the specific EOB and related entries for this charge.
 
-            try:
-                raw_json_obj = _json.loads(stripped)
-                source_mode = "multipart_file"
-            except Exception as ex:
-                raise HTTPException(
-                    status_code=400, detail=f"Uploaded file is not valid JSON: {ex}"
-                )
-        else:
-            inline_json_text = _get_text("file") or _get_text("json")
-            if not inline_json_text:
-                raise HTTPException(
-                    status_code=400, detail="No JSON file or inline JSON provided"
-                )
+                    Uses a simple scoring mechanism to choose the best-matching
+                    ExplanationOfBenefit when multiple EOB resources exist in the
+                    Bundle. Preference order: exact claim number match, then
+                    (service date + CPT) matches, then single-field matches.
+                    """
 
-            # Store original data
-            original_filename = "inline_json.json"
-            original_json_text = inline_json_text.lstrip()
+                    relevant_entries = []
 
-            try:
-                raw_json_obj = _json.loads(original_json_text)
-                source_mode = "multipart_inline"
-            except Exception as ex:
-                raise HTTPException(
-                    status_code=400, detail=f"Inline JSON text not valid: {ex}"
-                )
-    else:
-        body_bytes = await request.body()
-        if not body_bytes:
-            raise HTTPException(status_code=400, detail="Empty JSON body")
-        try:
-            original_json_text = body_bytes.decode("utf-8")
-            raw_json_obj = _json.loads(original_json_text)
-            source_mode = "json_body"
+                    if (
+                        isinstance(json_obj, dict)
+                        and json_obj.get("resourceType") == "Bundle"
+                    ):
+                        entries = json_obj.get("entry", [])
 
-            # Try to create a more meaningful filename from JSON content
-            if isinstance(raw_json_obj, dict):
-                if raw_json_obj.get("resourceType") == "Bundle":
-                    bundle_id = raw_json_obj.get("id", "unknown")
-                    original_filename = f"fhir_bundle_{bundle_id}.json"
-                elif raw_json_obj.get("id"):
-                    original_filename = f"json_import_{raw_json_obj.get('id')}.json"
-                else:
-                    original_filename = "pasted_json.json"
-            else:
-                original_filename = "pasted_json.json"
+                        target_claim_num = getattr(charge_row, "eob_claim_num", None)
+                        target_service_date = getattr(charge_row, "service_date", None)
+                        target_cpt = getattr(charge_row, "cpt_code", None)
 
-        except Exception as ex:
-            raise HTTPException(
-                status_code=400, detail=f"Request body is not valid JSON: {ex}"
-            )
-    rows: list[dict] = []
-    parse_mode = None
-    # debug flag currently unused; reserved for future diagnostic return
-    if isinstance(raw_json_obj, dict) and raw_json_obj.get("resourceType") == "Bundle":
-        rows = parse_fhir_bundle(raw_json_obj)
-        parse_mode = "fhir_bundle"
-    else:
-        candidate_rows = None
-        if isinstance(raw_json_obj, dict) and isinstance(
-            raw_json_obj.get("charges"), list
-        ):
-            candidate_rows = raw_json_obj.get("charges")
-        elif isinstance(raw_json_obj, list):
-            candidate_rows = raw_json_obj
-        if candidate_rows is not None:
-            for r in candidate_rows:
-                if not isinstance(r, dict):
-                    continue
-                svc = r.get("service_date") or r.get("date") or r.get("serviceDate")
-                desc = (
-                    r.get("description")
-                    or r.get("charge_description")
-                    or r.get("chargeDescription")
-                )
-                cpt = r.get("cpt_code") or r.get("cpt")
-                charged = (
-                    r.get("charged_amount") or r.get("amount") or r.get("charge_amount")
-                )
-                owed = (
-                    r.get("owed_amount")
-                    or r.get("patient_amount")
-                    or r.get("patientOwed")
-                )
-                rows.append(
-                    {
-                        "service_date": svc,
-                        "description": desc,
-                        "cpt_code": cpt,
-                        "charged_amount": charged,
-                        "owed_amount": owed,
-                    }
-                )
-            parse_mode = "generic_rows"
-        else:
-            if isinstance(raw_json_obj, dict) or isinstance(raw_json_obj, list):
-                # attempt heuristic
-                heur_rows, heur_diag = heuristic_extract_rows(raw_json_obj)
-                if heur_rows:
-                    rows = heur_rows
-                    parse_mode = "heuristic"
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="JSON not recognized. Expect FHIR Bundle, charges array, or raw list.",
-                )
-    total_parsed = len(rows)
-    try:
-        from models.database import Charge as ChargeModel  # type: ignore
-    except ImportError:
-        from .models.database import Charge as ChargeModel  # type: ignore
-    existing = db.query(ChargeModel).all()
-    existing_keys = set()
-    for ch in existing:
-        _svc = getattr(ch, "service_date", None)
-        key = (
-            _svc.isoformat() if _svc else None,
-            getattr(ch, "family_member", None),
-            getattr(ch, "medical_type", None),
-            getattr(ch, "provider_id", None),
-            (getattr(ch, "cpt_code", None) or None),
-            float(getattr(ch, "charged_amount", 0) or 0),
-            (getattr(ch, "charge_description", None) or None),
-        )
-        existing_keys.add(key)
-    preview_rows: list[JSONImportRow] = []
-    provider_candidates: list[dict] = []
-    if rows and isinstance(rows[0], dict) and rows[0].get("_provider_candidates"):
-        provider_candidates = rows[0].get("_provider_candidates") or []
-        rows = rows[1:]
-    try:
-        from models.database import Provider as ProviderModel  # type: ignore
-    except ImportError:
-        from .models.database import Provider as ProviderModel  # type: ignore
-    existing_providers = db.query(ProviderModel).all()
-    existing_provider_keys = set()
-    for p in existing_providers:
-        key = (
-            (getattr(p, "provider_name", "") or "").strip().lower(),
-            (getattr(p, "provider_address", "") or "").strip().lower(),
-        )
-        existing_provider_keys.add(key)
+                        # Score each EOB and pick best candidate
+                        best_eob = None
+                        best_score = 0
 
-    provider_preview: list[dict] = []
-    provider_dup_count = 0
-    for pc in provider_candidates:
-        key = (
-            (pc.get("provider_name") or "").strip().lower(),
-            (pc.get("provider_address") or "").strip().lower(),
-        )
-        is_dup = key in existing_provider_keys
-        if is_dup:
-            provider_dup_count += 1
-        provider_preview.append({**pc, "duplicate": is_dup})
-    duplicate_count = 0
-    fam_val = family_member or None
-    med_val = medical_type or "Medical"
-    prov_val = provider_id
-    for idx, r in enumerate(rows):
-        svc_date = r.get("service_date")
+                        for entry in entries:
+                            resource = entry.get("resource", {})
+                            if resource.get("resourceType") != "ExplanationOfBenefit":
+                                continue
+
+                            score = 0
+
+                            # Claim number match (high weight)
+                            if target_claim_num:
+                                for identifier in resource.get("identifier", []):
+                                    if identifier.get("value") == target_claim_num:
+                                        score += 100
+                                        break
+
+                            # Inspect items for date / CPT matches
+                            for item in resource.get("item", []):
+                                # Date can be servicedDate or servicedPeriod.start
+                                item_date = item.get("servicedDate")
+                                if not item_date:
+                                    sp = item.get("servicedPeriod") or {}
+                                    item_date = sp.get("start")
+
+                                if (
+                                    target_service_date
+                                    and item_date
+                                    and item_date == target_service_date
+                                ):
+                                    score += 10
+
+                                # Try to extract CPT/code from productOrService.coding
+                                product_service = item.get("productOrService", {})
+                                for coding in product_service.get("coding", []):
+                                    code = coding.get("code")
+                                    if target_cpt and code and code == target_cpt:
+                                        # Slightly lower weight than date
+                                        score += 5
+                                        break
+
+                            # If we found any score, consider this EOB
+                            if score > 0 and score >= best_score:
+                                best_score = score
+                                best_eob = resource
+
+                        if best_eob:
+                            target_eob_id = best_eob.get("id")
+                            relevant_entries.append(
+                                {
+                                    "resourceType": "ExplanationOfBenefit",
+                                    "id": target_eob_id,
+                                    "resource": best_eob,
+                                }
+                            )
+
+                            # Collect related organization/practitioner ids from the chosen EOB
+                            related_org_ids = set()
+                            related_practitioner_ids = set()
+
+                            provider_ref = best_eob.get("provider", {}).get(
+                                "reference", ""
+                            )
+                            if provider_ref.startswith("Organization/"):
+                                related_org_ids.add(provider_ref.split("/")[1])
+                            facility_ref = best_eob.get("facility", {}).get(
+                                "reference", ""
+                            )
+                            if facility_ref.startswith("Organization/"):
+                                related_org_ids.add(facility_ref.split("/")[1])
+
+                            for care_team in best_eob.get("careTeam", []):
+                                provider_ref = care_team.get("provider", {}).get(
+                                    "reference", ""
+                                )
+                                if provider_ref.startswith("Practitioner/"):
+                                    related_practitioner_ids.add(
+                                        provider_ref.split("/")[1]
+                                    )
+                                elif provider_ref.startswith("Organization/"):
+                                    related_org_ids.add(provider_ref.split("/")[1])
+
+                            # Now add related Organization / Practitioner resources from the bundle
+                            for entry in entries:
+                                resource = entry.get("resource", {})
+                                resource_type = resource.get("resourceType")
+                                resource_id = resource.get("id")
+                                if not resource_id:
+                                    continue
+                                if (
+                                    resource_type == "Organization"
+                                    and resource_id in related_org_ids
+                                ):
+                                    relevant_entries.append(
+                                        {
+                                            "resourceType": "Organization",
+                                            "id": resource_id,
+                                            "resource": resource,
+                                        }
+                                    )
+                                elif (
+                                    resource_type
+                                    in ["Practitioner", "PractitionerRole"]
+                                    and resource_id in related_practitioner_ids
+                                ):
+                                    relevant_entries.append(
+                                        {
+                                            "resourceType": resource_type,
+                                            "id": resource_id,
+                                            "resource": resource,
+                                        }
+                                    )
+                    else:
+                        # For non-FHIR JSON, include provider-related info (keep existing logic)
+                        if isinstance(json_obj, dict):
+                            if json_obj.get("providers"):
+                                relevant_entries.append(
+                                    {
+                                        "type": "providers",
+                                        "data": json_obj.get("providers"),
+                                    }
+                                )
+                            if json_obj.get("organizations"):
+                                relevant_entries.append(
+                                    {
+                                        "type": "organizations",
+                                        "data": json_obj.get("organizations"),
+                                    }
+                                )
+                            if json_obj.get("facilities"):
+                                relevant_entries.append(
+                                    {
+                                        "type": "facilities",
+                                        "data": json_obj.get("facilities"),
+                                    }
+                                )
+
+                    return relevant_entries
+
         desc = r.get("description")
         cpt_code = r.get("cpt_code")
         charged_amount = r.get("charged_amount")
