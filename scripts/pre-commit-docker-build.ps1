@@ -26,6 +26,17 @@ $DockerTriggerPatterns = @(
     ".dockerignore"
 )
 
+# Also watch template and static web asset types so HTML/CSS/JS changes trigger a rebuild
+$DockerTriggerPatterns += @(
+    "*.html",
+    "*.css",
+    "*.js",
+    "templates/*",
+    "templates/*.*",
+    "static/*",
+    "static/*.*"
+)
+
 # Check if any of the staged files match our trigger patterns
 $RelevantFiles = @()
 
@@ -40,12 +51,23 @@ if ($Files.Count -eq 0) {
 } else {
     # Files were passed, check if any match our trigger patterns
     foreach ($File in $Files) {
+        # Normalize path separators to forward slashes for matching
+        $NormFile = $File -replace "\\\\", "/"
+
         # Skip virtual environment and cache files
-        if ($File -match "^\.venv[/\\]" -or $File -match "^__pycache__[/\\]" -or $File -match "\.pyc$") {
+        if ($NormFile -match "^\.venv/" -or $NormFile -match "^__pycache__/" -or $NormFile -match "\.pyc$") {
             continue
         }
+
         foreach ($Pattern in $DockerTriggerPatterns) {
-            if ($File -like $Pattern) {
+            # Convert glob-ish patterns to regex
+            $RegexPattern = [Regex]::Escape($Pattern) -replace "\\\*", ".*"
+            if ($NormFile -match "^$RegexPattern$") {
+                $RelevantFiles += $File
+                break
+            }
+            # Also check for directory prefixes like templates/ or static/
+            if ($NormFile -like "$Pattern" -or $NormFile -match "^$Pattern") {
                 $RelevantFiles += $File
                 break
             }
