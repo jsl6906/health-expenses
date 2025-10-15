@@ -51,21 +51,32 @@
     <div class="col-12">
         <div class="card">
             <div class="card-body">
-                <div class="table-responsive">
-                    <div id="bulkActionsBar" class="d-none mb-2">
-                        <div class="d-flex flex-wrap align-items-center gap-2">
+                <!-- Controls: row count on the left, bulk actions on the right (persistent area to avoid layout jitter) -->
+                <div id="tableControlsProviders" class="d-flex justify-content-between align-items-center mb-2" style="min-height:40px;">
+                    <div id="rowCountProviders" class="text-muted"></div>
+                    <div id="bulkActionsBar" class="d-none" style="min-height:40px;">
+                        <div class="d-flex flex-wrap align-items-center gap-2" style="white-space:nowrap;">
                             <span id="selectedCount" class="fw-semibold"></span>
                             <button id="bulkAddToGroupBtn" class="btn btn-sm btn-outline-primary" disabled>
                                 <i class="bi bi-people"></i> Add to Group
                             </button>
-                            <button id="bulkClearGroupBtn" class="btn btn-sm btn-outline-warning" disabled>
-                                <i class="bi bi-x-circle"></i> Clear Group
+                            <button id="bulkAddLocationBtn" class="btn btn-sm btn-outline-primary" disabled data-bs-toggle="modal" data-bs-target="#bulkLocationModal">
+                                <i class="bi bi-geo-alt"></i> Add Location Info
+                            </button>
+                            <button id="bulkSetActiveBtn" class="btn btn-sm btn-outline-success" disabled title="Set selected providers to Active">
+                                <i class="bi bi-toggle-on"></i> Set Active
+                            </button>
+                            <button id="bulkSetInactiveBtn" class="btn btn-sm btn-outline-danger" disabled title="Set selected providers to Inactive">
+                                <i class="bi bi-toggle-off"></i> Set Inactive
                             </button>
                             <button id="bulkCancelBtn" class="btn btn-sm btn-outline-secondary">
                                 Cancel
                             </button>
                         </div>
                     </div>
+                </div>
+
+                <div class="table-responsive">
                     <table class="table manual-striped" id="providersTable">
                         <thead>
                             <tr>
@@ -84,7 +95,7 @@
                         </thead>
                         <tbody>
                             {% for provider in providers %}
-                            <tr data-provider-id="{{ provider.id }}" data-group="{{ provider.provider_group|lower if provider.provider_group else '' }}">
+                            <tr data-provider-id="{{ provider.id }}" data-group="{{ provider.provider_group|lower if provider.provider_group else '' }}" data-provider-address="{{ provider.provider_address|e }}" data-one-way-miles="{{ provider.one_way_miles if provider.one_way_miles is not none else '' }}">
                                 <td>
                                     <input type="checkbox" class="provider-select" value="{{ provider.id }}" aria-label="Select provider {{ provider.provider_name }}">
                                 </td>
@@ -158,6 +169,35 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary">Save Provider</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+<!-- Bulk Add Location Modal -->
+<div class="modal fade" id="bulkLocationModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Location Info to Selected Providers</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="bulkLocationForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="bulk_provider_address" class="form-label">Address</label>
+                        <textarea class="form-control" id="bulk_provider_address" name="provider_address" rows="3"></textarea>
+                        <div class="form-text">This address will be set on all selected providers. If blank, address will be cleared.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="bulk_one_way_miles" class="form-label">One-way Distance (miles)</label>
+                        <input type="number" step="0.1" class="form-control" id="bulk_one_way_miles" name="one_way_miles">
+                        <div class="form-text">Leave blank to clear distance.</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Apply to Selected Providers</button>
                 </div>
             </form>
         </div>
@@ -324,24 +364,46 @@ function setupBulkSelection() {
     const selectAll = document.getElementById('selectAllProviders');
     const bulkBar = document.getElementById('bulkActionsBar');
     const addBtn = document.getElementById('bulkAddToGroupBtn');
-    const clearBtn = document.getElementById('bulkClearGroupBtn');
     const cancelBtn = document.getElementById('bulkCancelBtn');
     const countSpan = document.getElementById('selectedCount');
     if (!table || !selectAll) return;
+
+    // Allow clicking anywhere on a provider row to toggle its checkbox (ignore clicks on interactive elements)
+    table.addEventListener('click', (e) => {
+        try {
+            const tr = e.target.closest('tr');
+            if (!tr) return;
+            if (e.target.closest('a,button,input,select,textarea,label')) return;
+            const cb = tr.querySelector('.provider-select');
+            if (!cb) return;
+            cb.checked = !cb.checked;
+            const changeEvt = new Event('change', { bubbles: true });
+            cb.dispatchEvent(changeEvt);
+        } catch (err) {
+            // ignore
+        }
+    });
 
     function updateState() {
         const checkboxes = table.querySelectorAll('tbody .provider-select');
         const selected = Array.from(checkboxes).filter(cb => cb.checked);
         const total = Array.from(checkboxes).filter(cb => cb.closest('tr').style.display !== 'none').length;
         selectAll.checked = selected.length && selected.length === total;
+        const locBtn = document.getElementById('bulkAddLocationBtn');
+        const setActiveBtn = document.getElementById('bulkSetActiveBtn');
+        const setInactiveBtn = document.getElementById('bulkSetInactiveBtn');
         if (selected.length > 0) {
             bulkBar.classList.remove('d-none');
             addBtn.disabled = false;
-            clearBtn.disabled = false;
+            if (locBtn) locBtn.disabled = false;
+            if (setActiveBtn) setActiveBtn.disabled = false;
+            if (setInactiveBtn) setInactiveBtn.disabled = false;
             countSpan.textContent = `${selected.length} selected`;
         } else {
             addBtn.disabled = true;
-            clearBtn.disabled = true;
+            if (locBtn) locBtn.disabled = true;
+            if (setActiveBtn) setActiveBtn.disabled = true;
+            if (setInactiveBtn) setInactiveBtn.disabled = true;
             countSpan.textContent = '';
             bulkBar.classList.add('d-none');
         }
@@ -371,18 +433,32 @@ function setupBulkSelection() {
         await bulkSetGroup(ids, groupName);
     });
 
-    clearBtn.addEventListener('click', async () => {
-        const ids = getSelectedProviderIds();
-        if (!ids.length) return;
-        if (!confirm('Clear group for selected providers?')) return;
-        await bulkSetGroup(ids, '');
-    });
 
     cancelBtn.addEventListener('click', () => {
         const cbs = table.querySelectorAll('tbody .provider-select');
         cbs.forEach(cb => cb.checked = false);
         updateState();
     });
+
+    // Set Active / Inactive handlers
+    const setActiveBtn = document.getElementById('bulkSetActiveBtn');
+    const setInactiveBtn = document.getElementById('bulkSetInactiveBtn');
+    if (setActiveBtn) {
+        setActiveBtn.addEventListener('click', async () => {
+            const ids = getSelectedProviderIds();
+            if (!ids.length) return;
+            if (!confirm('Set selected providers as Active?')) return;
+            await bulkSetActive(ids, true);
+        });
+    }
+    if (setInactiveBtn) {
+        setInactiveBtn.addEventListener('click', async () => {
+            const ids = getSelectedProviderIds();
+            if (!ids.length) return;
+            if (!confirm('Set selected providers as Inactive?')) return;
+            await bulkSetActive(ids, false);
+        });
+    }
 }
 
 function getSelectedProviderIds() {
@@ -407,6 +483,81 @@ async function bulkSetGroup(ids, groupName) {
         alert('Bulk update error: ' + e.message);
     }
 }
+
+async function bulkSetActive(ids, activeFlag) {
+    try {
+        const resp = await fetch('/api/providers/bulk/set-active', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider_ids: ids, active: !!activeFlag })
+        });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            alert('Bulk update failed: ' + (err.detail || resp.status));
+            return;
+        }
+        location.reload();
+    } catch (e) {
+        alert('Bulk update error: ' + e.message);
+    }
+}
+
+// --- Bulk set location (address + one_way_miles) ---
+document.addEventListener('DOMContentLoaded', function() {
+    const modal = document.getElementById('bulkLocationModal');
+    const form = document.getElementById('bulkLocationForm');
+    if (!modal || !form) return;
+
+    // When opening modal, prefill with values from selected providers (use first non-null for each field)
+    modal.addEventListener('show.bs.modal', () => {
+        const ids = getSelectedProviderIds();
+        const rows = ids.map(id => document.querySelector(`tr[data-provider-id="${id}"]`)).filter(Boolean);
+        let addr = '';
+        let miles = '';
+        for (const r of rows) {
+            // Address from data attribute
+            const a = r.getAttribute('data-provider-address');
+            if (a && !addr) addr = a;
+            // One-way miles from data attribute (prefer this over table text)
+            const m = r.getAttribute('data-one-way-miles');
+            if (m && m !== '' && !miles) miles = m;
+        }
+        document.getElementById('bulk_provider_address').value = addr || '';
+        document.getElementById('bulk_one_way_miles').value = miles || '';
+    });
+
+    // Submit handler
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const ids = getSelectedProviderIds();
+        if (!ids.length) {
+            alert('No providers selected');
+            return;
+        }
+        const addr = document.getElementById('bulk_provider_address').value.trim();
+        const milesVal = document.getElementById('bulk_one_way_miles').value;
+        const miles = milesVal === '' ? null : parseFloat(milesVal);
+
+        try {
+            const resp = await fetch('/api/providers/bulk/set-location', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider_ids: ids, provider_address: addr === '' ? null : addr, one_way_miles: miles })
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                alert('Bulk update failed: ' + (err.detail || resp.status));
+                return;
+            }
+            // Close modal and reload to show updated values
+            const bsModal = bootstrap.Modal.getInstance(modal);
+            if (bsModal) bsModal.hide();
+            location.reload();
+        } catch (err) {
+            alert('Bulk update error: ' + err.message);
+        }
+    });
+});
 
 function updateRowCount() {
     const table = document.getElementById('providersTable');

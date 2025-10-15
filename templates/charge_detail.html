@@ -767,6 +767,17 @@ function highlightMergeDifferencesOnDetail() {
               <input type="text" name="charge_description" class="form-control" value="{{ charge.charge_description or '' }}" required>
             </div>
           </div>
+            <div class="row">
+              <div class="col-md-6 mb-2">
+                <label class="form-label">Provider</label>
+                <select name="provider_id" class="form-select">
+                  <option value="">(None)</option>
+                  {% for p in providers %}
+                    <option value="{{ p.id }}" {% if charge.provider_id==p.id %}selected{% endif %}>{{ p.provider_name }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
           <div class="row">
             <div class="col-md-3 mb-2"><label class="form-label">Charged *</label><input type="number" step="0.01" name="charged_amount" class="form-control" value="{{ charge.charged_amount }}" required></div>
             <div class="col-md-3 mb-2"><label class="form-label">Owed</label><input type="number" step="0.01" name="owed_amount" class="form-control" value="{{ charge.owed_amount or '' }}"></div>
@@ -801,6 +812,15 @@ document.addEventListener('DOMContentLoaded',()=>{
       const fd=new FormData(editForm);
       const payload={};
       fd.forEach((v,k)=>{payload[k]=v||null;});
+      // Ensure provider_id is sent as an integer when selected
+      if(payload.hasOwnProperty('provider_id')){
+        if(payload['provider_id']===null || payload['provider_id']==''){
+          payload['provider_id']=null;
+        } else {
+          const parsed = parseInt(payload['provider_id'],10);
+          payload['provider_id'] = isNaN(parsed) ? null : parsed;
+        }
+      }
       // Numeric coercion
       ['charged_amount','owed_amount','insurance_paid_amount','base_fee_amount','reimbursement_amount','insurance_discount_amount'].forEach(k=>{if(payload[k]!==null && payload[k]!=='' ) payload[k]=parseFloat(payload[k]);});
       try{const resp=await fetch(`/api/charges/${chargeId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});

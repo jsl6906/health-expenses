@@ -532,14 +532,18 @@ async def charge_detail_page(
         from ..models.database import ChargePaymentXref as XrefModel
         from ..models.database import Payment as PaymentModel
         from ..models.database import Provider as ProviderModel
+
     charge = db.query(ChargeModel).filter(ChargeModel.id == charge_id).first()
     if not charge:
         raise HTTPException(status_code=404, detail="Charge not found")
+
     provider = (
         db.query(ProviderModel).filter(ProviderModel.id == charge.provider_id).first()
         if charge.provider_id is not None
         else None
     )
+
+    # Get payments linked to this charge (via xref) and compute allocated shares
     payments = (
         db.query(PaymentModel)
         .join(XrefModel, XrefModel.payment_id == PaymentModel.id)
@@ -547,6 +551,7 @@ async def charge_detail_page(
         .order_by(PaymentModel.payment_date.desc())
         .all()
     )
+
     payment_ids = [p.id for p in payments]
     paid_total = 0.0
     if payment_ids:
@@ -568,10 +573,13 @@ async def charge_detail_page(
             share = amt / len(linked) if linked else 0.0
             setattr(p, "allocated_share", share)
             paid_total += share
+
     for p in payments:
         if not hasattr(p, "allocated_share"):
             setattr(p, "allocated_share", 0.0)
+
     setattr(charge, "paid_amount_agg", float(paid_total))
+
     owed_val = getattr(charge, "owed_amount", None)
     try:
         owed = float(owed_val) if owed_val is not None else 0.0
@@ -587,16 +595,23 @@ async def charge_detail_page(
     else:
         status = "N/A"
     remaining = owed - paid if owed > 0 else 0
+
     try:
         attachments = list_attachments_for_charge(db, charge_id)
     except Exception:
         attachments = []
+
+    # Also include full provider list so the edit form can allow changing the
+    # associated provider for a charge.
+    providers = provider_crud.get_all(db, limit=None)
+
     return templates.TemplateResponse(
         "charge_detail.html",
         {
             "request": request,
             "charge": charge,
             "provider": provider,
+            "providers": providers,
             "payments": payments,
             "status": status,
             "remaining": remaining,

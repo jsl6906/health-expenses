@@ -26,6 +26,31 @@ class BulkSetGroupRequest(BaseModel):
         return self
 
 
+class BulkSetLocationRequest(BaseModel):
+    provider_ids: List[int] = Field(..., description="List of provider IDs to update")
+    provider_address: Optional[str] = Field(
+        None, description="Address to set (null to clear)"
+    )
+    one_way_miles: Optional[float] = Field(
+        None, description="One-way miles to set (null to clear)"
+    )
+
+    def validate_ids(self):
+        if not self.provider_ids:
+            raise ValueError("provider_ids must contain at least one id")
+        return self
+
+
+class BulkSetActiveRequest(BaseModel):
+    provider_ids: List[int] = Field(..., description="List of provider IDs to update")
+    active: bool = Field(..., description="True to set active, False to set inactive")
+
+    def validate_ids(self):
+        if not self.provider_ids:
+            raise ValueError("provider_ids must contain at least one id")
+        return self
+
+
 router = APIRouter(tags=["providers"], prefix="/api")
 
 
@@ -301,6 +326,84 @@ def bulk_set_group(payload: BulkSetGroupRequest, db: Session = Depends(get_db)):
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Bulk update failed: {e}")
     return {"updated": int(updated), "group": group_val}
+
+
+@router.post("/providers/bulk/set-location")
+def bulk_set_location(payload: BulkSetLocationRequest, db: Session = Depends(get_db)):
+    """Set provider_address and/or one_way_miles for multiple providers.
+
+    Passing null for a field will clear it. Returns count of updated providers.
+    """
+    try:
+        from models.database import Provider as PModel  # type: ignore
+    except ImportError:  # pragma: no cover
+        from .models.database import Provider as PModel  # type: ignore
+
+    ids = list(
+        dict.fromkeys(
+            [int(pid) for pid in payload.provider_ids if isinstance(pid, int)]
+        )
+    )
+    if not ids:
+        raise HTTPException(status_code=400, detail="No valid provider IDs supplied")
+
+    update_values = {}
+    # Distinguish between omitted and explicit null: pydantic will set None if omitted or null.
+    # We allow both to indicate clearing the field.
+    if payload.provider_address is not None:
+        addr = payload.provider_address.strip()
+        update_values[PModel.provider_address] = addr if addr else None
+    if payload.one_way_miles is not None:
+        update_values[PModel.one_way_miles] = float(payload.one_way_miles)
+
+    if not update_values:
+        raise HTTPException(status_code=400, detail="No updatable fields provided")
+
+    try:
+        updated = (
+            db.query(PModel)
+            .filter(PModel.id.in_(ids))
+            .update(update_values, synchronize_session=False)
+        )
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Bulk update failed: {e}")
+
+    return {"updated": int(updated)}
+
+
+@router.post("/providers/bulk/set-active")
+def bulk_set_active(payload: BulkSetActiveRequest, db: Session = Depends(get_db)):
+    """Set active_provider_flag for multiple providers."""
+    try:
+        from models.database import Provider as PModel  # type: ignore
+    except ImportError:  # pragma: no cover
+        from .models.database import Provider as PModel  # type: ignore
+
+    ids = list(
+        dict.fromkeys(
+            [int(pid) for pid in payload.provider_ids if isinstance(pid, int)]
+        )
+    )
+    if not ids:
+        raise HTTPException(status_code=400, detail="No valid provider IDs supplied")
+
+    try:
+        updated = (
+            db.query(PModel)
+            .filter(PModel.id.in_(ids))
+            .update(
+                {PModel.active_provider_flag: bool(payload.active)},
+                synchronize_session=False,
+            )
+        )
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Bulk update failed: {e}")
+
+    return {"updated": int(updated), "active": bool(payload.active)}
 
 
 @router.get("/cpt-codes")
