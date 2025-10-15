@@ -834,7 +834,8 @@ function populateChargeMergeModal(charges) {
         { key: 'service_date', label: 'Service Date', type: 'date' },
         { key: 'family_member', label: 'Family Member', type: 'text' },
         { key: 'medical_type', label: 'Medical Type', type: 'text' },
-        { key: 'provider_name', label: 'Provider', type: 'display', valueKey: 'provider_id' },
+        // Use provider_id as the field key so the server receives provider_id in merged_fields
+        { key: 'provider_id', label: 'Provider', type: 'display', valueKey: 'provider_id' },
         { key: 'doctor_name', label: 'Doctor Name', type: 'text' },
         { key: 'charge_description', label: 'Description', type: 'text' },
         { key: 'cpt_code', label: 'CPT Code', type: 'text' },
@@ -908,7 +909,8 @@ function populateChargeMergeModal(charges) {
         if (field.type === 'number') {
             val1 = actualVal1 !== null && actualVal1 !== undefined && actualVal1 !== '' ? formatCurrency(actualVal1) : '';
             val2 = actualVal2 !== null && actualVal2 !== undefined && actualVal2 !== '' ? formatCurrency(actualVal2) : '';
-        } else if (field.key === 'provider_name') {
+        } else if (field.key === 'provider_id') {
+            // Display the provider's name but keep the key as provider_id so the server can update provider_id
             val1 = charge1.provider_name || '';
             val2 = charge2.provider_name || '';
         } else {
