@@ -575,31 +575,79 @@ window.addEventListener('DOMContentLoaded',()=>{
             defaultSelection = moreCompleteCharge;
         }
 
-        html += `
-            <div class="row mb-2 align-items-center">
-                <div class="col-md-4"><label class="form-label mb-0">${field.label}</label></div>
-                <div class="col-md-4">
-                    <div class="form-check">
-                        <input class="form-check-input" type="radio" name="${field.key}" value="${actualVal1 || ''}" id="${field.key}_1" ${defaultSelection === 1 ? 'checked' : ''}>
-                        <label class="form-check-label" for="${field.key}_1">${val1 || '(empty)'}</label>
-                    </div>
-                </div>
-                <div class="col-md-4">
-                    <div class="form-check">
-                        <input class="form-check-input" type="radio" name="${field.key}" value="${actualVal2 || ''}" id="${field.key}_2" ${defaultSelection === 2 ? 'checked' : ''}>
-                        <label class="form-check-label" for="${field.key}_2">${val2 || '(empty)'}</label>
-                    </div>
-                </div>
-            </div>
-        `;
+    // highlight when the two values differ so it's obvious to the user
+    const differ = (actualVal1 !== actualVal2);
+    const labelClass = differ ? 'merge-different' : '';
+  const diffHint1 = differ ? `Different from Charge #${charge2.id}` : '';
+  const diffHint2 = differ ? `Different from Charge #${charge1.id}` : '';
+
+    console.log('merge-compare field', field.key, 'differ=', differ, 'val1=', val1, 'val2=', val2);
+
+    html += `
+      <div class="row mb-2 align-items-center">
+        <div class="col-md-4"><label class="form-label mb-0">${field.label}</label></div>
+        <div class="col-md-4">
+          <div class="form-check">
+                <input class="form-check-input" type="radio" name="${field.key}" value="${actualVal1 || ''}" id="${field.key}_1" ${defaultSelection === 1 ? 'checked' : ''}>
+                <label class="form-check-label ${labelClass}" for="${field.key}_1" aria-label="${(val1 || '(empty)')}${diffHint1 ? ' - ' + diffHint1 : ''}">${val1 || '(empty)'}</label>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="form-check">
+                <input class="form-check-input" type="radio" name="${field.key}" value="${actualVal2 || ''}" id="${field.key}_2" ${defaultSelection === 2 ? 'checked' : ''}>
+                <label class="form-check-label ${labelClass}" for="${field.key}_2" aria-label="${(val2 || '(empty)')}${diffHint2 ? ' - ' + diffHint2 : ''}">${val2 || '(empty)'}</label>
+          </div>
+        </div>
+      </div>
+    `;
     });
 
     modalBody.innerHTML = html;
 
     // Store charge IDs for form submission
     document.getElementById('mergeChargeForm').dataset.chargeIds = JSON.stringify([charge1.id, charge2.id]);
+  // run safety highlighter after DOM insertion
+  setTimeout(() => highlightMergeDifferencesOnDetail(), 0);
   }
 });
+
+// Helper for the detail page merge modal: mark differing fields (tolerant numeric compare)
+function highlightMergeDifferencesOnDetail() {
+  const modal = document.getElementById('mergeChargeModal') || document.getElementById('chargeMergeModal');
+  if (!modal) return;
+  const rows = modal.querySelectorAll('#chargeMergeModalBody .row, #chargeMergeModalBody .row');
+  rows.forEach(r => {
+    try {
+      const cols = r.querySelectorAll('.col-md-4');
+      if (cols.length < 3) return;
+      const left = cols[1];
+      const right = cols[2];
+      const leftText = left.textContent.trim();
+      const rightText = right.textContent.trim();
+
+      const looksNumeric = s => !!s && /^[\s$]?[-+]?\d[\d,]*(\.\d+)?\s*$/.test(s);
+      const parseNum = s => parseFloat(s.replace(/[^0-9.\-]/g, ''));
+      let differ;
+      if (looksNumeric(leftText) && looksNumeric(rightText)) {
+        const n1 = parseNum(leftText);
+        const n2 = parseNum(rightText);
+        differ = Math.abs((n1||0) - (n2||0)) > 0.005;
+      } else {
+        differ = leftText !== rightText;
+      }
+
+      const leftLabel = left.querySelector('.form-check-label');
+      const rightLabel = right.querySelector('.form-check-label');
+      if (differ) {
+        if (leftLabel) leftLabel.classList.add('merge-different');
+        if (rightLabel) rightLabel.classList.add('merge-different');
+      } else {
+        if (leftLabel) leftLabel.classList.remove('merge-different');
+        if (rightLabel) rightLabel.classList.remove('merge-different');
+      }
+    } catch (e) {}
+  });
+}
 </script>
 
 <!-- Edit Charge Modal -->

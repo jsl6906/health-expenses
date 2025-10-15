@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json as _json
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
@@ -25,6 +26,8 @@ from ..services.import_session import (
 )
 
 router = APIRouter(tags=["imports"], prefix="/api")
+
+logger = logging.getLogger(__name__)
 
 
 # NOTE: Legacy single-step preview endpoint (kept for backward compatibility)
@@ -105,15 +108,18 @@ async def import_charges_from_json_preview(
                                 continue
 
                             score = 0
+                            claim_match = False
 
                             # Claim number match (high weight)
                             if target_claim_num:
                                 for identifier in resource.get("identifier", []):
                                     if identifier.get("value") == target_claim_num:
                                         score += 100
+                                        claim_match = True
                                         break
 
-                            # Inspect items for date / CPT matches
+                            # Inspect items for date / CPT matches and also check item/detail identifiers
+                            matching_items = []
                             for item in resource.get("item", []):
                                 # Date can be servicedDate or servicedPeriod.start
                                 item_date = item.get("servicedDate")
@@ -121,38 +127,110 @@ async def import_charges_from_json_preview(
                                     sp = item.get("servicedPeriod") or {}
                                     item_date = sp.get("start")
 
-                                if (
-                                    target_service_date
-                                    and item_date
-                                    and item_date == target_service_date
-                                ):
-                                    score += 10
-
-                                # Try to extract CPT/code from productOrService.coding
+                                item_cpt = None
                                 product_service = item.get("productOrService", {})
                                 for coding in product_service.get("coding", []):
                                     code = coding.get("code")
-                                    if target_cpt and code and code == target_cpt:
-                                        # Slightly lower weight than date
-                                        score += 5
+                                    if code:
+                                        item_cpt = code
                                         break
+
+                                matched = False
+
+                                # Check for identifier matches at item level
+                                if target_claim_num:
+                                    for ident in (
+                                        item.get("identifier", [])
+                                        if isinstance(item.get("identifier"), list)
+                                        else []
+                                    ):
+                                        if (
+                                            isinstance(ident, dict)
+                                            and ident.get("value") == target_claim_num
+                                        ):
+                                            score += 100
+                                            matched = True
+                                            break
+
+                                    # Check detail-level identifiers
+                                    if not matched:
+                                        for detail in item.get("detail", []) or []:
+                                            for ident in (
+                                                detail.get("identifier", [])
+                                                if isinstance(
+                                                    detail.get("identifier"), list
+                                                )
+                                                else []
+                                            ):
+                                                if (
+                                                    isinstance(ident, dict)
+                                                    and ident.get("value")
+                                                    == target_claim_num
+                                                ):
+                                                    score += 100
+                                                    matched = True
+                                                    break
+                                            if matched:
+                                                break
+
+                                if not matched:
+                                    if (
+                                        target_service_date
+                                        and item_date
+                                        and item_date == target_service_date
+                                    ):
+                                        score += 10
+                                        matched = True
+                                    if (
+                                        target_cpt
+                                        and item_cpt
+                                        and item_cpt == target_cpt
+                                    ):
+                                        score += 5
+                                        matched = True
+
+                                if matched:
+                                    matching_items.append(item)
 
                             # If we found any score, consider this EOB
                             if score > 0 and score >= best_score:
                                 best_score = score
-                                best_eob = resource
+                                # Store the resource plus the matching items (for later pruning)
+                                # Attach matching_items on a temp key so we can prune later
+                                candidate = dict(resource)
+                                if matching_items:
+                                    candidate["_matched_items"] = matching_items
+                                elif claim_match:
+                                    # Claim matched but no specific items matched by date/CPT - keep full EOB
+                                    candidate["_matched_items"] = None
+                                else:
+                                    candidate["_matched_items"] = []
+                                best_eob = candidate
 
                         if best_eob:
+                            # Prune the EOB resource to only include matching items when available
                             target_eob_id = best_eob.get("id")
+                            stored_matched = best_eob.get("_matched_items", [])
+                            if stored_matched is None:
+                                # None means claim matched but no specific items identified - keep full resource
+                                pruned_resource = dict(best_eob)
+                                # remove temp key if present
+                                pruned_resource.pop("_matched_items", None)
+                            else:
+                                pruned_resource = dict(best_eob)
+                                pruned_resource.pop("_matched_items", None)
+                                # Replace items with only the matched subset (or empty list)
+                                pruned_resource["item"] = stored_matched or []
+
                             relevant_entries.append(
                                 {
                                     "resourceType": "ExplanationOfBenefit",
                                     "id": target_eob_id,
-                                    "resource": best_eob,
+                                    "resource": pruned_resource,
                                 }
                             )
 
-                            # Collect related organization/practitioner ids from the chosen EOB
+                            # Collect related organization/practitioner ids from the chosen (original) EOB
                             related_org_ids = set()
                             related_practitioner_ids = set()
 
@@ -544,14 +622,16 @@ def analyze_json_charges(
             existing_provider_key_map[key] = pid
 
     # Debug: log session contents and available provider mappings
-    print("=== CHARGE ANALYSIS SESSION DEBUG ===")
-    print(f"Session ID: {session_id}")
-    print(f"Full session contents: {sess}")
-    print(f"Session keys: {list(sess.keys()) if sess else 'None'}")
-    print(f"inserted_provider_ids_by_location: {inserted_provider_ids_by_location}")
-    print(f"providers_added flag: {sess.get('providers_added', 'NOT_SET')}")
-    print(f"raw_rows count: {len(sess.get('raw_rows', []))}")
-    print("=======================================")
+    logger.debug("=== CHARGE ANALYSIS SESSION DEBUG ===")
+    logger.debug(f"Session ID: {session_id}")
+    logger.debug(f"Full session contents: {sess}")
+    logger.debug(f"Session keys: {list(sess.keys()) if sess else 'None'}")
+    logger.debug(
+        f"inserted_provider_ids_by_location: {inserted_provider_ids_by_location}"
+    )
+    logger.debug(f"providers_added flag: {sess.get('providers_added', 'NOT_SET')}")
+    logger.debug(f"raw_rows count: {len(sess.get('raw_rows', []))}")
+    logger.debug("=======================================")
 
     preview_rows: list[JSONImportRow] = []
     duplicate_count = 0
@@ -575,10 +655,10 @@ def analyze_json_charges(
         facility_location_id = r.get("facility_location_id")
 
         # Debug: log facility location lookup
-        print(
+        logger.debug(
             f"Row {idx}: facility_location_id={facility_location_id}, prov_override={prov_val}"
         )
-        print(
+        logger.debug(
             f"  -> Available session mappings: {list(inserted_provider_ids_by_location.keys())}"
         )
 
@@ -587,7 +667,7 @@ def analyze_json_charges(
             final_provider_id = inserted_provider_ids_by_location.get(
                 facility_location_id
             )
-            print(
+            logger.debug(
                 f"  -> Session lookup result: {final_provider_id} for {facility_location_id}"
             )
 
@@ -604,19 +684,19 @@ def analyze_json_charges(
                     ), provider_id in existing_provider_key_map.items():
                         if existing_name == facility_name.strip().lower():
                             final_provider_id = provider_id
-                            print(
+                            logger.debug(
                                 f"  -> Name match found: {final_provider_id} for '{facility_name}'"
                             )
                             break
 
                 if not final_provider_id:
-                    print(
+                    logger.debug(
                         f"  -> No existing provider match found for '{facility_name}'"
                     )
         else:
-            print(f"  -> Using override provider_id: {final_provider_id}")
+            logger.debug(f"  -> Using override provider_id: {final_provider_id}")
 
-        print(f"  -> Final provider_id: {final_provider_id}")
+        logger.debug(f"  -> Final provider_id: {final_provider_id}")
 
         key = (
             svc_date,
@@ -633,7 +713,7 @@ def analyze_json_charges(
             duplicate_count += 1
 
         # Debug: log the provider ID right before creating the object
-        print(
+        logger.debug(
             f"  -> Creating JSONImportRow with resolved_provider_id={final_provider_id}"
         )
 
@@ -656,7 +736,7 @@ def analyze_json_charges(
         )
 
         # Debug: verify the provider ID was set correctly
-        print(
+        logger.debug(
             f"  -> Created object has resolved_provider_id={new_row.resolved_provider_id}"
         )
 
@@ -664,7 +744,7 @@ def analyze_json_charges(
 
     # Debug: verify resolved_provider_id is set before session update
     if preview_rows:
-        print(
+        logger.debug(
             f"Before session update - first row resolved_provider_id: {preview_rows[0].resolved_provider_id}"
         )
 
@@ -682,13 +762,15 @@ def analyze_json_charges(
     updated_sess = json_import_sessions.get(session_id)
     if updated_sess and updated_sess.get("rows"):
         first_updated_row = updated_sess["rows"][0]
-        print(f"After session update - first row type: {type(first_updated_row)}")
+        logger.debug(
+            f"After session update - first row type: {type(first_updated_row)}"
+        )
         if hasattr(first_updated_row, "resolved_provider_id"):
-            print(
+            logger.debug(
                 f"After session update - first row resolved_provider_id: {first_updated_row.resolved_provider_id}"
             )
         elif isinstance(first_updated_row, dict):
-            print(
+            logger.debug(
                 f"After session update - first row resolved_provider_id: {first_updated_row.get('resolved_provider_id', 'NOT_FOUND')}"
             )
 
@@ -781,7 +863,7 @@ def add_analyzed_providers(payload: ProviderAddRequest, db: Session = Depends(ge
     db.commit()
 
     # Debug: log what we're storing in the session
-    print(
+    logger.debug(
         f"Storing in session - inserted_provider_ids_by_location: {inserted_provider_ids_by_location}"
     )
 
@@ -796,15 +878,15 @@ def add_analyzed_providers(payload: ProviderAddRequest, db: Session = Depends(ge
     # Debug: verify session update worked
     updated_sess = json_import_sessions.get(payload.session_id)
     if updated_sess:
-        print(f"Session after update - keys: {list(updated_sess.keys())}")
-        print(
+        logger.debug(f"Session after update - keys: {list(updated_sess.keys())}")
+        logger.debug(
             f"Session after update: providers_added={updated_sess.get('providers_added')}"
         )
-        print(
+        logger.debug(
             f"Session mapping after update: {updated_sess.get('inserted_provider_ids_by_location')}"
         )
     else:
-        print("ERROR: Session not found after update!")
+        logger.debug("ERROR: Session not found after update!")
 
     return ProviderAddResult(
         session_id=payload.session_id,
@@ -826,24 +908,24 @@ def commit_json_import(
     rows: list[JSONImportRow] = sess["rows"]
 
     # Debug: Check what type of objects we're getting from session
-    print("=== COMMIT SESSION DEBUG ===")
-    print(f"Session ID: {session_id}")
-    print(f"Row count: {len(rows)}")
+    logger.debug("=== COMMIT SESSION DEBUG ===")
+    logger.debug(f"Session ID: {session_id}")
+    logger.debug(f"Row count: {len(rows)}")
     if rows:
         first_row = rows[0]
-        print(f"First row type: {type(first_row)}")
-        print(
+        logger.debug(f"First row type: {type(first_row)}")
+        logger.debug(
             f"First row keys: {list(first_row.keys()) if isinstance(first_row, dict) else 'Not a dict'}"
         )
         if isinstance(first_row, dict):
-            print(
+            logger.debug(
                 f"First row resolved_provider_id: {first_row.get('resolved_provider_id', 'NOT_FOUND')}"
             )
         else:
-            print(
+            logger.debug(
                 f"First row resolved_provider_id: {getattr(first_row, 'resolved_provider_id', 'NOT_FOUND')}"
             )
-    print("===============================")
+    logger.debug("===============================")
 
     provider_preview: list[dict] = sess.get("providers") or []
     try:
@@ -940,10 +1022,10 @@ def commit_json_import(
         final_provider_id = r.resolved_provider_id or prov_val
 
         # Debug: trace provider ID assignment
-        print(
+        logger.debug(
             f"Row {r.index}: resolved_provider_id={r.resolved_provider_id}, prov_val={prov_val}, final={final_provider_id}"
         )
-        print(f"  facility_location_id: {r.facility_location_id}")
+        logger.debug(f"  facility_location_id: {r.facility_location_id}")
 
         key = (
             r.service_date,
@@ -959,7 +1041,7 @@ def commit_json_import(
 
         # Debug: log duplicate detection
         if is_duplicate:
-            print(f"DUPLICATE DETECTED: {key}")
+            logger.debug(f"DUPLICATE DETECTED: {key}")
 
         if is_duplicate:
             skipped_duplicates += 1
@@ -991,7 +1073,7 @@ def commit_json_import(
         }
 
         # Debug: log what we're trying to create
-        print(f"Creating charge with provider_id: {final_provider_id}")
+        logger.debug(f"Creating charge with provider_id: {final_provider_id}")
         try:
             created = charge_crud.create(db, charge_in)
             db.flush()
@@ -1039,7 +1121,6 @@ def commit_json_import(
                             and json_obj.get("resourceType") == "Bundle"
                         ):
                             entries = json_obj.get("entry", [])
-
                             # Find the specific EOB entry for this charge
                             target_eob_id = None
                             target_claim_num = charge_row.eob_claim_num
@@ -1055,8 +1136,9 @@ def commit_json_import(
                                 ):
                                     # Check if this EOB matches our charge
                                     eob_matches = False
+                                    matched_items = []
 
-                                    # Check claim number
+                                    # 1) Check top-level EOB identifiers
                                     if target_claim_num:
                                         for identifier in resource.get(
                                             "identifier", []
@@ -1068,47 +1150,109 @@ def commit_json_import(
                                                 eob_matches = True
                                                 break
 
-                                    # Check service date and CPT code in items
+                                    # 2) Check item-level identifiers and detail-level identifiers
+                                    if not eob_matches and (target_claim_num):
+                                        for item in resource.get("item", []):
+                                            # Check item-level identifier(s)
+                                            item_identifiers = (
+                                                item.get("identifier") or []
+                                            )
+                                            item_identifier_match = False
+                                            for ident in item_identifiers:
+                                                if (
+                                                    isinstance(ident, dict)
+                                                    and ident.get("value")
+                                                    == target_claim_num
+                                                ):
+                                                    item_identifier_match = True
+                                                    break
+
+                                            # Check detail-level identifiers (if present)
+                                            matched_details = []
+                                            for detail in item.get("detail", []) or []:
+                                                for ident in (
+                                                    detail.get("identifier", [])
+                                                    if isinstance(
+                                                        detail.get("identifier"), list
+                                                    )
+                                                    else []
+                                                ):
+                                                    if (
+                                                        isinstance(ident, dict)
+                                                        and ident.get("value")
+                                                        == target_claim_num
+                                                    ):
+                                                        matched_details.append(detail)
+                                                        break
+
+                                            if item_identifier_match or matched_details:
+                                                # Build a pruned item that includes only matched details when present
+                                                pruned_item = dict(item)
+                                                if matched_details:
+                                                    pruned_item = dict(item)
+                                                    pruned_item[
+                                                        "detail"
+                                                    ] = matched_details
+                                                matched_items.append(pruned_item)
+                                                eob_matches = True
+
+                                    # 3) Fallback: inspect service date and CPT code in items
                                     if not eob_matches and (
                                         target_service_date or target_cpt
                                     ):
                                         for item in resource.get("item", []):
                                             item_date = item.get("servicedDate")
-                                            item_cpt = None
+                                            if not item_date:
+                                                sp = item.get("servicedPeriod") or {}
+                                                item_date = sp.get("start")
 
-                                            # Extract CPT code
+                                            item_cpt = None
                                             product_service = item.get(
                                                 "productOrService", {}
                                             )
                                             for coding in product_service.get(
                                                 "coding", []
                                             ):
-                                                if (
-                                                    coding.get("system")
-                                                    == "http://www.ama-assn.org/go/cpt"
-                                                ):
-                                                    item_cpt = coding.get("code")
+                                                code = coding.get("code")
+                                                if code:
+                                                    item_cpt = code
                                                     break
 
-                                            # Check if date and/or CPT match
                                             if (
                                                 target_service_date
+                                                and item_date
                                                 and item_date == target_service_date
                                             ) or (
-                                                target_cpt and item_cpt == target_cpt
+                                                target_cpt
+                                                and item_cpt
+                                                and item_cpt == target_cpt
                                             ):
+                                                matched_items.append(item)
                                                 eob_matches = True
                                                 break
 
                                     if eob_matches:
                                         target_eob_id = resource.get("id")
-                                        relevant_entries.append(
-                                            {
-                                                "resourceType": "ExplanationOfBenefit",
-                                                "id": target_eob_id,
-                                                "resource": resource,
-                                            }
-                                        )
+                                        # If we found matched_items (possibly pruned details), create a pruned resource
+                                        if matched_items:
+                                            pruned_resource = dict(resource)
+                                            # Replace items with only matched subset; preserve other top-level fields
+                                            pruned_resource["item"] = matched_items
+                                            relevant_entries.append(
+                                                {
+                                                    "resourceType": "ExplanationOfBenefit",
+                                                    "id": target_eob_id,
+                                                    "resource": pruned_resource,
+                                                }
+                                            )
+                                        else:
+                                            relevant_entries.append(
+                                                {
+                                                    "resourceType": "ExplanationOfBenefit",
+                                                    "id": target_eob_id,
+                                                    "resource": resource,
+                                                }
+                                            )
                                         break
 
                             # Second pass: find related Organization and CareTeam entries
@@ -1214,15 +1358,18 @@ def commit_json_import(
                         original_json_obj, r
                     )
 
-                    print(
+                    logger.debug(
                         f"Found {len(relevant_json_entries)} relevant entries for charge {charge_id}"
                     )
                     for entry in relevant_json_entries:
-                        print(
+                        logger.debug(
                             f"  - {entry.get('resourceType', 'Unknown')} (ID: {entry.get('id', 'N/A')})"
                         )
 
-                    # Create simplified attachment data
+                    # Create simplified attachment data. Keep the main EOB number from the
+                    # parsed row (`r.eob_claim_num`) — do not override it with identifiers
+                    # from individual related entries (those are included in
+                    # `relevant_source_entries` if needed for inspection).
                     attachment_data = {
                         "charge_reference": {
                             "charge_id": charge_id,
@@ -1267,10 +1414,11 @@ def commit_json_import(
                         content_bytes=attachment_bytes,
                     )
 
-                    print(f"Created attachment for charge {charge_id}")
-
+                    logger.debug(f"Created attachment for charge {charge_id}")
                 except Exception as e:
-                    print(f"Failed to create attachment for charge {charge_id}: {e}")
+                    logger.debug(
+                        f"Failed to create attachment for charge {charge_id}: {e}"
+                    )
                     # Don't fail the import if attachment creation fails
                     pass
 

@@ -4,7 +4,10 @@ Extracted from the monolithic app.py to allow reuse and easier testing.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, List, Tuple
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_str(val):  # exported for compatibility
@@ -112,7 +115,7 @@ def _parse_fhir_bundle(
     eob_provider_debug = []
     provider_name_address_pairs = []
 
-    print("=== COMPREHENSIVE EOB ANALYSIS ===")
+    logger.debug("=== COMPREHENSIVE EOB ANALYSIS ===")
 
     for ent in entries:
         res = ent.get("resource") if isinstance(ent, dict) else None
@@ -125,7 +128,7 @@ def _parse_fhir_bundle(
         eob_id = res.get("id")
         provider_refs = []
 
-        print(f"\n--- EOB {eob_id} ---")
+        logger.debug(f"\n--- EOB {eob_id} ---")
 
         # Gather facility references first (priority)
         facility = res.get("facility")
@@ -133,13 +136,13 @@ def _parse_fhir_bundle(
             facility_ref = facility.get("reference")
             if facility_ref:
                 provider_refs.append(facility_ref)
-                print(f"EOB-level facility ref: {facility_ref}")
+                logger.debug(f"EOB-level facility ref: {facility_ref}")
         else:
-            print("No EOB-level facility reference")
+            logger.debug("No EOB-level facility reference")
 
         # Also check item-level facility references
         items = res.get("item") or []
-        print(f"Items: {len(items)}")
+        logger.debug(f"Items: {len(items)}")
         for i, it in enumerate(items):
             if isinstance(it, dict):
                 item_facility = it.get("facility")
@@ -147,11 +150,11 @@ def _parse_fhir_bundle(
                     item_facility_ref = item_facility.get("reference")
                     if item_facility_ref and item_facility_ref not in provider_refs:
                         provider_refs.append(item_facility_ref)
-                        print(f"  Item[{i}] facility ref: {item_facility_ref}")
+                        logger.debug(f"  Item[{i}] facility ref: {item_facility_ref}")
 
         # Then add careTeam provider references
         careteam = res.get("careTeam") or []
-        print(f"CareTeam entries: {len(careteam)}")
+        logger.debug(f"CareTeam entries: {len(careteam)}")
         for i, ct in enumerate(careteam):
             if isinstance(ct, dict):
                 prov_ref = (
@@ -161,22 +164,22 @@ def _parse_fhir_bundle(
                 )
                 if prov_ref:
                     provider_refs.append(prov_ref)
-                    print(f"  CareTeam[{i}] provider ref: {prov_ref}")
+                    logger.debug(f"  CareTeam[{i}] provider ref: {prov_ref}")
                 else:
-                    print(f"  CareTeam[{i}] no provider reference")
+                    logger.debug(f"  CareTeam[{i}] no provider reference")
                     # Debug: show what's actually in the careTeam entry
-                    print(f"    Raw careTeam entry: {ct}")
+                    logger.debug(f"    Raw careTeam entry: {ct}")
             else:
-                print(f"  CareTeam[{i}] not a dict: {type(ct)}")
+                logger.debug(f"  CareTeam[{i}] not a dict: {type(ct)}")
 
-        print(f"Total unique provider refs for EOB {eob_id}: {provider_refs}")
+        logger.debug(f"Total unique provider refs for EOB {eob_id}: {provider_refs}")
 
         # Step 2: Pull in associated entries based on reference values
         linked_providers = []
         for ref in provider_refs:
             if not ref:
                 continue
-            print(f"  Looking for reference: {ref}")
+            logger.debug(f"  Looking for reference: {ref}")
             # Find matching resource by reference
             matched_resource = None
             for fu, resource in by_full_url.items():
@@ -190,16 +193,18 @@ def _parse_fhir_bundle(
                     or ref == f"{resource_type}/{resource_id}"
                 ):
                     matched_resource = resource
-                    print(f"    MATCHED: {fu} -> {resource_type} {resource_id}")
+                    logger.debug(f"    MATCHED: {fu} -> {resource_type} {resource_id}")
                     break
 
             if matched_resource:
                 extracted_name = _extract_name(matched_resource)
                 extracted_address = _construct_address(matched_resource)
 
-                print(f"    Resource type: {matched_resource.get('resourceType')}")
-                print(f"    Extracted name: {extracted_name}")
-                print(f"    Extracted address: {extracted_address}")
+                logger.debug(
+                    f"    Resource type: {matched_resource.get('resourceType')}"
+                )
+                logger.debug(f"    Extracted name: {extracted_name}")
+                logger.debug(f"    Extracted address: {extracted_address}")
 
                 # Debug address extraction in detail
                 if matched_resource.get("resourceType") in [
@@ -208,7 +213,7 @@ def _parse_fhir_bundle(
                     "Location",
                 ]:
                     address_list = matched_resource.get("address") or []
-                    print(f"    Raw address data: {address_list}")
+                    logger.debug(f"    Raw address data: {address_list}")
 
                 linked_providers.append(
                     {
@@ -221,9 +226,9 @@ def _parse_fhir_bundle(
                     }
                 )
             else:
-                print(f"    NO MATCH FOUND for {ref}")
+                logger.debug(f"    NO MATCH FOUND for {ref}")
                 # Show what resources are available for debugging
-                print(
+                logger.debug(
                     f"    Available resources: {[(fu.split('/')[-1], res.get('resourceType'), res.get('id')) for fu, res in list(by_full_url.items())[:5]]}"
                 )
 
@@ -240,7 +245,9 @@ def _parse_fhir_bundle(
         derived_address = None
         doctor_name = None
 
-        print(f"  Deriving name/address from {len(linked_providers)} linked providers:")
+        logger.debug(
+            f"  Deriving name/address from {len(linked_providers)} linked providers:"
+        )
 
         # Extract doctor_name from careTeam providers only (ignore facility)
         careteam = res.get("careTeam") or []
@@ -256,26 +263,28 @@ def _parse_fhir_bundle(
                     for provider in linked_providers:
                         if provider["reference"] == prov_ref and provider["name"]:
                             doctor_name = provider["name"]
-                            print(f"    -> Doctor name from careTeam: {doctor_name}")
+                            logger.debug(
+                                f"    -> Doctor name from careTeam: {doctor_name}"
+                            )
                             break
                 if doctor_name:
                     break
 
         # Derive facility name and address from first available in priority order (facility first, then careTeam)
         for j, provider in enumerate(linked_providers):
-            print(
+            logger.debug(
                 f"    Provider[{j}]: name='{provider['name']}', address='{provider['address']}', ref='{provider['reference']}'"
             )
             if not derived_name and provider["name"]:
                 derived_name = provider["name"]
-                print(f"      -> Using this name: {derived_name}")
+                logger.debug(f"      -> Using this name: {derived_name}")
             if not derived_address and provider["address"]:
                 derived_address = provider["address"]
-                print(f"      -> Using this address: {derived_address}")
+                logger.debug(f"      -> Using this address: {derived_address}")
             if derived_name and derived_address:
                 break
 
-        print(
+        logger.debug(
             f"  FINAL: name='{derived_name}', address='{derived_address}', doctor='{doctor_name}'"
         )
 
@@ -284,7 +293,9 @@ def _parse_fhir_bundle(
             # Use the first provider reference as the name
             first_ref = provider_refs[0]
             derived_name = first_ref
-            print(f"  -> Using first provider ref as fallback name: {derived_name}")
+            logger.debug(
+                f"  -> Using first provider ref as fallback name: {derived_name}"
+            )
 
         if derived_name or derived_address:
             provider_name_address_pairs.append(
@@ -296,17 +307,17 @@ def _parse_fhir_bundle(
                     "source_refs": provider_refs,
                 }
             )
-            print("  -> Added to provider pairs")
+            logger.debug("  -> Added to provider pairs")
         else:
-            print(
+            logger.debug(
                 "  -> NOT ADDED (no name or address, and no provider refs for fallback)"
             )
 
-    print("=== PROVIDER PAIRS SUMMARY ===")
-    print(f"Total EOBs processed: {len(eob_provider_debug)}")
-    print(f"Provider pairs created: {len(provider_name_address_pairs)}")
+    logger.debug("=== PROVIDER PAIRS SUMMARY ===")
+    logger.debug(f"Total EOBs processed: {len(eob_provider_debug)}")
+    logger.debug(f"Provider pairs created: {len(provider_name_address_pairs)}")
     for pair in provider_name_address_pairs:
-        print(
+        logger.debug(
             f"  {pair['eob_id']}: '{pair['provider_name']}' @ '{pair['provider_address']}' (doctor: '{pair['doctor_name']}')"
         )
 
@@ -315,13 +326,13 @@ def _parse_fhir_bundle(
     unique_providers = []
     eob_to_provider_map = {}  # Map EOB ID to derived provider info
 
-    print("=== UNIQUE PROVIDER FILTERING ===")
+    logger.debug("=== UNIQUE PROVIDER FILTERING ===")
     for pair in provider_name_address_pairs:
         name = pair["provider_name"] or ""
         address = pair["provider_address"] or ""
         combination_key = (name.strip().lower(), address.strip().lower())
 
-        print(f"Processing: '{name}' @ '{address}' -> key: {combination_key}")
+        logger.debug(f"Processing: '{name}' @ '{address}' -> key: {combination_key}")
 
         # Store EOB mapping regardless of uniqueness (for charge processing)
         eob_to_provider_map[pair["eob_id"]] = {
@@ -348,27 +359,27 @@ def _parse_fhir_bundle(
                     ],
                 }
             )
-            print(f"  -> ADDED as unique provider #{len(unique_providers)}")
+            logger.debug(f"  -> ADDED as unique provider #{len(unique_providers)}")
         else:
-            print("  -> SKIPPED (duplicate or empty name/address)")
+            logger.debug("  -> SKIPPED (duplicate or empty name/address)")
 
-    print(f"\nFINAL UNIQUE PROVIDERS: {len(unique_providers)}")
+    logger.debug(f"\nFINAL UNIQUE PROVIDERS: {len(unique_providers)}")
     for up in unique_providers:
-        print(
+        logger.debug(
             f"  {up['location_id']}: '{up['provider_name']}' @ '{up['provider_address']}' (EOBs: {up['source_eobs']})"
         )
 
     provider_candidates = unique_providers
 
     # Output debug info to console (will be visible in backend logs)
-    print("=== EOB Provider Debug Info ===")
+    logger.debug("=== EOB Provider Debug Info ===")
     for debug_entry in eob_provider_debug:
-        print(f"EOB {debug_entry['eob_id']}:")
-        print(f"  Provider refs: {debug_entry['provider_refs']}")
-        print(
+        logger.debug(f"EOB {debug_entry['eob_id']}:")
+        logger.debug(f"  Provider refs: {debug_entry['provider_refs']}")
+        logger.debug(
             f"  Linked providers: {[p['name'] for p in debug_entry['linked_providers']]}"
         )
-        print("---")
+        logger.debug("---")
 
     # Now process ExplanationOfBenefit entries for charge data
     for ent in entries:

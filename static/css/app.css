@@ -61,6 +61,27 @@ table#chargesTable td .attach-btn i, table#chargesTable td .attach-btn .att-coun
 table#chargesTable td .attach-btn.btn { padding-left: 0.25rem; padding-right: 0.25rem; }
 /* Alternate row class (applied via JS) */
 .table-alt { background-color: #fafafa; }
+/* Highlight selected rows (when user checks the selection checkbox). Uses Bootstrap 5 CSS variables when available for an accent color fallback */
+.row-selected > td {
+  background-color: rgba(13,110,253,0.10) !important; /* soft blue tint */
+  border-color: rgba(13,110,253,0.16) !important;
+}
+.row-selected:hover > td {
+  background-color: rgba(13,110,253,0.14) !important; /* slightly stronger on hover */
+}
+/* More specific selector to override manual striping applied elsewhere */
+table.manual-striped tbody tr.row-selected > td {
+  background-color: rgba(13,110,253,0.10) !important;
+  border-color: rgba(13,110,253,0.16) !important;
+}
+table.manual-striped tbody tr.row-selected:hover > td {
+  background-color: rgba(13,110,253,0.14) !important;
+}
+
+/* Also make selected rows stand out when using dark or high-contrast themes by increasing contrast */
+@media (prefers-contrast: more) {
+  .row-selected > td { background-color: #cfe3ff !important; }
+}
 /* Placeholder for per-page overrides if needed */
 /* .page-charges {} */
 
@@ -127,4 +148,24 @@ input.eob-amt, input.eob-amt::-webkit-outer-spin-button, input.eob-amt::-webkit-
   input.eob-date { max-width: 95px; }
   input.eob-cpt { max-width: 95px; }
   input.eob-amt { width: 70px !important; }
+}
+
+/* Merge comparison highlights: visually call out fields where the two charges differ */
+/* Stronger specificity so highlights win over table striping */
+.merge-different {
+  background-color: rgba(255, 243, 205, 0.95) !important; /* light yellow */
+  border-left: 3px solid #ffc107 !important; /* amber accent */
+  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+}
+/* Visually-hidden hints now use Bootstrap's .visually-hidden utility; removed custom rule */
+
+/* Apply highlight when the label itself is marked to avoid nested indicators */
+.form-check-label.merge-different {
+  display: block; /* ensure full-width label highlights */
+  background-color: rgba(255, 243, 205, 0.95) !important;
+  border-left: 3px solid #ffc107 !important;
+  padding: 0.3rem 0.45rem !important;
+  border-radius: 4px;
+  font-weight: 600;
 }

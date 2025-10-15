@@ -352,6 +352,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (dbg) { dbg.classList.remove('d-none'); dbg.textContent = 'Initializing charges UI...'; }
         initializeTableEnhancements();
         setupChargeSelection();
+        // Ensure any pre-checked boxes cause rows to be highlighted
+        syncInitialSelectedRows();
         setupFormSubmission();
         applyStriping('chargesTable');
         restoreFiltersFromQuery();
@@ -821,11 +823,22 @@ function setupChargeSelection() {
             const cb = r.querySelector('.charge-select');
             if (cb) cb.checked = selectAll.checked;
         });
+        // Toggle selected class on all visible rows
+        visibleRows.forEach(r => {
+            if (r.style.display === 'none') return;
+            if (selectAll.checked) r.classList.add('row-selected'); else r.classList.remove('row-selected');
+        });
         updateChargeSelectionState();
     });
 
     table.addEventListener('change', (e) => {
         if (e.target.classList.contains('charge-select')) {
+            // Toggle selected class on the row containing this checkbox
+            const cb = e.target;
+            const row = cb.closest('tr');
+            if (row) {
+                if (cb.checked) row.classList.add('row-selected'); else row.classList.remove('row-selected');
+            }
             updateChargeSelectionState();
         }
     });
@@ -874,7 +887,23 @@ function setupChargeSelection() {
     cancelBtn.addEventListener('click', () => {
         const cbs = table.querySelectorAll('tbody .charge-select');
         cbs.forEach(cb => cb.checked = false);
+        // remove selected highlight from all rows
+        const rows = table.querySelectorAll('tbody tr');
+        rows.forEach(r => r.classList.remove('row-selected'));
         updateChargeSelectionState();
+    });
+}
+
+// Apply row-selected class for any checkboxes that are already checked on page load
+function syncInitialSelectedRows() {
+    const table = document.getElementById('chargesTable');
+    if (!table) return;
+    const cbs = table.querySelectorAll('tbody .charge-select');
+    cbs.forEach(cb => {
+        const row = cb.closest('tr');
+        if (row) {
+            if (cb.checked) row.classList.add('row-selected'); else row.classList.remove('row-selected');
+        }
     });
 }
 
@@ -1031,19 +1060,27 @@ function populateChargeMergeModal(charges) {
             }
         }
 
+        // highlight cells when values differ to make it obvious in the UI
+        const differ = (actualVal1 !== actualVal2);
+        const labelClass = differ ? 'merge-different' : '';
+    const diffHint1 = differ ? `Different from Charge #${charge2.id}` : '';
+    const diffHint2 = differ ? `Different from Charge #${charge1.id}` : '';
+
+    console.log('merge-compare field', field.key, 'differ=', differ, 'val1=', val1, 'val2=', val2);
+
         html += `
             <div class="row mb-2 align-items-center">
                 <div class="col-md-4"><label class="form-label mb-0">${field.label}</label></div>
                 <div class="col-md-4">
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="${field.key}" value="${actualVal1 || ''}" id="${field.key}_1" ${defaultSelection === 1 ? 'checked' : ''}>
-                        <label class="form-check-label" for="${field.key}_1">${val1 || '(empty)'}</label>
+                        <label class="form-check-label ${labelClass}" for="${field.key}_1" aria-label="${(val1 || '(empty)')}${diffHint1 ? ' - ' + diffHint1 : ''}">${val1 || '(empty)'}</label>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="form-check">
                         <input class="form-check-input" type="radio" name="${field.key}" value="${actualVal2 || ''}" id="${field.key}_2" ${defaultSelection === 2 ? 'checked' : ''}>
-                        <label class="form-check-label" for="${field.key}_2">${val2 || '(empty)'}</label>
+                        <label class="form-check-label ${labelClass}" for="${field.key}_2" aria-label="${(val2 || '(empty)')}${diffHint2 ? ' - ' + diffHint2 : ''}">${val2 || '(empty)'}</label>
                     </div>
                 </div>
             </div>
@@ -1054,6 +1091,49 @@ function populateChargeMergeModal(charges) {
 
     // Store charge IDs for form submission
     document.getElementById('chargeMergeForm').dataset.chargeIds = JSON.stringify([charge1.id, charge2.id]);
+
+    // After DOM insertion, run a safety highlighter to mark differing fields
+    setTimeout(() => highlightMergeDifferences(), 0);
+}
+
+// Helper: highlight differing values in the merge modal (tolerant numeric compare for amounts)
+function highlightMergeDifferences() {
+    const modal = document.getElementById('chargeMergeModal');
+    if (!modal) return;
+    const rows = modal.querySelectorAll('#chargeMergeModalBody .row');
+    rows.forEach(r => {
+        try {
+            const cols = r.querySelectorAll('.col-md-4');
+            if (cols.length < 3) return; // skip header/others
+            const leftCol = cols[1];
+            const rightCol = cols[2];
+            const leftLabel = leftCol.querySelector('.form-check-label');
+            const rightLabel = rightCol.querySelector('.form-check-label');
+            const leftText = leftLabel ? leftLabel.textContent.trim() : leftCol.textContent.trim();
+            const rightText = rightLabel ? rightLabel.textContent.trim() : rightCol.textContent.trim();
+
+            // Only attempt numeric comparison when strings look like numbers/currency
+            const looksNumeric = s => !!s && /^[\s$]?[-+]?\d[\d,]*(\.\d+)?\s*$/.test(s);
+            const parseNum = s => parseFloat(s.replace(/[^0-9.\-]/g, ''));
+            let differ;
+            if (looksNumeric(leftText) && looksNumeric(rightText)) {
+                const n1 = parseNum(leftText);
+                const n2 = parseNum(rightText);
+                differ = Math.abs((n1||0) - (n2||0)) > 0.005;
+            } else {
+                // compare as plain trimmed text for dates, codes, etc.
+                differ = leftText !== rightText;
+            }
+
+            if (differ) {
+                if (leftLabel) leftLabel.classList.add('merge-different');
+                if (rightLabel) rightLabel.classList.add('merge-different');
+            } else {
+                if (leftLabel) leftLabel.classList.remove('merge-different');
+                if (rightLabel) rightLabel.classList.remove('merge-different');
+            }
+        } catch (e) { /* ignore row parsing errors */ }
+    });
 }
 
 async function submitChargeMerge(e) {
