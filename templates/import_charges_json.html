@@ -23,10 +23,10 @@
         <label class="form-label">Default Family Member <span class="text-danger">*</span></label>
         <select name="family_member" class="form-select form-select-sm" id="familySelect" required>
           <option value="">-- Select --</option>
-          <option>Alex</option>
-          <option>Jordan</option>
-          <option>Sam</option>
-          <option>Riley</option>
+          <option value="Alex">{{ 'Alex' | fam_avatar }} Alex</option>
+          <option value="Jordan">{{ 'Jordan' | fam_avatar }} Jordan</option>
+          <option value="Sam">{{ 'Sam' | fam_avatar }} Sam</option>
+          <option value="Riley">{{ 'Riley' | fam_avatar }} Riley</option>
         </select>
       </div>
       <div class="col-md-4">

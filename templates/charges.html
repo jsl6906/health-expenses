@@ -162,9 +162,7 @@
                                 <td>{{ charge.service_date.strftime('%#m/%#d/%y') if charge.service_date else '-' }}</td>
                                 <td data-family-member="{{ charge.family_member or '' }}">
                                     {% set fm = charge.family_member or '' %}
-                                    {% set emoji_map = {'Alex': '👨', 'Jordan': '👩', 'Sam': '👦', 'Riley': '👧'} %}
-                                    {% set emoji = emoji_map.get(fm, '') %}
-                                    {% if emoji %}<span title="{{ fm }}">{{ emoji }}</span>{% else %}{{ fm or '-' }}{% endif %}
+                                    {% if fm %}<span title="{{ fm }}">{{ fm | fam_avatar }}</span>{% else %}{{ fm or '-' }}{% endif %}
                                 </td>
                                 <td>
                                     {% set mt = (charge.medical_type or '') %}
@@ -241,12 +239,12 @@
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="family_member" class="form-label">Family Member</label>
-                            <select class="form-select" id="family_member" name="family_member" required>
+                                <select class="form-select" id="family_member" name="family_member" required>
                                 <option value="">Select...</option>
-                                <option value="Alex">👨 Alex</option>
-                                <option value="Jordan">👩 Jordan</option>
-                                <option value="Sam">👦 Sam</option>
-                                <option value="Riley">👧 Riley</option>
+                                <option value="Alex">{{ 'Alex' | fam_avatar }} Alex</option>
+                                <option value="Jordan">{{ 'Jordan' | fam_avatar }} Jordan</option>
+                                <option value="Sam">{{ 'Sam' | fam_avatar }} Sam</option>
+                                <option value="Riley">{{ 'Riley' | fam_avatar }} Riley</option>
                             </select>
                         </div>
                     </div>
@@ -807,6 +805,26 @@ function setupChargeSelection() {
     const countSpan = document.getElementById('selectedChargeCount');
 
     if (!table || !selectAll) return;
+
+    // Allow clicking anywhere on a row to toggle its checkbox (but ignore clicks on interactive elements)
+    table.addEventListener('click', (e) => {
+        try {
+            const tr = e.target.closest('tr');
+            if (!tr) return;
+            // Ignore clicks on inputs, links, buttons, selects, labels, or inside modals etc.
+            if (e.target.closest('a,button,input,select,textarea,label')) return;
+            // Find checkbox in this row
+            const cb = tr.querySelector('.charge-select');
+            if (!cb) return;
+            // Toggle checkbox
+            cb.checked = !cb.checked;
+            // Fire change event so existing handlers run
+            const changeEvt = new Event('change', { bubbles: true });
+            cb.dispatchEvent(changeEvt);
+        } catch (err) {
+            // ignore
+        }
+    });
 
     function updateChargeSelectionState() {
         const checkboxes = table.querySelectorAll('tbody .charge-select');

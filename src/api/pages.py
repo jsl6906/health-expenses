@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -49,6 +50,34 @@ def format_currency(value):
 
 
 templates.env.filters["currency"] = format_currency
+
+
+def fam_avatar(name: str) -> Markup:
+    try:
+        if not name:
+            return Markup("")
+        raw = str(name).strip()
+        ch = raw[0:1].upper()
+        if not ch or ch.isspace():
+            ch = "?"
+        slug = raw.lower()
+        mod = ""
+        if slug == "alex":
+            mod = "fam-avatar--alex"
+        elif slug == "sam":
+            mod = "fam-avatar--sam"
+        elif slug == "riley":
+            mod = "fam-avatar--riley"
+        elif slug == "jordan":
+            mod = "fam-avatar--jordan"
+        cls = f"fam-avatar {mod}" if mod else "fam-avatar"
+        html = f'<span class="{cls}" title="{raw}">{ch}</span>'
+        return Markup(html)
+    except Exception:
+        return Markup("")
+
+
+templates.env.filters["fam_avatar"] = fam_avatar
 
 
 @router.get("/", response_class=HTMLResponse)

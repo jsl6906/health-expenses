@@ -169,3 +169,29 @@ input.eob-amt, input.eob-amt::-webkit-outer-spin-button, input.eob-amt::-webkit-
   border-radius: 4px;
   font-weight: 600;
 }
+
+/* Family member avatar: small square with bold uppercase letter to act like an "emoji" badge */
+.fam-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45em;
+  height: 1.45em;
+  margin-right: 0.35ch;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.06);
+  font-weight: 700;
+  font-size: 0.9em;
+  line-height: 1;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.02) inset;
+  color: #111827;
+}
+
+.fam-avatar[title] { cursor: default; }
+
+/* Per-family member color variants */
+.fam-avatar--alex { background: linear-gradient(180deg,#e7f0ff,#d9e8ff); color: #0d47a1; border-color: rgba(13,71,161,0.12); }
+.fam-avatar--sam { background: linear-gradient(180deg,#e9f9ee,#dff6df); color: #0b6b20; border-color: rgba(11,107,32,0.12); }
+.fam-avatar--riley { background: linear-gradient(180deg,#fff0f9,#ffe6f5); color: #ad0f6f; border-color: rgba(173,15,111,0.08); }
+.fam-avatar--jordan { background: linear-gradient(180deg,#e6ffff,#dffbfb); color: #006d6d; border-color: rgba(0,109,109,0.12); }

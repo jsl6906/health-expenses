@@ -94,9 +94,7 @@
                 <td>{{ c.service_date.strftime('%#m/%#d/%y') if c.service_date else '-' }}</td>
                 <td>
                   {% set fm = c.family_member or '' %}
-                  {% set emoji_map = {'Alex': '👨', 'Jordan': '👩', 'Sam': '👦', 'Riley': '👧'} %}
-                  {% set emoji = emoji_map.get(fm, '') %}
-                  {% if emoji %}<span title="{{ fm }}">{{ emoji }}</span>{% else %}{{ fm or '-' }}{% endif %}
+                  {% if fm %}{{ fm | fam_avatar }}{% else %}-{% endif %}
                 </td>
                 <td>
                   {% if c.charge_description %}
@@ -660,14 +658,14 @@ document.addEventListener('DOMContentLoaded',()=>{
               <label class="form-label">Service Date *</label>
               <input type="date" name="service_date" class="form-control" required>
             </div>
-            <div class="col-md-4 mb-2">
+                <div class="col-md-4 mb-2">
               <label class="form-label">Family Member *</label>
               <select name="family_member" class="form-select" required>
                 <option value="">Select...</option>
-                <option value="Alex">👨 Alex</option>
-                <option value="Jordan">👩 Jordan</option>
-                <option value="Sam">👦 Sam</option>
-                <option value="Riley">👧 Riley</option>
+                <option value="Alex">{{ 'Alex' | fam_avatar }} Alex</option>
+                <option value="Jordan">{{ 'Jordan' | fam_avatar }} Jordan</option>
+                <option value="Sam">{{ 'Sam' | fam_avatar }} Sam</option>
+                <option value="Riley">{{ 'Riley' | fam_avatar }} Riley</option>
               </select>
             </div>
             <div class="col-md-4 mb-2">

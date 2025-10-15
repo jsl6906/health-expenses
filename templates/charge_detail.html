@@ -29,9 +29,7 @@
           <dt class="col-5">Service Date</dt><dd class="col-7">{{ charge.service_date.strftime('%#m/%#d/%y') if charge.service_date else '-' }}</dd>
             <dt class="col-5">Family Member</dt><dd class="col-7">
               {% set fm = charge.family_member or '' %}
-              {% set emoji_map = {'Alex': '👨', 'Jordan': '👩', 'Sam': '👦', 'Riley': '👧'} %}
-              {% set emoji = emoji_map.get(fm, '') %}
-              {% if emoji %}{{ emoji }} {{ fm }}{% else %}{{ fm or '-' }}{% endif %}
+              {% if fm %}{{ fm | fam_avatar }} {{ fm }}{% else %}{{ fm or '-' }}{% endif %}
             </dd>
           <dt class="col-5">Medical Type</dt><dd class="col-7">{{ charge.medical_type or '-' }}</dd>
           <dt class="col-5">Provider</dt><dd class="col-7">{% if provider %}<a href="/providers/{{ provider.id }}">{{ provider.provider_name }}</a>{% else %}-{% endif %}</dd>
@@ -745,7 +743,7 @@ function highlightMergeDifferencesOnDetail() {
               <select name="family_member" class="form-select" required>
                 {% for fm in ['Alex', 'Jordan', 'Sam', 'Riley'] %}
                   <option value="{{ fm }}" {% if charge.family_member==fm %}selected{% endif %}>
-                    {% if fm=='Alex' %}👨{% elif fm=='Jordan' %}👩{% elif fm=='Sam' %}👦{% elif fm=='Riley' %}👧{% endif %} {{ fm }}
+                    {{ fm | fam_avatar }} {{ fm }}
                   </option>
                 {% endfor %}
               </select>

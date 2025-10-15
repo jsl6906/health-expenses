@@ -14,6 +14,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from sqlalchemy.orm import Session  # retained for diagnostic endpoint dependency
 
 from .api.attachments import router as attachments_router
@@ -47,6 +48,42 @@ def format_currency(value):
 
 
 templates.env.filters["currency"] = format_currency
+
+
+def fam_avatar(name: str) -> Markup:
+    """Return a small square-letter avatar (HTML Markup) for the given family member name.
+
+    The avatar displays the uppercase first letter inside a visually distinct square. Returns
+    an empty string for falsy names. The result is returned as Markup so templates can
+    render it as HTML safely.
+    """
+    try:
+        if not name:
+            return Markup("")
+        raw = str(name).strip()
+        ch = raw[0:1].upper()
+        # Fallback for non-printable characters
+        if not ch or ch.isspace():
+            ch = "?"
+        # Per-member modifier class for initial set
+        slug = raw.lower()
+        mod = ""
+        if slug == "alex":
+            mod = "fam-avatar--alex"
+        elif slug == "sam":
+            mod = "fam-avatar--sam"
+        elif slug == "riley":
+            mod = "fam-avatar--riley"
+        elif slug == "jordan":
+            mod = "fam-avatar--jordan"
+        cls = f"fam-avatar {mod}" if mod else "fam-avatar"
+        html = f'<span class="{cls}" title="{raw}">{ch}</span>'
+        return Markup(html)
+    except Exception:
+        return Markup("")
+
+
+templates.env.filters["fam_avatar"] = fam_avatar
 
 app.include_router(attachments_router)
 app.include_router(providers_router)

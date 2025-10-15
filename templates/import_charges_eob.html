@@ -164,10 +164,10 @@ async function loadSession() {
         <td>
           <select class="form-select form-select-sm fam-input" style="min-width:100px" data-index="${r.index}">
             <option value="">(None)</option>
-            <option value="Alex" ${r.family_member==='Alex'?'selected':''}>👨 Alex</option>
-            <option value="Jordan" ${r.family_member==='Jordan'?'selected':''}>👩 Jordan</option>
-            <option value="Sam" ${r.family_member==='Sam'?'selected':''}>👦 Sam</option>
-            <option value="Riley" ${r.family_member==='Riley'?'selected':''}>👧 Riley</option>
+            <option value="Alex" ${r.family_member==='Alex'?'selected':''}><span class="fam-avatar fam-avatar--alex">J</span> Alex</option>
+            <option value="Jordan" ${r.family_member==='Jordan'?'selected':''}><span class="fam-avatar fam-avatar--jordan">M</span> Jordan</option>
+            <option value="Sam" ${r.family_member==='Sam'?'selected':''}><span class="fam-avatar fam-avatar--sam">E</span> Sam</option>
+            <option value="Riley" ${r.family_member==='Riley'?'selected':''}><span class="fam-avatar fam-avatar--riley">L</span> Riley</option>
           </select>
         </td>`;
       tbody.appendChild(tr);
