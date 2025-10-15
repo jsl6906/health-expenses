@@ -104,18 +104,27 @@
                 <!-- Debug banner (hidden by default) -->
                 <div id="chargesDebugBanner" class="alert alert-info d-none mb-2" role="status" aria-live="polite"></div>
 
-                <div id="chargeActionsBar" class="d-none mb-2">
-                    <div class="d-flex flex-wrap align-items-center gap-2">
-                        <span id="selectedChargeCount" class="fw-semibold"></span>
-                        <button id="mergeChargesBtn" class="btn btn-sm btn-outline-warning" disabled>
-                            <i class="bi bi-arrow-left-right"></i> Merge Charges
-                        </button>
-                        <button id="markNoDupBtn" class="btn btn-sm btn-outline-secondary">
-                            <i class="bi bi-tag"></i> Mark as NO DUP
-                        </button>
-                        <button id="cancelChargeSelectionBtn" class="btn btn-sm btn-outline-secondary">
-                            Cancel
-                        </button>
+                <!-- Table controls: row count on the left, selection actions on the right.
+                     Placing the actions here prevents the actions bar from pushing the table
+                     content down/up when it appears/disappears. -->
+                <div id="tableControls" class="d-flex justify-content-between align-items-center mb-2" style="min-height:40px;">
+                    <div id="rowCount" class="text-muted"></div>
+                    <div id="chargeActionsBar" class="d-none" style="min-height:40px;">
+                        <div class="d-flex align-items-center gap-2" style="white-space:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch;">
+                            <span id="selectedChargeCount" class="fw-semibold"></span>
+                            <button id="mergeChargesBtn" class="btn btn-sm btn-outline-warning" disabled>
+                                <i class="bi bi-arrow-left-right"></i> Merge Charges
+                            </button>
+                            <button id="markNoDupBtn" class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-tag"></i> Mark as NO DUP
+                            </button>
+                            <button id="deleteSelectedBtn" class="btn btn-sm btn-outline-danger">
+                                <i class="bi bi-trash"></i> Delete Selected
+                            </button>
+                            <button id="cancelChargeSelectionBtn" class="btn btn-sm btn-outline-secondary">
+                                Cancel
+                            </button>
+                        </div>
                     </div>
                 </div>
                 <div class="table-responsive">
@@ -358,7 +367,7 @@ document.addEventListener('DOMContentLoaded', function() {
         applyStriping('chargesTable');
         restoreFiltersFromQuery();
         filterTable();
-        if (dbg) { dbg.textContent = 'Charges UI initialized successfully'; setTimeout(()=>{ dbg.classList.add('d-none'); }, 1500); }
+    if (dbg) { dbg.classList.add('d-none'); }
     } catch (e) {
         // Surface JS initialization errors so the user can see them immediately
         try { alert('Charges page initialization error: ' + (e && e.message ? e.message : e)); } catch (_) {}
@@ -537,20 +546,10 @@ function updateRowCount() {
     const table = document.getElementById('chargesTable');
     const allRows = table.querySelectorAll('tbody tr');
     const visibleRows = table.querySelectorAll('tbody tr:not([style*="display: none"])');
-
-    // Add/update row count display
-    let countDisplay = document.getElementById('rowCount');
-    if (!countDisplay) {
-        countDisplay = document.createElement('small');
-        countDisplay.id = 'rowCount';
-        countDisplay.className = 'text-muted ms-2';
-        const tableCard = table.closest('.card');
-        if (tableCard) {
-            const cardBody = tableCard.querySelector('.card-body');
-            cardBody.insertBefore(countDisplay, cardBody.firstChild);
-        }
+    const countDisplay = document.getElementById('rowCount');
+    if (countDisplay) {
+        countDisplay.textContent = `Showing ${visibleRows.length} of ${allRows.length} charges`;
     }
-    countDisplay.textContent = `Showing ${visibleRows.length} of ${allRows.length} charges`;
 }
 
 function clearFilters() {
@@ -884,6 +883,50 @@ function setupChargeSelection() {
             }
         });
     }
+    // Delete selected charges handler
+    const deleteBtn = document.getElementById('deleteSelectedBtn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', async () => {
+            const selectedIds = getSelectedChargeIds();
+            if (!selectedIds || selectedIds.length === 0) {
+                alert('Please select at least one charge to delete.');
+                return;
+            }
+            const proceed = confirm(`Permanently delete ${selectedIds.length} selected charge(s)? This action cannot be undone.`);
+            if (!proceed) return;
+
+            try {
+                // issue parallel DELETE requests
+                const deletes = selectedIds.map(id => fetch(`/api/charges/${id}`, { method: 'DELETE' }));
+                const results = await Promise.allSettled(deletes);
+                const failed = [];
+                for (let i = 0; i < results.length; i++) {
+                    const res = results[i];
+                    if (res.status === 'fulfilled') {
+                        const r = res.value;
+                        if (!r.ok) {
+                            failed.push({ id: selectedIds[i], status: r.status });
+                        }
+                    } else {
+                        failed.push({ id: selectedIds[i], error: res.reason });
+                    }
+                }
+
+                if (failed.length > 0) {
+                    console && console.error && console.error('Failed deletes', failed);
+                    alert(`Failed to delete ${failed.length} of ${selectedIds.length} charges. See console for details.`);
+                    // Partial success - reload to reflect successful deletions
+                    location.reload();
+                    return;
+                }
+
+                // All deleted successfully
+                location.reload();
+            } catch (e) {
+                alert('Error deleting charges: ' + (e && e.message ? e.message : e));
+            }
+        });
+    }
     cancelBtn.addEventListener('click', () => {
         const cbs = table.querySelectorAll('tbody .charge-select');
         cbs.forEach(cb => cb.checked = false);
@@ -927,6 +970,16 @@ async function showChargeMergeModal(chargeIds) {
         }
 
         const data = await resp.json();
+        // Before populating the modal, detect key monetary differences and warn user
+        const warnFields = detectMonetaryDifferences(data.charges || []);
+        if (warnFields && warnFields.length > 0) {
+            // Build a human readable warning message
+            const fieldNames = warnFields.map(f => f.label + `: ${f.val1} vs ${f.val2}`);
+            const msg = `The selected charges have different amounts for the following fields:\n\n` + fieldNames.join('\n') + `\n\nMerging will combine payments and attachments — are you sure you want to continue?`;
+            const proceed = confirm(msg);
+            if (!proceed) return; // user cancelled, do not open modal
+        }
+
         populateChargeMergeModal(data.charges);
 
         const modal = new bootstrap.Modal(document.getElementById('chargeMergeModal'));
@@ -1094,6 +1147,36 @@ function populateChargeMergeModal(charges) {
 
     // After DOM insertion, run a safety highlighter to mark differing fields
     setTimeout(() => highlightMergeDifferences(), 0);
+}
+
+// Detect differences in key monetary fields between two charges
+function detectMonetaryDifferences(charges) {
+    if (!charges || charges.length < 2) return [];
+    const [c1, c2] = charges;
+    const keys = [
+        { key: 'charged_amount', label: 'Charged Amount' },
+        { key: 'base_fee_amount', label: 'Base Fee' },
+        { key: 'insurance_paid_amount', label: 'Insurance Paid' },
+        { key: 'insurance_discount_amount', label: 'Insurance Discount' }
+    ];
+    const diffs = [];
+    const fmt = v => {
+        if (v === null || v === undefined || v === '') return '(empty)';
+        const n = parseFloat(v);
+        if (isNaN(n)) return String(v);
+        return n.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+    };
+    keys.forEach(k => {
+        const v1 = c1[k.key];
+        const v2 = c2[k.key];
+        const n1 = (v1 === null || v1 === undefined || v1 === '') ? null : parseFloat(v1);
+        const n2 = (v2 === null || v2 === undefined || v2 === '') ? null : parseFloat(v2);
+        const differ = (n1 === null && n2 !== null) || (n2 === null && n1 !== null) || (n1 !== null && n2 !== null && Math.abs((n1||0) - (n2||0)) > 0.005);
+        if (differ) {
+            diffs.push({ key: k.key, label: k.label, val1: fmt(v1), val2: fmt(v2) });
+        }
+    });
+    return diffs;
 }
 
 // Helper: highlight differing values in the merge modal (tolerant numeric compare for amounts)
