@@ -90,7 +90,7 @@ cp .env.docker.example .env
 | `APP_PORT` | Application port | `8080` |
 | `APP_DEBUG` | Debug mode | `false` |
 | `GEMINI_API_KEY` | Gemini API key for EOB parsing | - |
-| `GEMINI_MODEL_NAME` | Gemini model | `gemini-1.5-flash` |
+| `GEMINI_MODEL_NAME` | Gemini model | `gemini-2.5-flash` |
 | `DB_POOL_SIZE` | Connection pool size | `5` |
 | `DB_MAX_OVERFLOW` | Max overflow connections | `10` |
 | `DB_ECHO` | SQL query logging | `false` |

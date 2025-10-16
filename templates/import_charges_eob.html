@@ -8,33 +8,44 @@
 <div class="card mb-3">
   <div class="card-body py-3">
     <form id="eobUploadForm" class="row g-2 align-items-end" enctype="multipart/form-data">
-      <div class="col-md-4">
+      <!-- First row: EOB file, Family Member, Upload -->
+      <div class="col-md-6 d-flex flex-column">
         <label for="eobFile" class="form-label small mb-1">EOB File (PDF / any)</label>
-        <input type="file" class="form-control form-control-sm" id="eobFile" name="file" required>
+        <input type="file" class="form-control form-control-sm h-100" id="eobFile" name="file" required>
       </div>
-      <div class="col-md-3">
-        <label for="providerSelect" class="form-label small mb-1">Provider</label>
-        <select id="providerSelect" class="form-select form-select-sm" required>
-          <option value="">(Select a provider)</option>
-        </select>
-      </div>
-      <div class="col-md-3">
-        <label for="defaultFamilyMember" class="form-label small mb-1">Default Family Member</label>
-        <select id="defaultFamilyMember" class="form-select form-select-sm">
-          <option value="">(Auto from parse)</option>
+      <div class="col-md-4 d-flex flex-column">
+        <label for="defaultFamilyMember" class="form-label small mb-1">Family Member</label>
+        <select id="defaultFamilyMember" class="form-select form-select-sm h-100">
+          <option value="">(Select a member)</option>
           <option>Alex</option>
           <option>Jordan</option>
           <option>Sam</option>
           <option>Riley</option>
         </select>
       </div>
-      <div class="col-md-2">
-        <button class="btn btn-primary btn-form-sm w-100" type="submit">
+      <div class="col-md-2 d-flex align-items-stretch">
+        <button class="btn btn-primary btn-sm w-100 h-100" type="submit">
           <i class="bi bi-upload"></i> <span class="d-none d-md-inline">Upload & Parse</span><span class="d-inline d-md-none">Parse</span>
         </button>
       </div>
+
+      <!-- Second row: Provider and Doctor (optional) -->
+      <div class="col-md-4">
+        <label for="providerSelect" class="form-label small mb-1">Provider</label>
+        <select id="providerSelect" class="form-select form-select-sm">
+          <option value="">(Select a provider)</option>
+        </select>
+      </div>
+      <div class="col-md-4">
+        <label for="eobNumber" class="form-label small mb-1">EOB # (optional)</label>
+        <input id="eobNumber" name="eob_number" class="form-control form-control-sm" placeholder="EOB / claim number (optional)" />
+      </div>
+      <div class="col-md-4">
+        <label for="doctorName" class="form-label small mb-1">Doctor (optional)</label>
+        <input id="doctorName" name="doctor_name" class="form-control form-control-sm" placeholder="(Optional) Doctor name to apply to all rows" />
+      </div>
     </form>
-    <div class="small text-muted mt-2">Upload a single EOB to parse. Additional smart detection & OCR will arrive in a future iteration.</div>
+    <div class="small text-muted mt-2">Upload a single EOB to parse.</div>
   </div>
 </div>
 
@@ -50,6 +61,7 @@
       </button>
     </div>
   </div>
+  <div id="sessionMeta" class="mb-2 small text-muted"></div>
   <div class="table-responsive" style="max-height: 50vh;">
     <table class="table table-sm table-bordered align-middle" id="eobParsedTable">
       <thead class="table-light">
@@ -63,7 +75,7 @@
           <th>Charged</th>
           <th>Ins Paid</th>
           <th>Owed</th>
-          <th>Mem.</th>
+              <!-- Member removed from per-row — overall family member selection is used -->
         </tr>
       </thead>
       <tbody></tbody>
@@ -81,7 +93,7 @@
     <li>Review parsed rows, adjust selections.</li>
     <li>Click Import Selected to create new charges.</li>
   </ol>
-  <div class="mt-2 text-muted">Future: multi-file sessions, duplicate detection, provider auto-match, OCR for image/PDF.</div>
+
 </div>
 {% endblock %}
 
@@ -96,11 +108,16 @@ async function fetchProviders() {
     if (!resp.ok) return;
     const data = await resp.json();
     const sel = document.getElementById('providerSelect');
+    // sort alphabetically by provider_name then populate
+    data.sort((a,b) => (a.provider_name||'').toLowerCase().localeCompare((b.provider_name||'').toLowerCase()));
     data.forEach(p => {
+      // populate select
       const opt = document.createElement('option');
       opt.value = p.id;
       opt.textContent = p.provider_name;
       sel.appendChild(opt);
+      // cache for later lookup
+      providersCache.push(p);
     });
   } catch { /* ignore */ }
 }
@@ -120,14 +137,14 @@ async function handleUpload(e) {
   const form = e.target;
   const fileInput = document.getElementById('eobFile');
   const providerSelect = document.getElementById('providerSelect');
+  const doctorNameInput = document.getElementById('doctorName');
+  const eobNumberInput = document.getElementById('eobNumber');
   if (!fileInput.files.length) return;
-  if (!providerSelect.value) {
-    alert('Please select a provider before uploading.');
-    providerSelect.focus();
-    return;
-  }
+  // Upload allowed without selecting provider or family member; backend will attempt to infer missing info from parsed rows
   const fd = new FormData();
   fd.append('file', fileInput.files[0]);
+  if (doctorNameInput && doctorNameInput.value) fd.append('doctor_name', doctorNameInput.value);
+  if (eobNumberInput && eobNumberInput.value) fd.append('eob_number', eobNumberInput.value);
   const btn = form.querySelector('button[type="submit"]');
   const prevHtml = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Parsing...';
@@ -161,18 +178,41 @@ async function loadSession() {
     <td><input type="number" step="0.01" class="form-control form-control-sm charged-input amt-input eob-amt" value="${r.charged_amount ?? ''}" data-index="${r.index}" /></td>
     <td><input type="number" step="0.01" class="form-control form-control-sm inspaid-input amt-input eob-amt" value="${r.insurance_paid_amount ?? ''}" data-index="${r.index}" /></td>
     <td><input type="number" step="0.01" class="form-control form-control-sm owed-input amt-input eob-amt" value="${r.owed_amount ?? ''}" data-index="${r.index}" /></td>
-        <td>
-          <select class="form-select form-select-sm fam-input" style="min-width:100px" data-index="${r.index}">
-            <option value="">(None)</option>
-            <option value="Alex" ${r.family_member==='Alex'?'selected':''}><span class="fam-avatar fam-avatar--alex">J</span> Alex</option>
-            <option value="Jordan" ${r.family_member==='Jordan'?'selected':''}><span class="fam-avatar fam-avatar--jordan">M</span> Jordan</option>
-            <option value="Sam" ${r.family_member==='Sam'?'selected':''}><span class="fam-avatar fam-avatar--sam">E</span> Sam</option>
-            <option value="Riley" ${r.family_member==='Riley'?'selected':''}><span class="fam-avatar fam-avatar--riley">L</span> Riley</option>
-          </select>
-        </td>`;
+        `;
       tbody.appendChild(tr);
     });
     document.getElementById('rowCountMeta').textContent = `(${data.row_count} rows parsed)`;
+    // Prefill top-level inputs from session metadata if present
+    try {
+      const metaParts = [];
+      if (data.family_member) {
+        const fm = document.getElementById('defaultFamilyMember');
+        if (fm) fm.value = data.family_member;
+        metaParts.push(`Family: ${data.family_member}`);
+      }
+      if (data.provider_id) {
+        const ps = document.getElementById('providerSelect');
+        if (ps) ps.value = data.provider_id;
+        // try to show provider name from cache
+        const prov = providersCache.find(p => p.id === data.provider_id || String(p.id) === String(data.provider_id));
+        if (prov) metaParts.push(`Provider: ${prov.provider_name}`);
+      }
+      if (data.doctor_name) {
+        const dn = document.getElementById('doctorName');
+        if (dn) dn.value = data.doctor_name;
+        metaParts.push(`Doctor: ${data.doctor_name}`);
+      }
+      if (data.eob_number) {
+        const en = document.getElementById('eobNumber');
+        if (en) en.value = data.eob_number;
+        metaParts.push(`EOB#: ${data.eob_number}`);
+      }
+      if (metaParts.length) {
+        document.getElementById('sessionMeta').textContent = metaParts.join(' • ');
+      } else {
+        document.getElementById('sessionMeta').textContent = '';
+      }
+    } catch (e) { console.warn('prefill error', e); }
     if (data.row_count === 0) {
       const dbg = data.debug || {};
       const lines = [];
@@ -237,7 +277,9 @@ async function importSelected() {
     insurance_discount_amount: parseFloat(document.querySelector(`.discount-input[data-index="${i}"]`)?.value || '0') || null,
     base_fee_amount: parseFloat(document.querySelector(`.basefee-input[data-index="${i}"]`)?.value || '0') || null,
   reimbursement_amount: null,
-    family_member: document.querySelector(`.fam-input[data-index="${i}"]`)?.value || null,
+    family_member: null,
+    doctor_name: document.getElementById('doctorName')?.value || null,
+    eob_claim_num: document.getElementById('eobNumber')?.value || null,
   }));
   if (!indices.length) return;
   if (defaultFm) {

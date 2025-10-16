@@ -75,11 +75,20 @@ class EOBImportSession:
     file_bytes: bytes | None = None
     content_type: str | None = None
     debug_info: Dict[str, Any] | None = None
+    # Optional top-level metadata captured from the upload form
+    family_member: str | None = None
+    provider_id: int | None = None
+    doctor_name: str | None = None
+    eob_number: str | None = None
 
     def serialize(self) -> Dict[str, Any]:
         return {
             "session_id": self.id,
             "filename": self.filename,
+            "family_member": self.family_member,
+            "provider_id": self.provider_id,
+            "doctor_name": self.doctor_name,
+            "eob_number": self.eob_number,
             "row_count": len(self.rows),
             "rows": [r.to_dict() for r in self.rows],
             "debug": self.debug_info or {},
@@ -106,6 +115,31 @@ def create_session(
         # Convert normalized dict rows into ParsedChargeRow instances
         if isinstance(meta, dict):
             session.debug_info = meta
+        # Persist top-level metadata if returned by the LLM (meta may include parsed_metadata)
+        try:
+            parsed_meta = None
+            if isinstance(meta, dict):
+                parsed_meta = meta.get("parsed_metadata") or {}
+            # Some older responses may include metadata inside the first dict under key 'metadata'
+            if not parsed_meta and isinstance(llm_rows, list) and len(llm_rows) == 0:
+                parsed_meta = {}
+            if isinstance(parsed_meta, dict):
+                fm = parsed_meta.get("family_member") or parsed_meta.get("patient_name")
+                if fm:
+                    session.family_member = fm
+                dn = parsed_meta.get("doctor_name")
+                if dn:
+                    session.doctor_name = dn
+                en = parsed_meta.get("eob_claim_num") or parsed_meta.get("eob_number")
+                if en:
+                    session.eob_number = en
+                # provider_name can't be reliably mapped to provider_id here (no DB access), but store provider_name in debug_info
+                prov_name = parsed_meta.get("provider_name")
+                if prov_name:
+                    session.debug_info = session.debug_info or {}
+                    session.debug_info["parsed_provider_name"] = prov_name
+        except Exception:
+            pass
         for idx, r in enumerate(llm_rows or []):  # type: ignore[union-attr]
             try:
                 svc_date = None

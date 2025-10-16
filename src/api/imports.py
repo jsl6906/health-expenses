@@ -1451,11 +1451,50 @@ except ImportError:  # pragma: no cover
 
 
 @router.post("/eob/upload", response_model=EOBUploadResponse)
-async def eob_upload(file: UploadFile = File(...)):
+async def eob_upload(request: Request, file: UploadFile = File(...)):
+    # Accept optional multipart fields and persist them to the session
+    form = await request.form()
     content = await file.read()
     session = eob_create_session(
         file.filename or "eob_upload", content, file.content_type
     )
+
+    # Persist optional top-level values if provided
+    def _get_text(field_name: str) -> str | None:
+        v = form.get(field_name)
+        from fastapi import UploadFile as _UF
+
+        if v is None or isinstance(v, _UF):
+            return None
+        s = str(v).strip()
+        return s or None
+
+    fm = _get_text("family_member")
+    if fm:
+        try:
+            session.family_member = fm
+        except Exception:
+            pass
+    dn = _get_text("doctor_name")
+    if dn:
+        try:
+            session.doctor_name = dn
+        except Exception:
+            pass
+    en = _get_text("eob_number") or _get_text("eob_number")
+    if en:
+        try:
+            session.eob_number = en
+        except Exception:
+            pass
+    prov_txt = _get_text("provider_id")
+    if prov_txt:
+        try:
+            session.provider_id = int(prov_txt)
+        except Exception:
+            # ignore non-int provider ids
+            pass
+
     data = session.serialize()
     return EOBUploadResponse(
         session_id=session.id, row_count=data["row_count"], filename=data["filename"]
@@ -1488,10 +1527,7 @@ def eob_import(
     session = eob_get_session(session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    if payload.provider_id is None:
-        raise HTTPException(
-            status_code=400, detail="provider_id is required for EOB import"
-        )
+    # provider_id is optional now: if not provided, try to infer per-row or from session mappings
     sel_set = set(payload.selected_indices)
     rows = [r for r in session.rows if r.index in sel_set]
     overrides_map = {}
@@ -1504,6 +1540,63 @@ def eob_import(
                 overrides_map[int(idx_val)] = ov
             except Exception:
                 continue
+    # Attempt to infer batch-level values when top-level inputs are not provided
+    batch_family = None
+    batch_provider_override = getattr(payload, "provider_id", None)
+    batch_eob_num = None
+    batch_doctor = None
+
+    # Prefer explicit session-level family if present
+    try:
+        sess_family = (
+            session.get("family_member") if isinstance(session, dict) else None
+        )
+        if sess_family:
+            batch_family = sess_family
+    except Exception:
+        batch_family = None
+
+    # Inspect overrides for any provided eob or doctor or provider-like name
+    for ov in overrides_map.values():
+        if not batch_eob_num:
+            batch_eob_num = ov.get("eob_claim_num") or ov.get("eob_number")
+        if not batch_doctor:
+            batch_doctor = ov.get("doctor_name")
+        if not batch_provider_override:
+            # try facility_location_name or provider_name keys
+            prov_name = ov.get("provider_name") or ov.get("facility_location_name")
+            if prov_name:
+                try:
+                    from models.database import (
+                        Provider as ProviderModel,  # type: ignore
+                    )
+                except Exception:
+                    from .models.database import (
+                        Provider as ProviderModel,  # type: ignore
+                    )
+                found = (
+                    db.query(ProviderModel)
+                    .filter(ProviderModel.provider_name.ilike(prov_name))
+                    .first()
+                )
+                if found:
+                    batch_provider_override = getattr(found, "id", None)
+        if batch_eob_num and batch_doctor and batch_provider_override:
+            break
+
+    # If still missing eob/doctor, try parsed rows in session
+    if not batch_eob_num:
+        for pr in session.rows:
+            val = getattr(pr, "eob_claim_num", None)
+            if val:
+                batch_eob_num = val
+                break
+    if not batch_doctor:
+        for pr in session.rows:
+            val = getattr(pr, "doctor_name", None)
+            if val:
+                batch_doctor = val
+                break
     created_ids: list[int] = []
     highest_row = None
     highest_amount = -1.0
@@ -1526,9 +1619,11 @@ def eob_import(
             )
             charge_in = {
                 "service_date": ov_service_date,
-                "family_member": ov.get("family_member", r.family_member),
+                "family_member": ov.get(
+                    "family_member", r.family_member or batch_family
+                ),
                 "medical_type": "Medical",
-                "provider_id": payload.provider_id,
+                "provider_id": payload.provider_id or batch_provider_override,
                 "cpt_code": ov.get("cpt_code", r.cpt_code),
                 "charge_description": ov.get("description", r.description),
                 "charged_amount": ov.get("charged_amount", r.charged_amount),
@@ -1546,8 +1641,15 @@ def eob_import(
                 "reimbursement_amount": ov.get(
                     "reimbursement_amount", getattr(r, "reimbursement_amount", None)
                 ),
-                "doctor_name": None,
-                "eob_claim_num": None,
+                # Prefer explicit override value (from UI top-level doctor field applied into overrides),
+                # otherwise fall back to any doctor_name parsed on the row
+                "doctor_name": ov.get("doctor_name", getattr(r, "doctor_name", None))
+                or batch_doctor,
+                # Prefer override eob_claim_num (from UI) then parsed row value then batch fallback
+                "eob_claim_num": ov.get(
+                    "eob_claim_num", getattr(r, "eob_claim_num", None)
+                )
+                or batch_eob_num,
                 "notes": None,
             }
             if highest_row is not None and r.index != highest_row:
