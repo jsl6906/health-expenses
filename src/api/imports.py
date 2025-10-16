@@ -1475,6 +1475,12 @@ async def eob_upload(request: Request, file: UploadFile = File(...)):
             session.family_member = fm
         except Exception:
             pass
+    mt = _get_text("medical_type")
+    if mt:
+        try:
+            session.medical_type = mt
+        except Exception:
+            pass
     dn = _get_text("doctor_name")
     if dn:
         try:
@@ -1513,6 +1519,7 @@ class EOBImportRequest(BaseModel):
     selected_indices: list[int]
     provider_id: int | None = None
     overrides: list[dict] | None = None
+    medical_type: str | None = None
 
 
 class EOBImportResult(BaseModel):

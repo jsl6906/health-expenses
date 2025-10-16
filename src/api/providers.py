@@ -290,6 +290,27 @@ def list_provider_groups(
     return {"groups": normalized}
 
 
+@router.get("/providers/{provider_id}/open-charges")
+def provider_open_charges(provider_id: int, db: Session = Depends(get_db)):
+    """Return open charges (remaining > 0) for a given provider in a compact JSON shape.
+
+    Used by client-side modals to let users select charges when creating a payment.
+    """
+    try:
+        from ..services.allocation import get_open_charges_for_provider
+    except Exception:
+        # fallback import path
+        from services.allocation import get_open_charges_for_provider
+
+    try:
+        open_charges = get_open_charges_for_provider(db, provider_id)
+        return {"open_charges": open_charges}
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch open charges: {e}"
+        )
+
+
 @router.post("/providers/bulk/set-group")
 def bulk_set_group(payload: BulkSetGroupRequest, db: Session = Depends(get_db)):
     """Set or clear provider_group for multiple providers.

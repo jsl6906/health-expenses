@@ -9,11 +9,11 @@
   <div class="card-body py-3">
     <form id="eobUploadForm" class="row g-2 align-items-end" enctype="multipart/form-data">
       <!-- First row: EOB file, Family Member, Upload -->
-      <div class="col-md-6 d-flex flex-column">
+      <div class="col-md-5 d-flex flex-column">
         <label for="eobFile" class="form-label small mb-1">EOB File (PDF / any)</label>
         <input type="file" class="form-control form-control-sm h-100" id="eobFile" name="file" required>
       </div>
-      <div class="col-md-4 d-flex flex-column">
+      <div class="col-md-3 d-flex flex-column">
         <label for="defaultFamilyMember" class="form-label small mb-1">Family Member</label>
         <select id="defaultFamilyMember" class="form-select form-select-sm h-100">
           <option value="">(Select a member)</option>
@@ -21,6 +21,17 @@
           <option>Jordan</option>
           <option>Sam</option>
           <option>Riley</option>
+        </select>
+      </div>
+      <div class="col-md-2 d-flex flex-column">
+        <label for="medicalType" class="form-label small mb-1">Medical Type</label>
+        <select id="medicalType" class="form-select form-select-sm h-100">
+          <option value="">(Select type)</option>
+          <option value="medical">Medical</option>
+          <option value="dental">Dental</option>
+          <option value="vision">Vision</option>
+          <option value="pharmacy">Pharmacy</option>
+          <option value="other">Other</option>
         </select>
       </div>
       <div class="col-md-2 d-flex align-items-stretch">
@@ -56,6 +67,9 @@
       <button id="importSelectedBtn" class="btn btn-success btn-sm" disabled>
         <i class="bi bi-check2-circle"></i> Import Selected
       </button>
+      <button id="addRowBtn" class="btn btn-outline-primary btn-sm ms-1">
+        <i class="bi bi-plus-lg"></i> Add Line
+      </button>
       <button id="resetSessionBtn" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-x-circle"></i> Reset
       </button>
@@ -81,6 +95,16 @@
       <tbody></tbody>
     </table>
   </div>
+  <div class="d-flex justify-content-end mt-2">
+    <div id="eobTotals" class="small text-muted text-end" style="min-width:280px">
+      <div><strong>Totals</strong></div>
+      <div>Base Fee: $<span id="totalBaseFee">0.00</span></div>
+      <div>Discount: $<span id="totalDiscount">0.00</span></div>
+      <div>Charged: $<span id="totalCharged">0.00</span></div>
+      <div>Ins Paid: $<span id="totalInsPaid">0.00</span></div>
+      <div>Owed: $<span id="totalOwed">0.00</span></div>
+    </div>
+  </div>
   <div id="importStatus" class="mt-2 small"></div>
 </div>
 
@@ -101,6 +125,7 @@
 <script>
 let currentSessionId = null;
 const providersCache = [];
+let nextRowIndex = 0;
 
 async function fetchProviders() {
   try {
@@ -130,6 +155,9 @@ function resetUI() {
   document.querySelector('#eobParsedTable tbody').innerHTML = '';
   document.getElementById('rowCountMeta').textContent = '';
   document.getElementById('importSelectedBtn').disabled = true;
+  // reset totals and index
+  nextRowIndex = 0;
+  updateTotals();
 }
 
 async function handleUpload(e) {
@@ -139,12 +167,14 @@ async function handleUpload(e) {
   const providerSelect = document.getElementById('providerSelect');
   const doctorNameInput = document.getElementById('doctorName');
   const eobNumberInput = document.getElementById('eobNumber');
+  const medicalTypeInput = document.getElementById('medicalType');
   if (!fileInput.files.length) return;
   // Upload allowed without selecting provider or family member; backend will attempt to infer missing info from parsed rows
   const fd = new FormData();
   fd.append('file', fileInput.files[0]);
   if (doctorNameInput && doctorNameInput.value) fd.append('doctor_name', doctorNameInput.value);
   if (eobNumberInput && eobNumberInput.value) fd.append('eob_number', eobNumberInput.value);
+  if (medicalTypeInput && medicalTypeInput.value) fd.append('medical_type', medicalTypeInput.value);
   const btn = form.querySelector('button[type="submit"]');
   const prevHtml = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Parsing...';
@@ -180,6 +210,7 @@ async function loadSession() {
     <td><input type="number" step="0.01" class="form-control form-control-sm owed-input amt-input eob-amt" value="${r.owed_amount ?? ''}" data-index="${r.index}" /></td>
         `;
       tbody.appendChild(tr);
+      nextRowIndex = Math.max(nextRowIndex, (r.index || 0) + 1);
     });
     document.getElementById('rowCountMeta').textContent = `(${data.row_count} rows parsed)`;
     // Prefill top-level inputs from session metadata if present
@@ -251,7 +282,57 @@ async function loadSession() {
     document.getElementById('parseResults').classList.remove('d-none');
     document.getElementById('emptyState').classList.add('d-none');
     updateImportButtonState();
+    attachAmtInputHandlers();
+    updateTotals();
   } catch (e) { console.error(e); }
+}
+
+function attachAmtInputHandlers() {
+  document.querySelectorAll('.amt-input').forEach(el => {
+    el.removeEventListener('input', updateTotals);
+    el.addEventListener('input', updateTotals);
+  });
+}
+
+function addBlankRow() {
+  const tbody = document.querySelector('#eobParsedTable tbody');
+  const idx = nextRowIndex++;
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="checkbox" class="row-select" data-index="${idx}" checked></td>
+    <td><input type="date" class="form-control form-control-sm date-input eob-date" data-index="${idx}" value="" /></td>
+    <td><input type="text" list="cptDatalist" class="form-control form-control-sm cpt-input eob-cpt" data-index="${idx}" value="" /></td>
+    <td><input type="text" class="form-control form-control-sm desc-input w-100" style="min-width:220px" value="" data-index="${idx}" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm basefee-input amt-input eob-amt" value="" data-index="${idx}" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm discount-input amt-input eob-amt" value="" data-index="${idx}" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm charged-input amt-input eob-amt" value="" data-index="${idx}" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm inspaid-input amt-input eob-amt" value="" data-index="${idx}" /></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm owed-input amt-input eob-amt" value="" data-index="${idx}" /></td>
+  `;
+  tbody.appendChild(tr);
+  attachAmtInputHandlers();
+  updateImportButtonState();
+  updateTotals();
+}
+
+function updateTotals() {
+  function sumSelector(sel) {
+    return Array.from(document.querySelectorAll(sel)).reduce((acc, el) => {
+      const v = parseFloat(el.value);
+      if (!isFinite(v)) return acc;
+      return acc + v;
+    }, 0);
+  }
+  const totalBase = sumSelector('.basefee-input');
+  const totalDiscount = sumSelector('.discount-input');
+  const totalCharged = sumSelector('.charged-input');
+  const totalInsPaid = sumSelector('.inspaid-input');
+  const totalOwed = sumSelector('.owed-input');
+  document.getElementById('totalBaseFee').textContent = totalBase.toFixed(2);
+  document.getElementById('totalDiscount').textContent = totalDiscount.toFixed(2);
+  document.getElementById('totalCharged').textContent = totalCharged.toFixed(2);
+  document.getElementById('totalInsPaid').textContent = totalInsPaid.toFixed(2);
+  document.getElementById('totalOwed').textContent = totalOwed.toFixed(2);
 }
 
 function updateImportButtonState() {
@@ -262,6 +343,7 @@ function updateImportButtonState() {
 async function importSelected() {
   const providerId = document.getElementById('providerSelect').value || null;
   const defaultFm = document.getElementById('defaultFamilyMember').value || null;
+  const medicalType = document.getElementById('medicalType')?.value || null;
   const indices = Array.from(document.querySelectorAll('.row-select'))
     .filter(c => c.checked)
     .map(c => parseInt(c.getAttribute('data-index')));
@@ -286,6 +368,7 @@ async function importSelected() {
     rows.forEach(r => { if (!r.family_member) r.family_member = defaultFm; });
   }
   const payload = { selected_indices: indices, provider_id: providerId ? parseInt(providerId) : null, overrides: rows };
+  if (medicalType) payload.medical_type = medicalType;
   const btn = document.getElementById('importSelectedBtn');
   const prev = btn.innerHTML; btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Importing...';
   try {
@@ -302,6 +385,7 @@ async function importSelected() {
 
 document.addEventListener('DOMContentLoaded', () => {
   fetchProviders();
+  document.getElementById('addRowBtn').addEventListener('click', (e) => { e.preventDefault(); addBlankRow(); });
   // Global drag & drop for EOB upload
   let dragDepth = 0;
   const fileInput = document.getElementById('eobFile');

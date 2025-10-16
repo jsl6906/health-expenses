@@ -1,4 +1,6 @@
 import json
+import logging
+import traceback
 from datetime import datetime
 from typing import List, Optional
 
@@ -29,6 +31,19 @@ async def bulk_create_charges(
     attachment: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
+    # Log incoming request basic metadata for troubleshooting
+    logger = logging.getLogger(__name__)
+    try:
+        client_host = request.client.host if request.client else None
+    except Exception:
+        client_host = None
+    try:
+        logger.info(
+            f"bulk_create_charges called from {client_host}; content-type={request.headers.get('content-type')}"
+        )
+    except Exception:
+        pass
+
     svc_date_obj = None
     if service_date:
         try:
@@ -60,51 +75,61 @@ async def bulk_create_charges(
         except Exception:
             return None
 
-    for r in rows:
-        if not isinstance(r, dict):
-            continue
-        desc = (r.get("description") or r.get("charge_description") or "").strip()
-        if not desc:
-            amt_fields = [
-                r.get("charged_amount"),
-                r.get("owed_amount"),
-                r.get("base_fee_amount"),
-            ]
-            if not any(amt_fields):
+    try:
+        for r in rows:
+            if not isinstance(r, dict):
                 continue
-        cpt_code = r.get("cpt_code") or r.get("cpt") or None
-        charge_in = {
-            "service_date": svc_date_obj.isoformat() if svc_date_obj else None,
-            "family_member": family_member,
-            "medical_type": medical_type,
-            "provider_id": provider_id,
-            "doctor_name": doctor_name,
-            "eob_claim_num": eob_claim_num,
-            "cpt_code": cpt_code,
-            "charge_description": desc,
-            "charged_amount": _num(r.get("charged_amount")),
-            "owed_amount": _num(r.get("owed_amount")),
-            "base_fee_amount": _num(r.get("base_fee_amount")),
-            "insurance_paid_amount": _num(r.get("insurance_paid_amount")),
-            "insurance_discount_amount": _num(r.get("insurance_discount_amount")),
-            "reimbursement_amount": _num(r.get("reimbursement_amount")),
-            "notes": None,
-        }
-        try:
-            created = charge_crud.create(db, charge_in)
-            db.flush()
-            cid = int(getattr(created, "id"))
-            created_ids.append(cid)
-            amt_for_compare = (
-                charge_in["charged_amount"]
-                if charge_in["charged_amount"] is not None
-                else 0.0
-            )
-            if amt_for_compare > highest_amount:
-                highest_amount = amt_for_compare
-                highest_charge_id = cid
-        except Exception:
-            continue
+            desc = (r.get("description") or r.get("charge_description") or "").strip()
+            if not desc:
+                amt_fields = [
+                    r.get("charged_amount"),
+                    r.get("owed_amount"),
+                    r.get("base_fee_amount"),
+                ]
+                if not any(amt_fields):
+                    continue
+            cpt_code = r.get("cpt_code") or r.get("cpt") or None
+            charge_in = {
+                "service_date": svc_date_obj.isoformat() if svc_date_obj else None,
+                "family_member": family_member,
+                "medical_type": medical_type,
+                "provider_id": provider_id,
+                "doctor_name": doctor_name,
+                "eob_claim_num": eob_claim_num,
+                "cpt_code": cpt_code,
+                "charge_description": desc,
+                "charged_amount": _num(r.get("charged_amount")),
+                "owed_amount": _num(r.get("owed_amount")),
+                "base_fee_amount": _num(r.get("base_fee_amount")),
+                "insurance_paid_amount": _num(r.get("insurance_paid_amount")),
+                "insurance_discount_amount": _num(r.get("insurance_discount_amount")),
+                "reimbursement_amount": _num(r.get("reimbursement_amount")),
+                "notes": None,
+            }
+            try:
+                created = charge_crud.create(db, charge_in)
+                db.flush()
+                cid = int(getattr(created, "id"))
+                created_ids.append(cid)
+                amt_for_compare = (
+                    charge_in["charged_amount"]
+                    if charge_in["charged_amount"] is not None
+                    else 0.0
+                )
+                if amt_for_compare > highest_amount:
+                    highest_amount = amt_for_compare
+                    highest_charge_id = cid
+            except Exception:
+                # Continue creating the rest even if one row fails
+                logger.exception("Failed to create charge row")
+                continue
+    except Exception:
+        # Unexpected top-level exception during processing rows; log traceback and return 500
+        tb = traceback.format_exc()
+        logger.error(f"Unexpected error in bulk_create_charges: {tb}")
+        raise HTTPException(
+            status_code=500, detail="Internal server error processing bulk create"
+        )
     db.commit()
     if not created_ids:
         raise HTTPException(status_code=400, detail="No valid charge rows were created")

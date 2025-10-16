@@ -28,11 +28,13 @@ def even_allocation_map(db: Session, charge_ids: Iterable[int]) -> Dict[int, flo
     if not charge_ids:
         return {}
     try:
-        from models.database import ChargePaymentXref as XrefModel  # type: ignore
-        from models.database import Payment as PaymentModel
-    except ImportError:  # pragma: no cover
-        from .models.database import ChargePaymentXref as XrefModel  # type: ignore
-        from .models.database import Payment as PaymentModel
+        # Prefer absolute package import when running as installed/packaged
+        from src.models.database import ChargePaymentXref as XrefModel  # type: ignore
+        from src.models.database import Payment as PaymentModel
+    except Exception:  # pragma: no cover
+        # Fallback to relative import when running tests or alternative module paths
+        from ..models.database import ChargePaymentXref as XrefModel  # type: ignore
+        from ..models.database import Payment as PaymentModel
 
     # Fetch all xrefs for provided charge ids.
     xrefs = (
@@ -92,9 +94,9 @@ def get_open_charges_for_provider(db: Session, provider_id: int) -> List[dict]:
     owed, paid_allocated.
     """
     try:
-        from models.database import Charge as ChargeModel  # type: ignore
-    except ImportError:  # pragma: no cover
-        from .models.database import Charge as ChargeModel  # type: ignore
+        from src.models.database import Charge as ChargeModel  # type: ignore
+    except Exception:  # pragma: no cover
+        from ..models.database import Charge as ChargeModel  # type: ignore
 
     charges = db.query(ChargeModel).filter(ChargeModel.provider_id == provider_id).all()
     if not charges:

@@ -80,6 +80,7 @@ class EOBImportSession:
     provider_id: int | None = None
     doctor_name: str | None = None
     eob_number: str | None = None
+    medical_type: str | None = None
 
     def serialize(self) -> Dict[str, Any]:
         return {
@@ -87,6 +88,7 @@ class EOBImportSession:
             "filename": self.filename,
             "family_member": self.family_member,
             "provider_id": self.provider_id,
+            "medical_type": self.medical_type,
             "doctor_name": self.doctor_name,
             "eob_number": self.eob_number,
             "row_count": len(self.rows),

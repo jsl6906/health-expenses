@@ -32,7 +32,10 @@
   <div class="col-md-7">
     <div class="card h-100">
       <div class="card-header d-flex justify-content-between align-items-center">Allocated Charges
-        <small class="text-muted">Even share across linked charges</small>
+        <div class="d-flex align-items-center gap-2">
+          <small class="text-muted">Even share across linked charges</small>
+          <button class="btn btn-sm btn-outline-success" id="linkChargeBtn" data-bs-toggle="modal" data-bs-target="#linkChargeModal"><i class="bi bi-link-45deg"></i> Link Charge</button>
+        </div>
       </div>
       <div class="card-body p-2">
         <div class="table-responsive" style="max-height:340px; overflow:auto;">
@@ -99,6 +102,30 @@
         </div>
       </div>
     </div>
+        <!-- Link Charge Modal -->
+        <div class="modal fade" id="linkChargeModal" tabindex="-1">
+          <div class="modal-dialog">
+            <div class="modal-content">
+              <div class="modal-header">
+                <h5 class="modal-title">Link Payment to Charge</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+              </div>
+              <form id="linkChargeForm">
+                <div class="modal-body">
+                  <div class="mb-2">
+                    <label class="form-label">Charge ID</label>
+                    <input type="number" name="charge_id" class="form-control" required placeholder="Enter existing charge ID" />
+                    <div class="form-text">Enter the ID of an existing charge to link this payment to. This will create an association and recompute allocations.</div>
+                  </div>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                  <button type="submit" class="btn btn-primary">Link Charge</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
   </div>
 </div>
 {% endblock %}
@@ -176,6 +203,41 @@ window.addEventListener('DOMContentLoaded',()=>{
 <!-- Edit Payment Modal -->
 <div class="modal fade" id="editPaymentModal" tabindex="-1">
   <div class="modal-dialog">
+
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+  const meta=document.getElementById('paymentMeta');
+  const paymentId=parseInt(meta.dataset.paymentId,10);
+  const linkForm=document.getElementById('linkChargeForm');
+  if(linkForm){
+    linkForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const fd=new FormData(linkForm);
+      const cidRaw = fd.get('charge_id');
+      const cid = cidRaw ? parseInt(cidRaw,10) : null;
+      if(!cid){ alert('Please enter a valid charge id'); return; }
+      try{
+        const resp = await fetch(`/api/charges/${cid}/apply-payment`,{
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ payment_id: paymentId })
+        });
+        if(resp.ok){
+          // Close modal then refresh to show updated allocation
+          const modalEl = document.getElementById('linkChargeModal');
+          const bsModal = bootstrap.Modal.getInstance(modalEl);
+          if(bsModal) bsModal.hide();
+          // Slight delay for DB commit visibility
+          setTimeout(()=>{ location.reload(); }, 200);
+        } else {
+          const j = await resp.json().catch(()=>({}));
+          alert('Failed to link charge: '+(j.detail||resp.status));
+        }
+      }catch(ex){ alert('Network error linking charge: '+ex.message); }
+    });
+  }
+});
+</script>
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">Edit Payment #{{ payment.id }}</h5>

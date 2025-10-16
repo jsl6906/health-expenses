@@ -113,13 +113,39 @@ function newRow() {
     <td><input type="number" step="0.01" class="form-control form-control-sm inspaid" /></td>
     <td><input type="number" step="0.01" class="form-control form-control-sm owed" /></td>
     <td><input type="number" step="0.01" class="form-control form-control-sm reimbursed" /></td>
-    <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger del-row" title="Remove Row"><i class="bi bi-x"></i></button></td>
+    <td class="text-center">
+      <div class="btn-group" role="group" aria-label="row actions">
+        <button type="button" class="btn btn-sm btn-outline-secondary copy-row" title="Copy Row"><i class="bi bi-files"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-danger del-row" title="Remove Row"><i class="bi bi-x"></i></button>
+      </div>
+    </td>
   </tr>`;
 }
 function addRow() {
   document.querySelector('#lineItemsTable tbody').insertAdjacentHTML('beforeend', newRow());
 }
 function removeRow(btn){ const tr = btn.closest('tr'); if(tr) tr.remove(); }
+function cloneRow(btn){
+  const tr = btn.closest('tr');
+  if(!tr) return;
+  // Build a new row HTML
+  const newTrHtml = newRow();
+  // Insert after current row
+  tr.insertAdjacentHTML('afterend', newTrHtml);
+  // Copy values from source to newly inserted row
+  const next = tr.nextElementSibling;
+  if(!next) return;
+  try{
+    const src = tr;
+    const dst = next;
+    const fields = ['desc','cpt','base_fee','discount','charged','inspaid','owed','reimbursed'];
+    fields.forEach(cls => {
+      const s = src.querySelector('.' + cls);
+      const d = dst.querySelector('.' + cls);
+      if(s && d){ d.value = s.value; }
+    });
+  } catch(e){ console.warn('Failed to clone row', e); }
+}
 function collectRows() {
   const rows = [];
   document.querySelectorAll('#lineItemsTable tbody tr').forEach(tr => {
@@ -180,7 +206,10 @@ async function submitMultiCharges(e){
       setTimeout(()=> window.location='/charges', 900);
     }
   } catch(err){
-    statusEl.innerHTML = '<span class="text-danger">' + err + '</span>';
+    // Surface a more helpful console error for browser debugging
+    console.error('bulk-create fetch error', err);
+    // If fetch failed before receiving a response, show a detailed message in UI as well
+    statusEl.innerHTML = '<span class="text-danger">Network error: ' + (err && err.message ? err.message : String(err)) + '</span>';
   } finally { submitBtn.disabled = false; submitBtn.innerHTML = prevHtml; }
 }
 async function loadCptCodes() {
@@ -197,7 +226,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   document.querySelector('#lineItemsTable tbody').addEventListener('click', (e) => {
-    if(e.target.closest('.del-row')) removeRow(e.target.closest('.del-row'));
+    const del = e.target.closest('.del-row');
+    if(del) { removeRow(del); return; }
+    const copyBtn = e.target.closest('.copy-row');
+    if(copyBtn) { cloneRow(copyBtn); return; }
   });
   document.getElementById('multiChargesForm').addEventListener('submit', submitMultiCharges);
   loadCptCodes();
