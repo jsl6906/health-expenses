@@ -63,9 +63,34 @@ async def import_charges_from_json_preview(
                 provider_id = int(txt_provider)
             except Exception:
                 pass
-        txt_fam = _get_text("family_member")
-        if txt_fam:
-            family_member = txt_fam
+            txt_fam = _get_text("family_member_id") or _get_text("family_member")
+            if txt_fam:
+                # try to parse as id first
+                try:
+                    family_member_id = int(txt_fam)
+                except Exception:
+                    family_member_id = None
+                if family_member_id:
+                    try:
+                        from models.database import FamilyMember as FamilyMemberModel
+                    except Exception:
+                        from .models.database import FamilyMember as FamilyMemberModel
+                    fm = db.get(FamilyMemberModel, family_member_id)
+                    if fm:
+                        family_member = (
+                            fm.emoji
+                            if getattr(fm, "emoji", None)
+                            else (
+                                getattr(fm, "first_name", "")
+                                + (
+                                    (" " + getattr(fm, "last_name", ""))
+                                    if getattr(fm, "last_name", None)
+                                    else ""
+                                )
+                            )
+                        )
+                else:
+                    family_member = txt_fam
         txt_med = _get_text("medical_type")
         if txt_med:
             medical_type = txt_med
@@ -566,7 +591,8 @@ def analyze_json_charges(
     session_id: str = Query(
         ..., description="Session id returned from provider analyze"
     ),
-    family_member: str = Query(...),
+    family_member_id: int
+    | None = Query(None, description="Family member id to use for preview"),
     medical_type: str = Query(...),
     provider_id: int | None = Query(None),
     db: Session = Depends(get_db),
@@ -635,7 +661,29 @@ def analyze_json_charges(
 
     preview_rows: list[JSONImportRow] = []
     duplicate_count = 0
-    fam_val = family_member
+    # Resolve family_member label for preview display if id provided
+    fam_val = None
+    if family_member_id:
+        try:
+            from models.database import FamilyMember as FamilyMemberModel
+        except Exception:
+            from .models.database import FamilyMember as FamilyMemberModel
+        fm = db.get(FamilyMemberModel, family_member_id)
+        if fm:
+            fam_val = (
+                fm.emoji
+                if getattr(fm, "emoji", None)
+                else (
+                    getattr(fm, "first_name", "")
+                    + (
+                        (" " + getattr(fm, "last_name", ""))
+                        if getattr(fm, "last_name", None)
+                        else ""
+                    )
+                )
+            )
+    else:
+        fam_val = None
     med_val = medical_type or "Medical"
     prov_val = provider_id
     for idx, r in enumerate(raw_rows):
@@ -752,7 +800,8 @@ def analyze_json_charges(
         session_id,
         {
             "rows": preview_rows,
-            "family_member": family_member,
+            "family_member_id": family_member_id,
+            "family_member": fam_val,
             "medical_type": medical_type,
             "provider_id": provider_id,
         },
@@ -1004,7 +1053,10 @@ def commit_json_import(
                     provider_key_map[key] = int(pid)
             except Exception:
                 continue
-    fam_val = payload.family_member or sess.get("family_member") or None
+    # Determine family_member_id to store (prefer payload, then session)
+    fam_id_val = payload.family_member_id or sess.get("family_member_id") or None
+    # Also keep a human-readable family_member label for notes/preview stored in session
+    fam_label = payload.family_member or sess.get("family_member") or None
     med_val = payload.medical_type or sess.get("medical_type") or "Medical"
     prov_val = payload.provider_id or sess.get("provider_id")
     selected = set(payload.selected_indices)
@@ -1057,7 +1109,7 @@ def commit_json_import(
 
         charge_in = {
             "service_date": r.service_date,
-            "family_member": fam_val,
+            "family_member_id": fam_id_val,
             "medical_type": med_val,
             "provider_id": final_provider_id,
             "cpt_code": r.cpt_code,

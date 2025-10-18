@@ -127,8 +127,9 @@ Write-Host "Building Docker image..." -ForegroundColor Yellow
 
 # Generate timestamp for image tag
 $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+$Random = Get-Random -Minimum 1000 -Maximum 9999
 $ImageName = "personal-expenses"
-$ImageTag = "$ImageName`:$Timestamp"
+$ImageTag = "$ImageName`:$Timestamp-$Random"
 
 # Helper: save docker image with a retry to handle transient IO errors (e.g., 'Stream was not readable')
 function Save-Image-WithRetry([string]$Tag, [string]$PathToFile, [int]$Attempts=2) {
@@ -179,6 +180,8 @@ try {
         Remove-Item $BuildStdErrFile -Force -ErrorAction SilentlyContinue
     }
 
+    $ImageSaved = $false
+
     if ($Process.ExitCode -eq 0) {
         Write-Host "Build successful!" -ForegroundColor Green
 
@@ -215,21 +218,26 @@ try {
             return @{ Success = $false; Output = $lastOutput }
         }
 
-        $saveResult = Save-Image-WithRetry -Tag $ImageTag -PathToFile $ImageFile -Attempts 2
+        $saveResult = Save-Image-WithRetry -Tag $ImageTag -PathToFile $ImageFile -Attempts 3
         if ($saveResult.Success) {
             Write-Host "Image saved successfully!" -ForegroundColor Green
+            $ImageSaved = $true
 
             # Update hash file to avoid rebuilding
             Set-Content -Path $HashFile -Value $CurrentHash
 
             # Clean up intermediate image to save space
-            $RmiStdOutFile = [System.IO.Path]::GetTempFileName()
-            $RmiStdErrFile = [System.IO.Path]::GetTempFileName()
-            $RemoveProcess = Start-Process -FilePath "docker" -ArgumentList @("rmi", $ImageTag) -NoNewWindow -PassThru -RedirectStandardOutput $RmiStdOutFile -RedirectStandardError $RmiStdErrFile -Wait
-            if (Test-Path $RmiStdOutFile) { Remove-Item $RmiStdOutFile -Force -ErrorAction SilentlyContinue }
-            if (Test-Path $RmiStdErrFile) { Remove-Item $RmiStdErrFile -Force -ErrorAction SilentlyContinue }
-            if ($RemoveProcess.ExitCode -eq 0) {
-                Write-Host "Cleaned up intermediate image." -ForegroundColor Gray
+            try {
+                $RmiStdOutFile = [System.IO.Path]::GetTempFileName()
+                $RmiStdErrFile = [System.IO.Path]::GetTempFileName()
+                $RemoveProcess = Start-Process -FilePath "docker" -ArgumentList @("rmi", $ImageTag) -NoNewWindow -PassThru -RedirectStandardOutput $RmiStdOutFile -RedirectStandardError $RmiStdErrFile -Wait
+                if (Test-Path $RmiStdOutFile) { Remove-Item $RmiStdOutFile -Force -ErrorAction SilentlyContinue }
+                if (Test-Path $RmiStdErrFile) { Remove-Item $RmiStdErrFile -Force -ErrorAction SilentlyContinue }
+                if ($RemoveProcess.ExitCode -eq 0) {
+                    Write-Host "Cleaned up intermediate image." -ForegroundColor Gray
+                }
+            } catch {
+                Write-Host "Warning: Failed to clean up intermediate image: $($_.Exception.Message)" -ForegroundColor Yellow
             }
 
             Write-Host ""
@@ -251,16 +259,21 @@ try {
             # Save the Docker image to dist directory (with retry)
             $ImageFile = Join-Path $DistDir "$ImageName-$Timestamp.tar"
             Write-Host "Saving image to: $ImageFile" -ForegroundColor Gray
-            $saveResult2 = Save-Image-WithRetry -Tag $ImageTag -PathToFile $ImageFile -Attempts 2
+            $saveResult2 = Save-Image-WithRetry -Tag $ImageTag -PathToFile $ImageFile -Attempts 3
             if ($saveResult2.Success) {
                 Write-Host "Image saved successfully!" -ForegroundColor Green
+                $ImageSaved = $true
                 Set-Content -Path $HashFile -Value $CurrentHash
-                $RmiStdOutFile = [System.IO.Path]::GetTempFileName()
-                $RmiStdErrFile = [System.IO.Path]::GetTempFileName()
-                $RemoveProcess = Start-Process -FilePath "docker" -ArgumentList @("rmi", $ImageTag) -NoNewWindow -PassThru -RedirectStandardOutput $RmiStdOutFile -RedirectStandardError $RmiStdErrFile -Wait
-                if (Test-Path $RmiStdOutFile) { Remove-Item $RmiStdOutFile -Force -ErrorAction SilentlyContinue }
-                if (Test-Path $RmiStdErrFile) { Remove-Item $RmiStdErrFile -Force -ErrorAction SilentlyContinue }
-                if ($RemoveProcess.ExitCode -eq 0) { Write-Host "Cleaned up intermediate image." -ForegroundColor Gray }
+                try {
+                    $RmiStdOutFile = [System.IO.Path]::GetTempFileName()
+                    $RmiStdErrFile = [System.IO.Path]::GetTempFileName()
+                    $RemoveProcess = Start-Process -FilePath "docker" -ArgumentList @("rmi", $ImageTag) -NoNewWindow -PassThru -RedirectStandardOutput $RmiStdOutFile -RedirectStandardError $RmiStdErrFile -Wait
+                    if (Test-Path $RmiStdOutFile) { Remove-Item $RmiStdOutFile -Force -ErrorAction SilentlyContinue }
+                    if (Test-Path $RmiStdErrFile) { Remove-Item $RmiStdErrFile -Force -ErrorAction SilentlyContinue }
+                    if ($RemoveProcess.ExitCode -eq 0) { Write-Host "Cleaned up intermediate image." -ForegroundColor Gray }
+                } catch {
+                    Write-Host "Warning: Failed to clean up intermediate image: $($_.Exception.Message)" -ForegroundColor Yellow
+                }
                 Write-Host ""; Write-Host "Docker image built and saved to dist/$ImageName-$Timestamp.tar" -ForegroundColor Green; Write-Host "Use 'docker load -i dist/$ImageName-$Timestamp.tar' to load the image" -ForegroundColor Cyan
             } else {
                 Write-Host "Failed to save Docker image after retries!" -ForegroundColor Red
@@ -278,5 +291,7 @@ try {
 
 } catch {
     Write-Host "Error during Docker build: $($_.Exception.Message)" -ForegroundColor Red
-    exit 1
+    if (-not $ImageSaved) {
+        exit 1
+    }
 }

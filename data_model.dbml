@@ -3,7 +3,7 @@ Table charges {
   id int [pk, increment]
   excel_legacy_id varchar [note: "Legacy identifier from Excel spreadsheet"]
   service_date date
-  family_member family_member
+  family_member_id int [ref: > family_members.id]
   medical_type medical_type
   cpt_code varchar
   diagnosis_code varchar
@@ -108,11 +108,35 @@ Table ref_expense_types {
   updated_by varchar
 }
 
-Enum family_member {
-  "Alex"
-  "Jordan"
-  "Sam"
-  "Riley"
+Table family_members {
+  id int [pk, increment]
+  first_name varchar
+  last_name varchar
+  middle_initial varchar
+  address varchar
+  dob date
+  ssn varchar
+  gender varchar
+  relationship_to_primary varchar
+  phone_number varchar
+  emoji varchar
+  created_at timestamp [default: now()]
+  updated_at timestamp [default: now()]
+  created_by varchar
+  updated_by varchar
+}
+
+Table insurance {
+  id int [pk, increment]
+  medical_type medical_type
+  plan_name varchar
+  policy_number varchar
+  group_number varchar
+  insured_member_id int [ref: > family_members.id]
+  created_at timestamp [default: now()]
+  updated_at timestamp [default: now()]
+  created_by varchar
+  updated_by varchar
 }
 
 Enum medical_type {

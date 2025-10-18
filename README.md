@@ -89,6 +89,25 @@ uv run run_app.py
 python run_app.py
 ```
 
+### Running migrations in Docker
+
+The image now includes an entrypoint that runs Alembic migrations before starting the app. When running the container normally, migrations will be applied automatically.
+
+Alternatively you can apply migrations as a one-shot container (useful for CI or manual control):
+
+```bash
+# Build the image
+docker build -t personal-expenses:latest .
+
+# Run the migrator (reads DB_* env vars from your environment or docker-compose)
+docker run --rm -e DB_HOST=... -e DB_USER=... -e DB_PASSWORD=... personal-expenses:latest sh -c "uv run alembic upgrade head"
+
+# Or with docker-compose (from repo root)
+docker-compose run --rm migrator
+```
+
+If you prefer migrations to run automatically during `docker-compose up`, the container's entrypoint performs the migration step before launching the app.
+
 The application will be available at:
 
 - Web Interface: <http://localhost:8000>
@@ -302,5 +321,6 @@ If the key is missing or the call fails, the session will load with zero rows (n
 ## License & Contributions
 
 Personal project; suggestions and improvements welcome via issues or PRs.
-#   T e s t   c h a n g e   f o r   p r e - c o m m i t   h o o k  
+#   T e s t   c h a n g e   f o r   p r e - c o m m i t   h o o k 
+ 
  

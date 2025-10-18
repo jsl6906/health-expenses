@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+
+{% block title %}Family Members - Personal Health Expenses{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-people"></i> Family Members</h2>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addFamilyMemberModal">
+        <i class="bi bi-plus-circle"></i> Add Family Member
+    </button>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table manual-striped" id="familyMembersTable">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>DOB</th>
+                <th>SSN</th>
+                <th>Gender</th>
+                <th>Relationship</th>
+                <th>Phone</th>
+                <th>Address</th>
+                <th>Created</th>
+                <th>Updated</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+                        <tbody>
+                            {% for m in members %}
+              <tr data-member-id="{{ m.id }}">
+                <td>{{ m.emoji or '' }} <strong>{{ m.first_name }}</strong>{% if m.middle_initial %} {{ m.middle_initial }}.{% endif %} {{ m.last_name or '' }}</td>
+                                <td>{{ m.dob.strftime('%#m/%#d/%Y') if m.dob else '-' }}</td>
+                                <td>{{ m.ssn or '-' }}</td>
+                                <td>{{ m.gender or '-' }}</td>
+                                <td>{{ m.relationship_to_primary or '-' }}</td>
+                                <td>{{ m.phone_number or '-' }}</td>
+                                <td class="text-truncate" style="max-width:300px;">{{ m.address or '-' }}</td>
+                <td>{{ m.created_at | format_datetime_est }}</td>
+                <td>{{ m.updated_at | format_datetime_est }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editFamilyMemberModal" data-member-id="{{ m.id }}">Edit</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Family Member Modal -->
+<div class="modal fade" id="addFamilyMemberModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add Family Member</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="addFamilyMemberForm">
+        <div class="modal-body">
+          <div class="mb-2"><label class="form-label">First Name *</label><input type="text" name="first_name" class="form-control" required></div>
+          <div class="mb-2"><label class="form-label">Middle Initial</label><input type="text" name="middle_initial" class="form-control" maxlength="1"></div>
+          <div class="mb-2"><label class="form-label">Last Name</label><input type="text" name="last_name" class="form-control"></div>
+          <div class="mb-2"><label class="form-label">Date of Birth</label><input type="date" name="dob" class="form-control"></div>
+          <div class="mb-2"><label class="form-label">SSN</label><input type="text" name="ssn" class="form-control" placeholder="###-##-####"></div>
+          <div class="mb-2">
+            <label class="form-label">Gender</label>
+            <select name="gender" class="form-select">
+              <option value="">(unknown)</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="mb-2"><label class="form-label">Relationship to Primary</label><input type="text" name="relationship_to_primary" class="form-control" placeholder="e.g., Spouse, Child"></div>
+          <div class="mb-2"><label class="form-label">Phone Number</label><input type="text" name="phone_number" class="form-control" placeholder="(###) ###-####"></div>
+          <div class="mb-2"><label class="form-label">Address</label><textarea name="address" rows="2" class="form-control"></textarea></div>
+          <div class="mb-2">
+            <label class="form-label">Emoji</label>
+            <div class="d-flex gap-2 align-items-center">
+              <select id="add_emoji_picker" class="form-select" style="max-width:160px;">
+                <option value="">(choose)</option>
+                <option>😀</option>
+                <option>😄</option>
+                <option>😎</option>
+                <option>👨</option>
+                <option>👩</option>
+                <option>👶</option>
+                <option>🧑‍🦱</option>
+                <option>🧑‍🦰</option>
+                <option>🧑‍🦳</option>
+                <option>🧓</option>
+                <option>🐶</option>
+                <option>🐱</option>
+                <option>🌟</option>
+                <option>❤️</option>
+              </select>
+              <input type="text" id="add_emoji_custom" class="form-control" placeholder="Custom emoji" maxlength="4" style="max-width:120px;">
+              <input type="hidden" name="emoji" id="add_emoji_hidden">
+            </div>
+            <div class="form-text">Choose an emoji or paste your own; the selected/pasted emoji will be used.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Family Member Modal -->
+<div class="modal fade" id="editFamilyMemberModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Family Member</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="editFamilyMemberForm">
+        <div class="modal-body">
+          <input type="hidden" name="id" id="editFamilyMemberId">
+          <div class="mb-2"><label class="form-label">First Name *</label><input type="text" name="first_name" id="edit_first_name" class="form-control" required></div>
+          <div class="mb-2"><label class="form-label">Middle Initial</label><input type="text" name="middle_initial" id="edit_middle_initial" class="form-control" maxlength="1"></div>
+          <div class="mb-2"><label class="form-label">Last Name</label><input type="text" name="last_name" id="edit_last_name" class="form-control"></div>
+          <div class="mb-2"><label class="form-label">Date of Birth</label><input type="date" name="dob" id="edit_dob" class="form-control"></div>
+          <div class="mb-2"><label class="form-label">SSN</label><input type="text" name="ssn" id="edit_ssn" class="form-control" placeholder="###-##-####"></div>
+          <div class="mb-2">
+            <label class="form-label">Gender</label>
+            <select name="gender" id="edit_gender" class="form-select">
+              <option value="">(unknown)</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div class="mb-2"><label class="form-label">Relationship to Primary</label><input type="text" name="relationship_to_primary" id="edit_relationship_to_primary" class="form-control" placeholder="e.g., Spouse, Child"></div>
+          <div class="mb-2"><label class="form-label">Phone Number</label><input type="text" name="phone_number" id="edit_phone_number" class="form-control" placeholder="(###) ###-####"></div>
+          <div class="mb-2"><label class="form-label">Address</label><textarea name="address" id="edit_address" rows="2" class="form-control"></textarea></div>
+          <div class="mb-2">
+            <label class="form-label">Emoji</label>
+            <div class="d-flex gap-2 align-items-center">
+              <select id="edit_emoji_picker" class="form-select" style="max-width:160px;">
+                <option value="">(choose)</option>
+                <option>😀</option>
+                <option>😄</option>
+                <option>😎</option>
+                <option>👨</option>
+                <option>👩</option>
+                <option>👶</option>
+                <option>🧑‍🦱</option>
+                <option>🧑‍🦰</option>
+                <option>🧑‍🦳</option>
+                <option>🧓</option>
+                <option>🐶</option>
+                <option>🐱</option>
+                <option>🌟</option>
+                <option>❤️</option>
+              </select>
+              <input type="text" id="edit_emoji_custom" class="form-control" placeholder="Custom emoji" maxlength="4" style="max-width:120px;">
+              <input type="hidden" name="emoji" id="edit_emoji_hidden">
+            </div>
+            <div class="form-text">Choose an emoji or paste your own; the selected/pasted emoji will be used.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', ()=>{
+  // Submit add family member
+  const addForm = document.getElementById('addFamilyMemberForm');
+  if(addForm){
+    // Ensure selected/custom emoji is placed into hidden field before submit
+    addForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const picker = document.getElementById('add_emoji_picker');
+      const custom = document.getElementById('add_emoji_custom');
+      const hidden = document.getElementById('add_emoji_hidden');
+      hidden.value = (custom && custom.value) ? custom.value : (picker && picker.value) ? picker.value : '';
+  const fd = new FormData(addForm);
+  const payload = {};
+  fd.forEach((v,k)=> payload[k]=v||null);
+      try{
+        const resp = await fetch('/api/family_members/', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+        if(resp.ok){ location.reload(); } else { const j=await resp.json().catch(()=>({})); alert('Error: '+(j.detail||resp.status)); }
+      }catch(ex){ alert('Network error: '+ex.message); }
+    });
+  }
+
+  // Open edit modal and populate
+  const editModal = document.getElementById('editFamilyMemberModal');
+  if(editModal){
+    editModal.addEventListener('show.bs.modal', async (ev)=>{
+      const btn = ev.relatedTarget; // button that opened the modal
+      const memberId = btn ? btn.getAttribute('data-member-id') : null;
+      if(!memberId) return;
+      try{
+        const resp = await fetch('/api/family_members/'+memberId);
+        if(!resp.ok) { alert('Failed to load member'); return; }
+        const data = await resp.json();
+        document.getElementById('editFamilyMemberId').value = data.id;
+        document.getElementById('edit_first_name').value = data.first_name || '';
+        document.getElementById('edit_middle_initial').value = data.middle_initial || '';
+        document.getElementById('edit_last_name').value = data.last_name || '';
+  document.getElementById('edit_dob').value = data.dob || '';
+  document.getElementById('edit_address').value = data.address || '';
+  document.getElementById('edit_ssn').value = data.ssn || '';
+  if(document.getElementById('edit_gender')) document.getElementById('edit_gender').value = data.gender || '';
+  document.getElementById('edit_relationship_to_primary').value = data.relationship_to_primary || '';
+  document.getElementById('edit_phone_number').value = data.phone_number || '';
+        // Populate emoji picker/custom/hidden
+        const pick = document.getElementById('edit_emoji_picker');
+        const custom = document.getElementById('edit_emoji_custom');
+        const hidden = document.getElementById('edit_emoji_hidden');
+        if(pick) pick.value = data.emoji || '';
+        if(custom) custom.value = data.emoji || '';
+        if(hidden) hidden.value = data.emoji || '';
+      }catch(ex){ alert('Error loading member: '+ex.message); }
+    });
+
+    // Submit edit
+    const editForm = document.getElementById('editFamilyMemberForm');
+    // Ensure emoji selected/custom value saved into hidden field before submit
+    editForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const picker = document.getElementById('edit_emoji_picker');
+      const custom = document.getElementById('edit_emoji_custom');
+      const hidden = document.getElementById('edit_emoji_hidden');
+      hidden.value = (custom && custom.value) ? custom.value : (picker && picker.value) ? picker.value : '';
+  const fd = new FormData(editForm);
+  const id = fd.get('id');
+  const payload = {};
+  fd.forEach((v,k)=>{ if(k!=='id') payload[k]=v||null; });
+      try{
+        const resp = await fetch('/api/family_members/'+id, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+        if(resp.ok){ location.reload(); } else { const j=await resp.json().catch(()=>({})); alert('Error: '+(j.detail||resp.status)); }
+      }catch(ex){ alert('Network error: '+ex.message); }
+    });
+  }
+});
+</script>
+{% endblock %}

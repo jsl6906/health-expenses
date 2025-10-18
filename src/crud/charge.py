@@ -22,9 +22,13 @@ class ChargeCRUD(BaseCRUD[Charge]):
     def __init__(self):
         super().__init__(Charge)
 
-    def get_by_family_member(self, db: Session, family_member: str) -> List[Charge]:
-        """Get charges by family member."""
-        return db.query(Charge).filter(Charge.family_member == family_member).all()
+    def get_by_family_member_id(
+        self, db: Session, family_member_id: int
+    ) -> List[Charge]:
+        """Get charges by family member id."""
+        return (
+            db.query(Charge).filter(Charge.family_member_id == family_member_id).all()
+        )
 
     def get_by_medical_type(self, db: Session, medical_type: str) -> List[Charge]:
         """Get charges by medical type."""

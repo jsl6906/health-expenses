@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Manual Claim Report{% endblock %}
+
+{% block content %}
+{% macro format_phone(phone) %}
+{% if phone and phone|length == 10 and phone.isdigit() %}
+({{ phone[:3] }}) {{ phone[3:6] }}-{{ phone[6:] }}
+{% else %}
+{{ phone or '-' }}
+{% endif %}
+{% endmacro %}
+<style>
+@media print {
+  .no-print { display: none !important; }
+  .card { page-break-after: always; }
+  .card:not(:first-child) { margin-top: 2rem; }
+}
+</style>
+<div class="d-flex justify-content-between align-items-center mb-3 no-print">
+  <h2>Manual Claim Report</h2>
+  <div>
+    <a href="#" onclick="window.print();return false;" class="btn btn-primary">Print</a>
+    <a href="/charges" class="btn btn-secondary">Back to Charges</a>
+  </div>
+</div>
+
+<p class="text-muted no-print">Generated for {{ charge_count }} selected charge(s).</p>
+
+{% for card in claim_cards %}
+  <div class="card mb-3">
+    <div class="card-header">
+      {% if card.insurance %}
+        <div><strong>Insurance:</strong> {{ card.insurance.plan_name or '-' }}</div>
+        <div><strong>Insured Name:</strong>
+          {% if card.insured and card.insured.full_name %}
+            {{ card.insured.full_name }}
+          {% elif card.insurance.insured_member_id %}
+            ID {{ card.insurance.insured_member_id }}
+          {% else %}-{% endif %}
+        </div>
+        <div><strong>Insured DOB:</strong>
+          {% if card.insured and card.insured.dob %}
+            {{ card.insured.dob.strftime('%Y-%m-%d') }}
+          {% else %}-{% endif %}
+        </div>
+        <div><strong>Insured Address:</strong> {% if card.insured and card.insured.address %}{{ card.insured.address }}{% else %}-{% endif %}</div>
+        <div><strong>Insured Telephone:</strong> {{ format_phone(card.insured.phone_num) }}</div>
+        <div><strong>ID number:</strong> {% if card.insurance.policy_number %}{{ card.insurance.policy_number }}{% else %}-{% endif %}</div>
+        <div><strong>Group number:</strong> {% if card.insurance.group_number %}{{ card.insurance.group_number }}{% else %}-{% endif %}</div>
+      {% else %}
+        No Insurance found for type '{{ card.medical_type }}'
+      {% endif %}
+      <hr>
+      <h5>Service For:</h5>
+      <div><strong>Name:</strong> {% if card.service_member %}{{ card.service_member.full_name }}{% else %}-{% endif %}</div>
+      <div><strong>DOB:</strong> {% if card.service_member and card.service_member.dob %}{{ card.service_member.dob.strftime('%Y-%m-%d') }}{% else %}-{% endif %}</div>
+      <div><strong>Address:</strong> {% if card.service_member and card.service_member.address %}{{ card.service_member.address }}{% else %}-{% endif %}</div>
+      <div><strong>Phone:</strong> {{ format_phone(card.service_member.phone_number) }}</div>
+      <div><strong>Relationship to Insured:</strong> {% if card.service_member and card.service_member.relationship_to_primary %}{{ card.service_member.relationship_to_primary }}{% else %}-{% endif %}</div>
+      <hr>
+      <h6>Provider:</h6>
+      <div><strong>Name:</strong> {% if card.provider %}{{ card.provider.provider_name }}{% else %}-{% endif %}</div>
+      <div><strong>Group:</strong> {% if card.provider and card.provider.provider_group %}{{ card.provider.provider_group }}{% else %}-{% endif %}</div>
+      <div><strong>Address:</strong> {% if card.provider and card.provider.provider_address %}{{ card.provider.provider_address }}{% else %}-{% endif %}</div>
+      <div><strong>NPI:</strong> {% if card.provider and card.provider.npi_number %}{{ card.provider.npi_number }}{% else %}-{% endif %}</div>
+      <div><strong>EIN:</strong> {% if card.provider and card.provider.tax_id %}{{ card.provider.tax_id }}{% else %}-{% endif %}</div>
+      <div><strong>Phone:</strong> {{ format_phone(card.provider.phone_num) }}</div>
+      <div><strong>Accept Assignment:</strong> NO</div>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th>Service Date</th>
+              <th>CPT</th>
+              <th>Diagnosis Codes</th>
+              <th>Charges</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% set total = namespace(value=0) %}
+            {% for ch in card.charges %}
+            {% set total.value = total.value + (ch.base_fee_amount or 0) %}
+            <tr>
+              <td>{% if ch.service_date %}{{ ch.service_date.strftime('%Y-%m-%d') }}{% else %}-{% endif %}</td>
+              <td>{{ ch.cpt_code or '-' }}</td>
+              <td>{{ ch.diagnosis_code or '-' }}</td>
+              <td>{{ ch.base_fee_amount | currency }}</td>
+            </tr>
+            {% endfor %}
+            {% if card.charges|length > 1 %}
+            <tr class="table-secondary">
+              <td colspan="3"><strong>Total ({{ card.charges|length }} charges)</strong></td>
+              <td><strong>{{ total.value | currency }}</strong></td>
+            </tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+{% endfor %}
+
+{% endblock %}

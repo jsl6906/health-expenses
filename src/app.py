@@ -19,7 +19,9 @@ from sqlalchemy.orm import Session  # retained for diagnostic endpoint dependenc
 
 from .api.attachments import router as attachments_router
 from .api.charges import router as charges_router
+from .api.family_members import router as family_members_router
 from .api.imports import router as imports_router
+from .api.insurance import router as insurance_router
 from .api.pages import router as pages_router
 from .api.payments import router as payments_router
 from .api.premiums import router as premiums_router
@@ -92,6 +94,8 @@ app.include_router(payments_router)
 app.include_router(premiums_router)
 app.include_router(imports_router)
 app.include_router(pages_router)
+app.include_router(family_members_router)
+app.include_router(insurance_router)
 
 
 # Startup event: test DB connectivity and log result so container logs are helpful

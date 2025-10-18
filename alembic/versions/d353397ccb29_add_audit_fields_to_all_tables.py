@@ -137,7 +137,7 @@ def downgrade() -> None:
     op.drop_column("providers", "created_by")
     op.drop_column("providers", "updated_at")
     op.drop_column("providers", "created_at")
-    op.drop_constraint(None, "premiums", type_="unique")
+    op.drop_constraint(op.f("premiums_year_key"), "premiums", type_="unique")
     op.alter_column(
         "premiums",
         "hsa_fsa_paid",
@@ -182,8 +182,12 @@ def downgrade() -> None:
     op.drop_column("charge_payment_xref", "created_by")
     op.drop_column("charge_payment_xref", "updated_at")
     op.drop_column("charge_payment_xref", "created_at")
-    op.drop_constraint(None, "attachments", type_="foreignkey")
-    op.drop_constraint(None, "attachments", type_="foreignkey")
+    op.drop_constraint(
+        op.f("attachments_charge_id_fkey"), "attachments", type_="foreignkey"
+    )
+    op.drop_constraint(
+        op.f("attachments_payment_id_fkey"), "attachments", type_="foreignkey"
+    )
     op.create_foreign_key(
         op.f("attachments_payment_id_fkey"),
         "attachments",

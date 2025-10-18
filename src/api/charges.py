@@ -22,7 +22,7 @@ router = APIRouter(tags=["charges"], prefix="/api")
 async def bulk_create_charges(
     request: Request,
     service_date: str = Form(...),
-    family_member: str = Form(...),
+    family_member_id: int = Form(...),
     medical_type: str = Form(...),
     provider_id: int = Form(...),
     doctor_name: str | None = Form(None),
@@ -95,7 +95,7 @@ async def bulk_create_charges(
             claim_submitted_date = r.get("claim_submitted_date") or None
             charge_in = {
                 "service_date": svc_date_obj.isoformat() if svc_date_obj else None,
-                "family_member": family_member,
+                "family_member_id": family_member_id,
                 "medical_type": medical_type,
                 "provider_id": provider_id,
                 "doctor_name": doctor_name,
@@ -204,8 +204,6 @@ async def bulk_create_charges(
 @router.post("/charges/", response_model=Charge)
 def create_charge(charge: ChargeCreate, db: Session = Depends(get_db)):
     data = charge.model_dump()
-    if data.get("family_member") and hasattr(data["family_member"], "value"):
-        data["family_member"] = data["family_member"].value
     if data.get("medical_type") and hasattr(data["medical_type"], "value"):
         data["medical_type"] = data["medical_type"].value
     cpt = data.get("cpt_code")

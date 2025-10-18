@@ -166,7 +166,7 @@
                         <label for="provider_id" class="form-label">Provider *</label>
                         <select class="form-control" id="provider_id" name="provider_id" required>
                             <option value="">Select provider...</option>
-                            {% for provider in providers %}
+                            {% for provider in providers | sort(attribute='provider_name') %}
                             <option value="{{ provider.id }}">{{ provider.provider_name }}</option>
                             {% endfor %}
                         </select>

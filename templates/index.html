@@ -18,54 +18,110 @@
 </div>
 
 <div class="row">
-    <div class="col-md-6 col-lg-3 mb-4">
+    <!-- Make cards slightly smaller so we can fit more endpoints -->
+    <div class="col-6 col-md-4 col-lg-2 mb-4">
         <div class="card h-100">
             <div class="card-body text-center">
-                <i class="bi bi-building text-primary fs-1"></i>
-                <h5 class="card-title mt-3">Providers</h5>
-                <p class="card-text">Manage healthcare providers, doctors, and medical facilities.</p>
-                <a href="/providers" class="btn btn-primary">
-                    <i class="bi bi-arrow-right"></i> Manage Providers
+                <i class="bi bi-building text-primary fs-3"></i>
+                <h6 class="card-title mt-2">Providers</h6>
+                <p class="card-text small">Manage healthcare providers and facilities.</p>
+                <a href="/providers" class="btn btn-primary btn-sm">
+                    <i class="bi bi-arrow-right"></i> Providers
                 </a>
             </div>
         </div>
     </div>
 
-    <div class="col-md-6 col-lg-3 mb-4">
+    <div class="col-6 col-md-4 col-lg-2 mb-4">
         <div class="card h-100">
             <div class="card-body text-center">
-                <i class="bi bi-receipt text-success fs-1"></i>
-                <h5 class="card-title mt-3">Charges</h5>
-                <p class="card-text">Track medical charges, bills, and insurance claims.</p>
-                <a href="/charges" class="btn btn-success charges-with-defaults">
-                    <i class="bi bi-arrow-right"></i> Manage Charges
+                <i class="bi bi-receipt text-success fs-3"></i>
+                <h6 class="card-title mt-2">Charges</h6>
+                <p class="card-text small">Track medical charges, bills, and claims.</p>
+                <a href="/charges" class="btn btn-success btn-sm charges-with-defaults">
+                    <i class="bi bi-arrow-right"></i> Charges
                 </a>
             </div>
         </div>
     </div>
 
-    <div class="col-md-6 col-lg-3 mb-4">
+    <div class="col-6 col-md-4 col-lg-2 mb-4">
         <div class="card h-100">
             <div class="card-body text-center">
-                <i class="bi bi-credit-card text-warning fs-1"></i>
-                <h5 class="card-title mt-3">Payments</h5>
-                <p class="card-text">Record payments made to healthcare providers.</p>
-                <a href="/payments" class="btn btn-warning">
-                    <i class="bi bi-arrow-right"></i> Manage Payments
+                <i class="bi bi-credit-card text-warning fs-3"></i>
+                <h6 class="card-title mt-2">Payments</h6>
+                <p class="card-text small">Record payments to providers and insurers.</p>
+                <a href="/payments" class="btn btn-warning btn-sm">
+                    <i class="bi bi-arrow-right"></i> Payments
                 </a>
             </div>
         </div>
     </div>
 
-    <div class="col-md-6 col-lg-3 mb-4">
+    <div class="col-6 col-md-4 col-lg-2 mb-4">
         <div class="card h-100">
             <div class="card-body text-center">
-                <i class="bi bi-graph-up text-info fs-1"></i>
-                <h5 class="card-title mt-3">Premiums</h5>
-                <p class="card-text">Track yearly insurance premiums and HSA/FSA contributions.</p>
-                <a href="/premiums" class="btn btn-info">
-                    <i class="bi bi-arrow-right"></i> Manage Premiums
+                <i class="bi bi-graph-up text-info fs-3"></i>
+                <h6 class="card-title mt-2">Premiums</h6>
+                <p class="card-text small">Track insurance premiums and contributions.</p>
+                <a href="/premiums" class="btn btn-info btn-sm">
+                    <i class="bi bi-arrow-right"></i> Premiums
                 </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-6 col-md-4 col-lg-2 mb-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-people-fill text-secondary fs-3"></i>
+                <h6 class="card-title mt-2">Family Members</h6>
+                <p class="card-text small">Manage family members and beneficiaries.</p>
+                <a href="/family_members" class="btn btn-secondary btn-sm">
+                    <i class="bi bi-arrow-right"></i> Family
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-6 col-md-4 col-lg-2 mb-4">
+        <div class="card h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-file-earmark-medical text-dark fs-3"></i>
+                <h6 class="card-title mt-2">Insurance</h6>
+                <p class="card-text small">View and manage insurance policies.</p>
+                <a href="/insurance" class="btn btn-dark btn-sm">
+                    <i class="bi bi-arrow-right"></i> Insurance
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 mt-4">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-bar-chart-line"></i> Reports (placeholders)</h5>
+            </div>
+            <div class="card-body">
+                <p class="small">This section will list canned reports and visualizations. Click a report to view it once implemented. For now these are placeholders.</p>
+
+                <div class="list-group">
+                    <a href="/reports/summary_by_year" class="list-group-item list-group-item-action disabled" aria-disabled="true">
+                        Summary of Expenses by Year
+                    </a>
+                    <a href="/reports/by_category" class="list-group-item list-group-item-action disabled" aria-disabled="true">
+                        Expenses by Category (medical, dental, vision)
+                    </a>
+                    <a href="/reports/insurance_vs_out_of_pocket" class="list-group-item list-group-item-action disabled" aria-disabled="true">
+                        Insurance Payments vs Out-of-Pocket
+                    </a>
+                    <a href="/reports/top_providers" class="list-group-item list-group-item-action disabled" aria-disabled="true">
+                        Top Providers by Cost
+                    </a>
+                    <a href="/reports/family_member_summary" class="list-group-item list-group-item-action disabled" aria-disabled="true">
+                        Per Family Member Summary
+                    </a>
+                </div>
             </div>
         </div>
     </div>

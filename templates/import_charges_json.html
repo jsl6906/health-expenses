@@ -21,12 +21,12 @@
       </div>
       <div class="col-md-4">
         <label class="form-label">Default Family Member <span class="text-danger">*</span></label>
-        <select name="family_member" class="form-select form-select-sm" id="familySelect" required>
+        <select name="family_member_id" class="form-select form-select-sm" id="familySelect" required>
           <option value="">-- Select --</option>
-          <option value="Alex">{{ 'Alex' | fam_avatar }} Alex</option>
-          <option value="Jordan">{{ 'Jordan' | fam_avatar }} Jordan</option>
-          <option value="Sam">{{ 'Sam' | fam_avatar }} Sam</option>
-          <option value="Riley">{{ 'Riley' | fam_avatar }} Riley</option>
+          {% for m in family_members %}
+            {% set label = (m.emoji if m.emoji else (m.first_name ~ ((' ' ~ m.last_name) if m.last_name else ''))) %}
+            <option value="{{ m.id }}">{{ label }} {{ m.first_name }}{% if m.last_name %} {{ m.last_name }}{% endif %}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="col-md-4">
@@ -273,8 +273,9 @@ async function analyzeCharges(){
   }
 
   try {
-    const params = new URLSearchParams({ session_id: currentSessionId, family_member: fam, medical_type: med });
-    const resp = await fetch('/api/charges/analyze-json/charges?'+params.toString(), { method:'POST' });
+  // Pass family_member_id to the analyze endpoint so server can map to labels during preview
+  const params = new URLSearchParams({ session_id: currentSessionId, family_member_id: fam, medical_type: med });
+  const resp = await fetch('/api/charges/analyze-json/charges?'+params.toString(), { method:'POST' });
     if(!resp.ok){
       const txt = await resp.text();
       status.innerHTML = '<span class="text-danger">'+txt+'</span>';

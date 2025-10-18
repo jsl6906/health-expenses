@@ -98,8 +98,15 @@
               <tr data-charge-row="{{ c.id }}">
                 <td>{{ c.service_date.strftime('%#m/%#d/%y') if c.service_date else '-' }}</td>
                 <td>
-                  {% set fm = c.family_member or '' %}
-                  {% if fm %}{{ fm | fam_avatar }}{% else %}-{% endif %}
+                  {% set fm_obj = c.family_member %}
+                  {% if fm_obj and fm_obj.emoji %}
+                    <span title="{{ (fm_obj.first_name ~ ((' ' ~ fm_obj.last_name) if fm_obj.last_name else '')) }}">{{ fm_obj.emoji }}</span>
+                  {% elif fm_obj %}
+                    {% set fm_name = fm_obj.first_name ~ ((' ' ~ fm_obj.last_name) if fm_obj.last_name else '') %}
+                    <span title="{{ fm_name }}">{{ fm_name | fam_avatar }}</span>
+                  {% else %}
+                    -
+                  {% endif %}
                 </td>
                 <td>
                   {% if c.charge_description %}
@@ -696,12 +703,12 @@ document.addEventListener('DOMContentLoaded',()=>{
             </div>
                 <div class="col-md-4 mb-2">
               <label class="form-label">Family Member *</label>
-              <select name="family_member" class="form-select" required>
+              <select name="family_member_id" class="form-select" required>
                 <option value="">Select...</option>
-                <option value="Alex">{{ 'Alex' | fam_avatar }} Alex</option>
-                <option value="Jordan">{{ 'Jordan' | fam_avatar }} Jordan</option>
-                <option value="Sam">{{ 'Sam' | fam_avatar }} Sam</option>
-                <option value="Riley">{{ 'Riley' | fam_avatar }} Riley</option>
+                {% for m in family_members %}
+                  {% set label = (m.emoji if m.emoji else (m.first_name ~ ((' ' ~ m.last_name) if m.last_name else ''))) %}
+                  <option value="{{ m.id }}">{{ label }} {{ m.first_name }}{% if m.last_name %} {{ m.last_name }}{% endif %}</option>
+                {% endfor %}
               </select>
             </div>
             <div class="col-md-4 mb-2">

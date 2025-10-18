@@ -34,10 +34,10 @@
                 <label for="familyMemberFilter" class="form-label">Family Member</label>
                 <select class="form-control" id="familyMemberFilter">
                     <option value="">All Members</option>
-                    <option value="Alex">Alex</option>
-                    <option value="Jordan">Jordan</option>
-                    <option value="Sam">Sam</option>
-                    <option value="Riley">Riley</option>
+                    {% for m in family_members %}
+                        {% set fm_label = (m.emoji if m.emoji else (m.first_name ~ ((' ' ~ m.last_name) if m.last_name else ''))) %}
+                        <option value="{{ fm_label }}">{{ fm_label }} {{ m.first_name }}{% if m.last_name %} {{ m.last_name }}{% endif %}</option>
+                    {% endfor %}
                 </select>
             </div>
             <div class="col-md-2">
@@ -124,6 +124,9 @@
                             <button id="deleteSelectedBtn" class="btn btn-sm btn-outline-danger">
                                 <i class="bi bi-trash"></i> Delete Selected
                             </button>
+                            <button id="submitManualClaimBtn" class="btn btn-sm btn-outline-success">
+                                <i class="bi bi-file-earmark-text"></i> Submit Manual Claim
+                            </button>
                             <button id="cancelChargeSelectionBtn" class="btn btn-sm btn-outline-secondary">
                                 Cancel
                             </button>
@@ -154,7 +157,7 @@
                             <!-- Debug: {{ charges|length }} charges loaded -->
                             {% for charge in charges %}
                             <tr data-charge-id="{{ charge.id }}"
-                                data-family-member="{{ charge.family_member or '' }}"
+                                data-family-member="{% if charge.family_member %}{{ (charge.family_member.emoji if charge.family_member.emoji else (charge.family_member.first_name ~ ((' ' ~ charge.family_member.last_name) if charge.family_member.last_name else ''))) }}{% else %}{% endif %}"
                                 data-medical-type="{{ charge.medical_type or '' }}"
                                 data-status="{{ 'paid' if (charge.owed_amount or 0) > 0 and (charge.paid_amount_agg or 0) >= (charge.owed_amount or 0) else 'outstanding' if (charge.owed_amount or 0) > 0 else 'na' }}"
                                 data-service-date="{{ charge.service_date.strftime('%Y-%m-%d') if charge.service_date else '' }}"
@@ -163,9 +166,18 @@
                                     <input type="checkbox" class="charge-select" value="{{ charge.id }}" aria-label="Select charge {{ charge.id }}">
                                 </td>
                                 <td>{{ charge.service_date.strftime('%#m/%#d/%y') if charge.service_date else '-' }}</td>
-                                <td data-family-member="{{ charge.family_member or '' }}">
-                                    {% set fm = charge.family_member or '' %}
-                                    {% if fm %}<span title="{{ fm }}">{{ fm | fam_avatar }}</span>{% else %}{{ fm or '-' }}{% endif %}
+                                <td data-family-member="{{ (charge.family_member.first_name + (' ' + charge.family_member.last_name) if charge.family_member and charge.family_member.last_name else (charge.family_member.first_name if charge.family_member else '')) | default('') }}">
+                                    {% set fm_obj = charge.family_member %}
+                                    {% if fm_obj and fm_obj.emoji %}
+                                        {# show explicit emoji stored on family member; use full name as title #}
+                                        <span title="{{ (fm_obj.first_name ~ ((' ' ~ fm_obj.last_name) if fm_obj.last_name else '')) }}">{{ fm_obj.emoji }}</span>
+                                    {% elif fm_obj %}
+                                        {# fallback: render fam_avatar using full name #}
+                                        {% set fm_name = fm_obj.first_name ~ ((' ' ~ fm_obj.last_name) if fm_obj.last_name else '') %}
+                                        <span title="{{ fm_name }}">{{ fm_name | fam_avatar }}</span>
+                                    {% else %}
+                                        -
+                                    {% endif %}
                                 </td>
                                 <td>
                                     {% set mt = (charge.medical_type or '') %}
@@ -241,13 +253,13 @@
                             <input type="date" class="form-control" id="service_date" name="service_date" required>
                         </div>
                         <div class="col-md-6 mb-3">
-                            <label for="family_member" class="form-label">Family Member</label>
-                                <select class="form-select" id="family_member" name="family_member" required>
+                            <label for="family_member_id" class="form-label">Family Member</label>
+                                <select class="form-select" id="family_member_id" name="family_member_id" required>
                                 <option value="">Select...</option>
-                                <option value="Alex">{{ 'Alex' | fam_avatar }} Alex</option>
-                                <option value="Jordan">{{ 'Jordan' | fam_avatar }} Jordan</option>
-                                <option value="Sam">{{ 'Sam' | fam_avatar }} Sam</option>
-                                <option value="Riley">{{ 'Riley' | fam_avatar }} Riley</option>
+                                {% for m in family_members %}
+                                    {% set label = (m.emoji if m.emoji else (m.first_name ~ ((' ' ~ m.last_name) if m.last_name else ''))) %}
+                                    <option value="{{ m.id }}">{{ label }} {{ m.first_name }}{% if m.last_name %} {{ m.last_name }}{% endif %}</option>
+                                {% endfor %}
                             </select>
                         </div>
                     </div>
@@ -265,19 +277,13 @@
                             </select>
                         </div>
                         <div class="col-md-6 mb-3">
-                            <label for="providerSearchInputCharges" class="form-label">Provider</label>
-                            <!-- Hidden select kept for progressive enhancement / programmatic sync -->
-                            <select id="providerSelectHiddenCharges" class="form-select" style="display:none;" aria-hidden="true" tabindex="-1">
+                            <label for="providerSelectCharges" class="form-label">Provider</label>
+                            <select id="providerSelectCharges" name="provider_id" class="form-select" required>
                                 <option value="">Select...</option>
-                                {% for provider in providers %}
+                                {% for provider in providers | sort(attribute='provider_name') %}
                                 <option value="{{ provider.id }}">{{ provider.provider_name }}{% if provider.provider_group %} • {{ provider.provider_group }}{% endif %}</option>
                                 {% endfor %}
                             </select>
-                            <!-- Visible search input for provider name -->
-                            <input id="providerSearchInputCharges" type="text" class="form-control" placeholder="Type to search providers" autocomplete="off" required>
-                            <!-- Hidden input that will hold the selected provider id (form field name must be provider_id) -->
-                            <input type="hidden" name="provider_id" id="providerIdInputCharges">
-                            <div id="providerSuggestionsCharges" class="list-group position-absolute" style="z-index:1050; width:100%; display:none; max-height:220px; overflow:auto;"></div>
                         </div>
                     </div>
 
@@ -385,6 +391,7 @@ document.addEventListener('DOMContentLoaded', function() {
         applyStriping('chargesTable');
         restoreFiltersFromQuery();
         filterTable();
+        setupManualClaimButton();
     if (dbg) { dbg.classList.add('d-none'); }
     } catch (e) {
         // Surface JS initialization errors so the user can see them immediately
@@ -394,72 +401,24 @@ document.addEventListener('DOMContentLoaded', function() {
         if (dbg) { dbg.classList.remove('d-none'); dbg.textContent = 'Initialization error: ' + (e && e.message ? e.message : e); }
     }
 
-// Provider typeahead for Add Charge modal (charges page)
-document.addEventListener('DOMContentLoaded', () => {
-    try {
-        const providerInput = document.getElementById('providerSearchInputCharges');
-        const providerIdInput = document.getElementById('providerIdInputCharges');
-        const suggestionsEl = document.getElementById('providerSuggestionsCharges');
-        const hiddenSelect = document.getElementById('providerSelectHiddenCharges');
-        if (!providerInput || !providerIdInput || !suggestionsEl) return;
-
-        const providerCache = [];
-        // Initialize cache from hidden select options if present
-        if (hiddenSelect) {
-            Array.from(hiddenSelect.options).forEach(opt => {
-                if (!opt || !opt.value) return;
-                providerCache.push({ id: opt.value, provider_name: opt.text, provider_group: '' });
-            });
-        }
-
-        let providerResults = [];
-        let providerDebounce;
-
-        function clearSuggestions(){ suggestionsEl.innerHTML = ''; suggestionsEl.style.display = 'none'; }
-        function renderSuggestions(items){
-            providerResults = items || [];
-            if(!providerResults.length){ clearSuggestions(); return; }
-            suggestionsEl.innerHTML = providerResults.map(p => `<button type="button" class="list-group-item list-group-item-action" data-id="${p.id}">${p.provider_name}${p.provider_group ? ' • ' + p.provider_group : ''}</button>`).join('');
-            suggestionsEl.style.display = 'block';
-        }
-
-        async function fetchProviders(q){
-            try{ const resp = await fetch('/api/providers/search?q=' + encodeURIComponent(q)); if(!resp.ok) return []; const items = await resp.json(); return Array.isArray(items) ? items : []; }catch(e){ return []; }
-        }
-
-        providerInput.addEventListener('input', (e) => {
-            const v = e.target.value.trim();
-            providerIdInput.value = '';
-            if(providerDebounce) clearTimeout(providerDebounce);
-            if(!v){ clearSuggestions(); return; }
-            const q = v.toLowerCase();
-            const localMatches = providerCache.filter(p => {
-                const name = (p.provider_name||'').toLowerCase();
-                const group = (p.provider_group||'').toLowerCase();
-                return name.includes(q) || group.includes(q);
-            });
-            if(localMatches.length){ renderSuggestions(localMatches); } else { clearSuggestions(); }
-            providerDebounce = setTimeout(async () => {
-                const remote = await fetchProviders(v);
-                if(remote && remote.length){
-                    const merged = []; const seen = new Set();
-                    (localMatches.concat(remote)).forEach(p => { if(!p||!p.id) return; if(seen.has(String(p.id))) return; seen.add(String(p.id)); merged.push(p); });
-                    renderSuggestions(merged);
-                } else if(!localMatches.length){ renderSuggestions([]); }
-            }, 200);
-        });
-
-        suggestionsEl.addEventListener('click', (ev) => {
-            const btn = ev.target.closest('button[data-id]');
-            if(!btn) return; const id = btn.getAttribute('data-id'); const name = btn.textContent || btn.innerText;
-            providerInput.value = name; providerIdInput.value = id; if(hiddenSelect){ try{ hiddenSelect.value = String(id); }catch(e){} }
-            clearSuggestions();
-        });
-        document.addEventListener('click', (ev) => { if(ev.target === providerInput) return; if(ev.target.closest && ev.target.closest('#providerSuggestionsCharges')) return; clearSuggestions(); });
-        providerInput.addEventListener('blur', () => { setTimeout(() => { if(providerIdInput.value) return; const typed = providerInput.value.trim().toLowerCase(); if(!typed) return; const match = providerResults.find(p => (p.provider_name||'').toLowerCase() === typed); if(match) providerIdInput.value = String(match.id); }, 150); });
-    } catch (e) { console && console.error && console.error('provider typeahead init error', e); }
 });
-});
+
+// Provider selection simplified: using standard select dropdown (`#providerSelectCharges`) instead of typeahead
+
+function setupManualClaimButton() {
+    const btn = document.getElementById('submitManualClaimBtn');
+    if (!btn) return;
+    btn.addEventListener('click', function() {
+        const selected = Array.from(document.querySelectorAll('.charge-select:checked')).map(cb => cb.value);
+        if (!selected.length) {
+            alert('Select at least one charge to submit a manual claim.');
+            return;
+        }
+        const qs = selected.join(',');
+        // Open manual claim in same tab so printing/back navigation is simple
+        window.location.href = '/charges/manual-claim?charge_ids=' + encodeURIComponent(qs);
+    });
+}
 
 function initializeTableEnhancements() {
     // Setup search
@@ -718,7 +677,7 @@ function setupFormSubmission() {
             const formData = new FormData(e.target);
             const data = {
                 service_date: formData.get('service_date') || null,
-                family_member: formData.get('family_member') || null,
+                family_member_id: formData.get('family_member_id') ? parseInt(formData.get('family_member_id')) : null,
                 medical_type: formData.get('medical_type') || null,
                 provider_id: formData.get('provider_id') ? parseInt(formData.get('provider_id')) : null,
                 cpt_code: formData.get('cpt_code') || null,
@@ -1574,13 +1533,13 @@ async function submitBulkUpdate(e) {
                     <div class="row mb-3">
                         <div class="col-md-6">
                             <label for="bulk_family_member" class="form-label">Family Member</label>
-                            <select class="form-select" id="bulk_family_member" name="family_member">
-                                <option value="">-- No Change --</option>
-                                <option value="Alex">Alex</option>
-                                <option value="Jordan">Jordan</option>
-                                <option value="Sam">Sam</option>
-                                <option value="Riley">Riley</option>
-                            </select>
+                                                        <select class="form-select" id="bulk_family_member" name="family_member_id">
+                                                                <option value="">-- No Change --</option>
+                                                                {% for m in family_members %}
+                                                                    {% set label = (m.emoji if m.emoji else (m.first_name ~ ((' ' ~ m.last_name) if m.last_name else ''))) %}
+                                                                    <option value="{{ m.id }}">{{ label }} {{ m.first_name }}{% if m.last_name %} {{ m.last_name }}{% endif %}</option>
+                                                                {% endfor %}
+                                                        </select>
                         </div>
                         <div class="col-md-6">
                             <label for="bulk_medical_type" class="form-label">Medical Type</label>
@@ -1599,7 +1558,7 @@ async function submitBulkUpdate(e) {
                             <label for="bulk_provider_id" class="form-label">Provider</label>
                             <select class="form-select" id="bulk_provider_id" name="provider_id">
                                 <option value="">-- No Change --</option>
-                                {% for provider in providers %}
+                                {% for provider in providers | sort(attribute='provider_name') %}
                                 <option value="{{ provider.id }}">{{ provider.provider_name }}</option>
                                 {% endfor %}
                             </select>

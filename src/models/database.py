@@ -20,6 +20,41 @@ from sqlalchemy.orm import declarative_base, relationship
 Base = declarative_base()
 
 
+class FamilyMember(Base):
+    __tablename__ = "family_members"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    first_name = Column(String, nullable=False)
+    last_name = Column(String, nullable=True)
+    middle_initial = Column(String, nullable=True)
+    address = Column(String, nullable=True)
+    dob = Column(Date, nullable=True)
+    # New fields added: SSN, gender, relationship_to_primary, phone_number
+    ssn = Column(String, nullable=True)
+    gender = Column(String, nullable=True)
+    relationship_to_primary = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    # Use updated_at for modification timestamps; remove duplicate modified_at field
+    # Single-character emoji for condensed display (may be multi-codepoint but stored as short text)
+    emoji = Column(String(4), nullable=True)
+    created_by = Column(String)
+    updated_by = Column(String)
+
+    charges = relationship("Charge", back_populates="family_member")
+
+    @hybrid_property
+    def full_name(self):
+        """Full name including middle initial."""
+        parts = [self.first_name or ""]
+        if self.middle_initial:
+            parts.append(self.middle_initial)
+        if self.last_name:
+            parts.append(self.last_name)
+        return " ".join(parts).strip() or None
+
+
 class Provider(Base):
     __tablename__ = "providers"
 
@@ -90,7 +125,7 @@ class Charge(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     excel_legacy_id = Column(String, comment="Legacy identifier from Excel spreadsheet")
     service_date = Column(Date)
-    family_member = Column(String)
+    family_member_id = Column(Integer, ForeignKey("family_members.id"))
     medical_type = Column(String)
     cpt_code = Column(String)
     diagnosis_code = Column(String)
@@ -116,6 +151,7 @@ class Charge(Base):
 
     # Relationships
     provider = relationship("Provider", back_populates="charges")
+    family_member = relationship("FamilyMember", back_populates="charges")
     charge_payments = relationship("ChargePaymentXref", back_populates="charge")
     attachments = relationship("Attachment", back_populates="charge")
 
@@ -208,3 +244,20 @@ class RefExpenseTypes(Base):
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     created_by = Column(String)
     updated_by = Column(String)
+
+
+class Insurance(Base):
+    __tablename__ = "insurance"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    medical_type = Column(String)
+    plan_name = Column(String)
+    policy_number = Column(String)
+    group_number = Column(String)
+    insured_member_id = Column(Integer, ForeignKey("family_members.id"))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_by = Column(String)
+    updated_by = Column(String)
+
+    insured_member = relationship("FamilyMember")

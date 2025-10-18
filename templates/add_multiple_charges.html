@@ -18,12 +18,12 @@
       </div>
       <div class="col-md-3">
         <label class="form-label">Family Member</label>
-        <select class="form-select form-select-sm" name="family_member" required>
+        <select class="form-select form-select-sm" name="family_member_id" required>
           <option value="">Select...</option>
-          <option value="Alex">🧑 Alex</option>
-          <option value="Jordan">👩 Jordan</option>
-          <option value="Sam">👦 Sam</option>
-          <option value="Riley">👧 Riley</option>
+          {% for m in family_members %}
+            {% set label = (m.emoji if m.emoji else (m.first_name ~ ((' ' ~ m.last_name) if m.last_name else ''))) %}
+            <option value="{{ m.id }}">{{ label }} {{ m.first_name }}{% if m.last_name %} {{ m.last_name }}{% endif %}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="col-md-3">
@@ -183,12 +183,12 @@ async function submitMultiCharges(e){
   statusEl.textContent = '';
   const fd = new FormData();
   const svc = form.querySelector('[name="service_date"]').value;
-  const fam = form.querySelector('[name="family_member"]').value;
+  const fam = form.querySelector('[name="family_member_id"]').value;
   const medType = form.querySelector('[name="medical_type"]').value;
   const prov = form.querySelector('[name="provider_id"]').value;
   if(!svc || !fam || !medType || !prov){ statusEl.textContent = 'Please fill required shared fields.'; return; }
   fd.append('service_date', svc);
-  fd.append('family_member', fam);
+  fd.append('family_member_id', fam);
   fd.append('medical_type', medType);
   fd.append('provider_id', prov);
   const doctorName = form.querySelector('[name="doctor_name"]').value;

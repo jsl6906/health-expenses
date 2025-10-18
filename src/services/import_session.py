@@ -76,6 +76,7 @@ class JSONChargeAnalyzeResponse(BaseModel):
 class JSONImportCommitRequest(BaseModel):
     selected_indices: list[int]
     provider_id: int | None = None
+    family_member_id: int | None = None
     family_member: str | None = None
     medical_type: str | None = None
     selected_provider_location_ids: list[str] | None = None

@@ -10,13 +10,6 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
 
-class FamilyMemberEnum(str, Enum):
-    ALEX = "Alex"
-    JORDAN = "Jordan"
-    SAM = "Sam"
-    RILEY = "Riley"
-
-
 class MedicalTypeEnum(str, Enum):
     MEDICAL = "Medical"
     DENTAL = "Dental"
@@ -80,7 +73,7 @@ class Provider(ProviderBase):
 class ChargeBase(BaseModel):
     excel_legacy_id: Optional[str] = None
     service_date: Optional[date] = None
-    family_member: Optional[FamilyMemberEnum] = None
+    family_member_id: Optional[int] = None
     medical_type: Optional[MedicalTypeEnum] = None
     cpt_code: Optional[str] = None
     diagnosis_code: Optional[str] = None
@@ -107,7 +100,7 @@ class ChargeCreate(ChargeBase):
 class ChargeUpdate(BaseModel):
     excel_legacy_id: Optional[str] = None
     service_date: Optional[date] = None
-    family_member: Optional[FamilyMemberEnum] = None
+    family_member_id: Optional[int] = None
     medical_type: Optional[MedicalTypeEnum] = None
     cpt_code: Optional[str] = None
     diagnosis_code: Optional[str] = None
@@ -130,6 +123,49 @@ class ChargeUpdate(BaseModel):
 class Charge(ChargeBase):
     id: int
     provider: Optional[Provider] = None
+    family_member: Optional["FamilyMember"] = None
+
+
+# FamilyMember Schemas
+class FamilyMemberBase(BaseModel):
+    first_name: str
+    last_name: Optional[str] = None
+    middle_initial: Optional[str] = None
+    address: Optional[str] = None
+    ssn: Optional[str] = None
+    gender: Optional[str] = None
+    relationship_to_primary: Optional[str] = None
+    phone_number: Optional[str] = None
+    dob: Optional[date] = None
+    emoji: Optional[str] = None
+
+
+class FamilyMemberCreate(FamilyMemberBase):
+    pass
+
+
+class FamilyMemberUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    middle_initial: Optional[str] = None
+    address: Optional[str] = None
+    ssn: Optional[str] = None
+    gender: Optional[str] = None
+    relationship_to_primary: Optional[str] = None
+    phone_number: Optional[str] = None
+    dob: Optional[date] = None
+    emoji: Optional[str] = None
+
+
+class FamilyMember(FamilyMemberBase):
+    id: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    created_by: Optional[str] = None
+    updated_by: Optional[str] = None
+    # 'modified_at' removed in favor of 'updated_at'
+
+    model_config = ConfigDict(from_attributes=True)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -217,4 +253,35 @@ class AttachmentCreate(BaseModel):
 
 class Attachment(AttachmentBase):
     id: int
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Insurance Schemas
+class InsuranceBase(BaseModel):
+    medical_type: Optional[MedicalTypeEnum] = None
+    plan_name: Optional[str] = None
+    policy_number: Optional[str] = None
+    group_number: Optional[str] = None
+    insured_member_id: Optional[int] = None
+
+
+class InsuranceCreate(InsuranceBase):
+    pass
+
+
+class InsuranceUpdate(BaseModel):
+    medical_type: Optional[MedicalTypeEnum] = None
+    plan_name: Optional[str] = None
+    policy_number: Optional[str] = None
+    group_number: Optional[str] = None
+    insured_member_id: Optional[int] = None
+
+
+class Insurance(InsuranceBase):
+    id: int
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    created_by: Optional[str] = None
+    updated_by: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)

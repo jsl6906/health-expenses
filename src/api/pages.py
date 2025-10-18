@@ -199,6 +199,27 @@ async def providers_page(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/family_members", response_class=HTMLResponse)
+async def family_members_page(request: Request, db: Session = Depends(get_db)):
+    """Render a simple family members list with edit modal."""
+    try:
+        from models.database import FamilyMember as FamilyMemberModel
+    except ImportError:  # pragma: no cover
+        from ..models.database import FamilyMember as FamilyMemberModel  # type: ignore
+
+    members = (
+        db.query(FamilyMemberModel)
+        .order_by(FamilyMemberModel.first_name, FamilyMemberModel.last_name)
+        .all()
+    )
+
+    # Pass ORM objects directly so SQLAlchemy-returned datetime objects
+    # (created_at/updated_at) are preserved for template filters.
+    return templates.TemplateResponse(
+        "family_members.html", {"request": request, "members": members}
+    )
+
+
 @router.get("/providers/{provider_id}", response_class=HTMLResponse)
 async def provider_detail_page(
     provider_id: int, request: Request, db: Session = Depends(get_db)
@@ -415,6 +436,10 @@ async def provider_detail_page(
             "provider": provider_summary,
             "charges": charges,
             "payments": payments,
+            # family members for dropdowns (used for emoji labels)
+            "family_members": db.query(FamilyMemberModel)
+            .order_by(FamilyMemberModel.first_name, FamilyMemberModel.last_name)
+            .all(),
         },
     )
 
@@ -488,6 +513,18 @@ async def charges_page(request: Request, db: Session = Depends(get_db)):
         setattr(charge, "is_potential_duplicate", charge.id in potential_duplicate_ids)
 
     providers = provider_crud.get_all(db, limit=None)
+    # Also load family members to populate client-side filters (use ORM objects so templates
+    # can access emoji and names).
+    try:
+        from models.database import FamilyMember as FamilyMemberModel  # type: ignore
+    except ImportError:  # pragma: no cover
+        from ..models.database import FamilyMember as FamilyMemberModel  # type: ignore
+
+    family_members = (
+        db.query(FamilyMemberModel)
+        .order_by(FamilyMemberModel.first_name, FamilyMemberModel.last_name)
+        .all()
+    )
     # Attachment counts
     try:
         from models.database import Attachment as AttachmentModel  # type: ignore
@@ -511,7 +548,126 @@ async def charges_page(request: Request, db: Session = Depends(get_db)):
     for ch in charges:
         setattr(ch, "attachment_count", att_count_map.get(ch.id, 0))
     return templates.TemplateResponse(
-        "charges.html", {"request": request, "charges": charges, "providers": providers}
+        "charges.html",
+        {
+            "request": request,
+            "charges": charges,
+            "providers": providers,
+            "family_members": family_members,
+        },
+    )
+
+
+@router.get("/charges/manual-claim", response_class=HTMLResponse)
+async def manual_claim_page(
+    request: Request, charge_ids: str = "", db: Session = Depends(get_db)
+):
+    """Render a printable, grouped manual claim report for the selected charges.
+
+    Expects a comma-separated `charge_ids` query parameter (e.g. ?charge_ids=1,2,3).
+    Groups results by Insurance (based on charge.medical_type -> Insurance.medical_type),
+    then by the family member receiving services, and then by provider. Each charge row
+    contains service_date, place_of_service (hard-coded to 19), cpt_code, diagnosis_code,
+    and base_fee_amount.
+    """
+    if not charge_ids:
+        raise HTTPException(
+            status_code=400, detail="charge_ids query parameter required"
+        )
+    try:
+        ids = [int(x) for x in charge_ids.split(",") if x.strip()]
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid charge_ids parameter")
+
+    try:
+        from models.database import Charge as ChargeModel
+        from models.database import FamilyMember as FamilyMemberModel
+        from models.database import Insurance as InsuranceModel
+        from models.database import Provider as ProviderModel
+    except ImportError:  # pragma: no cover - fallback relative imports
+        from ..models.database import Charge as ChargeModel
+        from ..models.database import FamilyMember as FamilyMemberModel
+        from ..models.database import Insurance as InsuranceModel
+        from ..models.database import Provider as ProviderModel
+
+    charges = db.query(ChargeModel).filter(ChargeModel.id.in_(ids)).all()
+    if not charges:
+        raise HTTPException(status_code=404, detail="No charges found for provided ids")
+
+    # Preload insurance entries by medical_type for efficiency
+    insurance_map: dict[str, InsuranceModel | None] = {}
+    for ch in charges:
+        mt = ch.medical_type or ""
+        if mt and mt not in insurance_map:
+            ins = (
+                db.query(InsuranceModel)
+                .filter(InsuranceModel.medical_type == mt)
+                .first()
+            )
+            insurance_map[mt] = ins
+
+    # Build nested grouping: insurance -> service family member -> provider -> charges
+    group_map: dict = {}
+    for ch in charges:
+        mt = ch.medical_type or "Unknown"
+        ins = insurance_map.get(mt) if mt else None
+        ins_key = f"ins_{ins.id}" if ins else f"noins_{mt}"
+        gm = group_map.setdefault(
+            ins_key, {"insurance": ins, "medical_type": mt, "families": {}}
+        )
+
+        service_fm = getattr(ch, "family_member", None)
+        fm_key = f"fm_{service_fm.id}" if service_fm else f"fm_none_{ch.id}"
+        fam = gm["families"].setdefault(
+            fm_key, {"service_member": service_fm, "providers": {}}
+        )
+
+        prov = getattr(ch, "provider", None)
+        prov_key = f"prov_{prov.id}" if prov else f"prov_none_{ch.id}"
+        pv = fam["providers"].setdefault(prov_key, {"provider": prov, "charges": []})
+        pv["charges"].append(ch)
+
+    # Convert grouping map into a flat list of claim cards
+    # Each card contains insurance, insured, service_member, provider, and charges
+    claim_cards = []
+    for _, g in group_map.items():
+        ins = g.get("insurance")
+        insured = None
+        if ins is not None:
+            # insurance.insured_member is a relationship to FamilyMember (may be None)
+            im = getattr(ins, "insured_member", None)
+            if im:
+                insured = {
+                    "full_name": im.full_name,
+                    "dob": getattr(im, "dob", None),
+                    "address": getattr(im, "address", None),
+                    "phone_num": getattr(im, "phone_number", None),
+                    "id": getattr(im, "id", None),
+                }
+
+        for _, f in g["families"].items():
+            service_member = f["service_member"]
+            for _, p in f["providers"].items():
+                provider = p["provider"]
+                charges = p["charges"]
+                claim_cards.append(
+                    {
+                        "insurance": ins,
+                        "insured": insured,
+                        "service_member": service_member,
+                        "provider": provider,
+                        "charges": charges,
+                        "medical_type": g["medical_type"],
+                    }
+                )
+
+    return templates.TemplateResponse(
+        "manual_claim.html",
+        {
+            "request": request,
+            "claim_cards": claim_cards,
+            "charge_count": len(charges),
+        },
     )
 
 
@@ -519,8 +675,19 @@ async def charges_page(request: Request, db: Session = Depends(get_db)):
 async def charges_import_json_page(request: Request, db: Session = Depends(get_db)):
     """UI for importing charges via JSON/FHIR preview workflow."""
     providers = provider_crud.get_all(db, limit=None)
+    # supply family members for the default selection
+    try:
+        from models.database import FamilyMember as FamilyMemberModel  # type: ignore
+    except ImportError:  # pragma: no cover
+        from ..models.database import FamilyMember as FamilyMemberModel  # type: ignore
+    family_members = (
+        db.query(FamilyMemberModel)
+        .order_by(FamilyMemberModel.first_name, FamilyMemberModel.last_name)
+        .all()
+    )
     return templates.TemplateResponse(
-        "import_charges_json.html", {"request": request, "providers": providers}
+        "import_charges_json.html",
+        {"request": request, "providers": providers, "family_members": family_members},
     )
 
 
@@ -528,8 +695,18 @@ async def charges_import_json_page(request: Request, db: Session = Depends(get_d
 async def charges_import_eob_page(request: Request, db: Session = Depends(get_db)):
     """UI for importing charges via EOB upload and parsing workflow."""
     providers = provider_crud.get_all(db, limit=None)
+    try:
+        from models.database import FamilyMember as FamilyMemberModel  # type: ignore
+    except ImportError:  # pragma: no cover
+        from ..models.database import FamilyMember as FamilyMemberModel  # type: ignore
+    family_members = (
+        db.query(FamilyMemberModel)
+        .order_by(FamilyMemberModel.first_name, FamilyMemberModel.last_name)
+        .all()
+    )
     return templates.TemplateResponse(
-        "import_charges_eob.html", {"request": request, "providers": providers}
+        "import_charges_eob.html",
+        {"request": request, "providers": providers, "family_members": family_members},
     )
 
 
@@ -537,8 +714,18 @@ async def charges_import_eob_page(request: Request, db: Session = Depends(get_db
 async def add_multiple_charges_page(request: Request, db: Session = Depends(get_db)):
     """UI for adding multiple charges in a batch."""
     providers = provider_crud.get_all(db, limit=None)
+    try:
+        from models.database import FamilyMember as FamilyMemberModel  # type: ignore
+    except ImportError:  # pragma: no cover
+        from ..models.database import FamilyMember as FamilyMemberModel  # type: ignore
+    family_members = (
+        db.query(FamilyMemberModel)
+        .order_by(FamilyMemberModel.first_name, FamilyMemberModel.last_name)
+        .all()
+    )
     return templates.TemplateResponse(
-        "add_multiple_charges.html", {"request": request, "providers": providers}
+        "add_multiple_charges.html",
+        {"request": request, "providers": providers, "family_members": family_members},
     )
 
 
@@ -629,6 +816,16 @@ async def charge_detail_page(
     # associated provider for a charge.
     providers = provider_crud.get_all(db, limit=None)
 
+    try:
+        from models.database import FamilyMember as FamilyMemberModel  # type: ignore
+    except ImportError:  # pragma: no cover
+        from ..models.database import FamilyMember as FamilyMemberModel  # type: ignore
+    family_members = (
+        db.query(FamilyMemberModel)
+        .order_by(FamilyMemberModel.first_name, FamilyMemberModel.last_name)
+        .all()
+    )
+
     return templates.TemplateResponse(
         "charge_detail.html",
         {
@@ -640,6 +837,7 @@ async def charge_detail_page(
             "status": status,
             "remaining": remaining,
             "attachments": attachments,
+            "family_members": family_members,
         },
     )
 
@@ -837,4 +1035,29 @@ async def premiums_page(request: Request, db: Session = Depends(get_db)):
     premiums = premium_crud.get_all(db, limit=None)
     return templates.TemplateResponse(
         "premiums.html", {"request": request, "premiums": premiums}
+    )
+
+
+@router.get("/insurance", response_class=HTMLResponse)
+async def insurance_page(request: Request, db: Session = Depends(get_db)):
+    """Simple insurance management page (list, add, edit)."""
+    try:
+        from models.database import Insurance as InsuranceModel
+    except ImportError:  # pragma: no cover
+        from ..models.database import Insurance as InsuranceModel  # type: ignore
+
+    try:
+        from models.database import FamilyMember as FamilyMemberModel
+    except ImportError:  # pragma: no cover
+        from ..models.database import FamilyMember as FamilyMemberModel  # type: ignore
+
+    ins = db.query(InsuranceModel).order_by(InsuranceModel.plan_name).all()
+    family_members = (
+        db.query(FamilyMemberModel)
+        .order_by(FamilyMemberModel.first_name, FamilyMemberModel.last_name)
+        .all()
+    )
+    return templates.TemplateResponse(
+        "insurance.html",
+        {"request": request, "insurances": ins, "family_members": family_members},
     )

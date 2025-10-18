@@ -28,8 +28,17 @@
         <dl class="row mb-0">
           <dt class="col-5">Service Date</dt><dd class="col-7">{{ charge.service_date.strftime('%#m/%#d/%y') if charge.service_date else '-' }}</dd>
             <dt class="col-5">Family Member</dt><dd class="col-7">
-              {% set fm = charge.family_member or '' %}
-              {% if fm %}{{ fm | fam_avatar }} {{ fm }}{% else %}{{ fm or '-' }}{% endif %}
+              {% set fm_obj = charge.family_member %}
+              {% if fm_obj and fm_obj.emoji %}
+                <span title="{{ (fm_obj.first_name ~ ((' ' ~ fm_obj.last_name) if fm_obj.last_name else '')) }}">{{ fm_obj.emoji }}</span>
+                <span class="ms-2">{{ fm_obj.first_name ~ ((' ' ~ fm_obj.last_name) if fm_obj.last_name else '') }}</span>
+              {% elif fm_obj %}
+                {% set fm_name = fm_obj.first_name ~ ((' ' ~ fm_obj.last_name) if fm_obj.last_name else '') %}
+                <span title="{{ fm_name }}">{{ fm_name | fam_avatar }}</span>
+                <span class="ms-2">{{ fm_name }}</span>
+              {% else %}
+                -
+              {% endif %}
             </dd>
           <dt class="col-5">Medical Type</dt><dd class="col-7">{{ charge.medical_type or '-' }}</dd>
           <dt class="col-5">Provider</dt><dd class="col-7">{% if provider %}<a href="/providers/{{ provider.id }}">{{ provider.provider_name }}</a>{% else %}-{% endif %}</dd>
@@ -761,10 +770,11 @@ function highlightMergeDifferencesOnDetail() {
             </div>
             <div class="col-md-4 mb-2">
               <label class="form-label">Family Member *</label>
-              <select name="family_member" class="form-select" required>
-                {% for fm in ['Alex', 'Jordan', 'Sam', 'Riley'] %}
-                  <option value="{{ fm }}" {% if charge.family_member==fm %}selected{% endif %}>
-                    {{ fm | fam_avatar }} {{ fm }}
+              <select name="family_member_id" class="form-select" required>
+                {% for m in family_members %}
+                  {% set label = (m.emoji if m.emoji else (m.first_name ~ ((' ' ~ m.last_name) if m.last_name else ''))) %}
+                  <option value="{{ m.id }}" {% if charge.family_member and charge.family_member.id==m.id %}selected{% endif %}>
+                    {{ label }} {{ m.first_name }}{% if m.last_name %} {{ m.last_name }}{% endif %}
                   </option>
                 {% endfor %}
               </select>
@@ -848,6 +858,15 @@ document.addEventListener('DOMContentLoaded',()=>{
         } else {
           const parsed = parseInt(payload['provider_id'],10);
           payload['provider_id'] = isNaN(parsed) ? null : parsed;
+        }
+      }
+      // Ensure family_member_id is sent as integer when present
+      if(payload.hasOwnProperty('family_member_id')){
+        if(payload['family_member_id']===null || payload['family_member_id']==''){
+          payload['family_member_id']=null;
+        } else {
+          const parsedFm = parseInt(payload['family_member_id'],10);
+          payload['family_member_id'] = isNaN(parsedFm) ? null : parsedFm;
         }
       }
       // Numeric coercion

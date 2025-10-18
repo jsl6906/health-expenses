@@ -49,3 +49,16 @@ services:
       timeout: 10s
       retries: 3
       start_period: 10s
+
+  # Optional one-shot migrator service to apply Alembic migrations.
+  # Usage: docker-compose run --rm migrator
+  migrator:
+    image: personal-expenses:latest
+    command: ["sh", "-c", "uv run alembic upgrade head"]
+    environment:
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-personal_expenses}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD}
+    restart: "no"

@@ -57,6 +57,8 @@ COPY templates/ templates/
 COPY static/ static/
 COPY main.py .
 COPY init_db.py .
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN chmod +x /app/docker-entrypoint.sh
 
 # Change ownership to app user
 RUN chown -R app:app /app
@@ -72,4 +74,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/ || exit 1
 
 # Default command
+ENTRYPOINT ["/bin/sh", "/app/docker-entrypoint.sh"]
 CMD ["python", "main.py"]

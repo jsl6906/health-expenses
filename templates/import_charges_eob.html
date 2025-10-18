@@ -17,10 +17,10 @@
         <label for="defaultFamilyMember" class="form-label small mb-1">Family Member</label>
         <select id="defaultFamilyMember" class="form-select form-select-sm h-100">
           <option value="">(Select a member)</option>
-          <option>Alex</option>
-          <option>Jordan</option>
-          <option>Sam</option>
-          <option>Riley</option>
+          {% for m in family_members %}
+            {% set label = (m.emoji if m.emoji else (m.first_name ~ ((' ' ~ m.last_name) if m.last_name else ''))) %}
+            <option value="{{ label }}">{{ label }} {{ m.first_name }}{% if m.last_name %} {{ m.last_name }}{% endif %}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="col-md-2 d-flex flex-column">
