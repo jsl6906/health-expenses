@@ -55,6 +55,7 @@ COPY --from=builder /app/.venv /app/.venv
 COPY src/ src/
 COPY templates/ templates/
 COPY static/ static/
+COPY alembic.ini alembic/
 COPY main.py .
 COPY init_db.py .
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
