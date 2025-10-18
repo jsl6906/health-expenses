@@ -20,10 +20,13 @@ def create_attachment(
     content_type: str,
     file_size: int,
     content_bytes: bytes,
+    user: str = "system",
 ) -> Attachment:
     # Enforce that exactly one of charge_id or payment_id is set.
     if bool(data.charge_id) == bool(data.payment_id):
         raise ValueError("Exactly one of charge_id or payment_id must be provided")
+
+    from sqlalchemy import func
 
     att = Attachment(
         charge_id=data.charge_id,
@@ -33,6 +36,10 @@ def create_attachment(
         file_size=file_size,
         content=content_bytes,
         notes=data.notes,
+        created_at=func.now(),
+        updated_at=func.now(),
+        created_by=user,
+        updated_by=user,
     )
     db.add(att)
     db.commit()

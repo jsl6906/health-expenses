@@ -35,7 +35,7 @@ repos:
         entry: powershell.exe -File scripts/pre-commit-docker-build.ps1
         language: system
         # Allow either forward or back slashes in path separators for Windows compatibility
-        files: '(Dockerfile|pyproject\.toml|src[\\/].*|templates[\\/].*|static[\\/].*|main\.py|init_db\.py|run_app\.py)$'
+        files: '(Dockerfile|pyproject\.toml|src/.*|templates/.*|static/.*|main\.py|init_db\.py|run_app\.py)$'
         # Let pre-commit pass the changed filenames to the hook so the hook can make accurate decisions
         pass_filenames: true
         always_run: false

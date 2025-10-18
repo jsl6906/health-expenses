@@ -4,6 +4,7 @@ Base CRUD operations for all models.
 
 from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 # Use a more specific bound that includes the id attribute
@@ -16,7 +17,9 @@ class BaseCRUD(Generic[ModelType]):
     def __init__(self, model: Type[ModelType]):
         self.model = model
 
-    def create(self, db: Session, obj_data: Dict[str, Any]) -> ModelType:
+    def create(
+        self, db: Session, obj_data: Dict[str, Any], user: str = "system"
+    ) -> ModelType:
         """Create a new record."""
         # Only pass fields that exist in the model's columns using __mapper__
         if hasattr(self.model, "__mapper__"):
@@ -26,6 +29,15 @@ class BaseCRUD(Generic[ModelType]):
         valid_fields = {
             field: value for field, value in obj_data.items() if field in model_columns
         }
+        # Set audit fields
+        if "created_at" in model_columns:
+            valid_fields["created_at"] = func.now()
+        if "updated_at" in model_columns:
+            valid_fields["updated_at"] = func.now()
+        if "created_by" in model_columns:
+            valid_fields["created_by"] = user
+        if "updated_by" in model_columns:
+            valid_fields["updated_by"] = user
         db_obj = self.model(**valid_fields)  # type: ignore
         db.add(db_obj)
         db.commit()
@@ -48,12 +60,21 @@ class BaseCRUD(Generic[ModelType]):
         return query.all()
 
     def update(
-        self, db: Session, db_obj: ModelType, obj_data: Dict[str, Any]
+        self,
+        db: Session,
+        db_obj: ModelType,
+        obj_data: Dict[str, Any],
+        user: str = "system",
     ) -> ModelType:
         """Update an existing record."""
         for field, value in obj_data.items():
             if hasattr(db_obj, field):
                 setattr(db_obj, field, value)
+        # Set audit fields
+        if hasattr(db_obj, "updated_at"):
+            db_obj.updated_at = func.now()  # type: ignore
+        if hasattr(db_obj, "updated_by"):
+            db_obj.updated_by = user  # type: ignore
         db.commit()
         db.refresh(db_obj)
         return db_obj

@@ -32,6 +32,8 @@ except ImportError:  # pragma: no cover
     from ..database_config import db_config, get_db  # type: ignore
     from ..services.allocation import annotate_charges_with_paid  # type: ignore
 
+import pytz
+
 router = APIRouter(tags=["pages"])  # no prefix -> root-level paths
 
 # Template setup (duplicated from app bootstrap; could be centralized later)
@@ -78,6 +80,21 @@ def fam_avatar(name: str) -> Markup:
 
 
 templates.env.filters["fam_avatar"] = fam_avatar
+
+
+def format_datetime_est(dt):
+    """Format a naive datetime (assumed UTC) to EST timezone string."""
+    if not dt:
+        return "-"
+    # Assume dt is naive UTC
+    utc_tz = pytz.timezone("UTC")
+    est_tz = pytz.timezone("US/Eastern")
+    utc_dt = utc_tz.localize(dt)
+    est_dt = utc_dt.astimezone(est_tz)
+    return est_dt.strftime("%#m/%#d/%y %I:%M %p")
+
+
+templates.env.filters["format_datetime_est"] = format_datetime_est
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -297,7 +314,7 @@ async def provider_detail_page(
     if payment_ids:
         try:
             rows2 = (
-                db.query(AttachmentModel.payment_id, _func.count(AttachmentModel.id))
+                db.query(AttachmentModel.payment_id, func.count(AttachmentModel.id))
                 .filter(AttachmentModel.payment_id.in_(payment_ids))
                 .group_by(AttachmentModel.payment_id)
                 .all()
@@ -370,10 +387,17 @@ async def provider_detail_page(
         "provider_name": provider.provider_name,
         "provider_group": provider.provider_group,
         "provider_address": provider.provider_address,
+        "phone_num": provider.phone_num,
+        "npi_number": provider.npi_number,
+        "tax_id": provider.tax_id,
         "one_way_miles": provider.one_way_miles,
         "active_provider_flag": provider.active_provider_flag,
         "last_charge_date": provider.last_charge_date,
         "last_payment_date": provider.last_payment_date,
+        "created_at": provider.created_at,
+        "updated_at": provider.updated_at,
+        "created_by": provider.created_by,
+        "updated_by": provider.updated_by,
         "charge_count": int(charge_count or 0),
         "payment_count": int(payment_count or 0),
         "total_charged": float(total_charged or 0),
@@ -523,7 +547,7 @@ async def charge_detail_page(
     charge_id: int, request: Request, db: Session = Depends(get_db)
 ):
     try:
-        from models.database import Charge as ChargeModel  # type: ignore
+        from models.database import Charge as ChargeModel
         from models.database import ChargePaymentXref as XrefModel
         from models.database import Payment as PaymentModel
         from models.database import Provider as ProviderModel
@@ -648,6 +672,8 @@ async def payments_page(request: Request, db: Session = Depends(get_db)):
         from ..models.database import Attachment as AttachmentModel  # type: ignore
     pay_att_counts = {}
     if payment_ids:
+        from sqlalchemy import func as _func  # Ensure _func is imported
+
         try:
             rows2 = (
                 db.query(AttachmentModel.payment_id, _func.count(AttachmentModel.id))

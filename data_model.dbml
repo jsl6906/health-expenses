@@ -6,6 +6,8 @@ Table charges {
   family_member family_member
   medical_type medical_type
   cpt_code varchar
+  diagnosis_code varchar
+  claim_submitted_date date
   provider_id int [ref: > providers.id]
   doctor_name varchar
   charge_description varchar
@@ -18,6 +20,10 @@ Table charges {
   insurance_paid_amount money
   ignore_for_issue_spotting boolean
   notes bpchar
+  created_at timestamp [default: now()]
+  updated_at timestamp [default: now()]
+  created_by varchar
+  updated_by varchar
 }
 
 Table payments {
@@ -33,12 +39,20 @@ Table payments {
   transaction_match_flag varchar
   reimbursement_amount money [note: "Amount reimbursed by HSA / FSA"]
   notes bpchar
+  created_at timestamp [default: now()]
+  updated_at timestamp [default: now()]
+  created_by varchar
+  updated_by varchar
 }
 
 Table charge_payment_xref {
   id int [pk, increment]
   charge_id int [ref: > charges.id]
   payment_id int [ref: > payments.id]
+  created_at timestamp [default: now()]
+  updated_at timestamp [default: now()]
+  created_by varchar
+  updated_by varchar
 }
 
 Table attachments {
@@ -50,6 +64,10 @@ Table attachments {
   file_size int
   content bytea [note: "Binary file content stored in database"]
   notes text
+  created_at timestamp [default: now()]
+  updated_at timestamp [default: now()]
+  created_by varchar
+  updated_by varchar
 }
 
 Table providers {
@@ -57,9 +75,15 @@ Table providers {
   provider_name varchar
   provider_group varchar
   provider_address varchar
+  phone_num varchar
+  npi_number varchar
+  tax_id varchar
   one_way_miles numeric
   active_provider_flag boolean
-
+  created_at timestamp [default: now()]
+  updated_at timestamp [default: now()]
+  created_by varchar
+  updated_by varchar
 }
 
 Table premiums {
@@ -69,11 +93,19 @@ Table premiums {
   dental_premium money
   vision_premium money
   hsa_fsa_paid money
+  created_at timestamp [default: now()]
+  updated_at timestamp [default: now()]
+  created_by varchar
+  updated_by varchar
 }
 
 Table ref_expense_types {
   id int [pk, increment]
   expense_type_name varchar
+  created_at timestamp [default: now()]
+  updated_at timestamp [default: now()]
+  created_by varchar
+  updated_by varchar
 }
 
 Enum family_member {

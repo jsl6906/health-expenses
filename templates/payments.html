@@ -243,6 +243,19 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
+// Helper: parse an ISO date-only string (YYYY-MM-DD) as a local Date at midnight
+function parseDateOnly(isoStr){
+    if(!isoStr) return null;
+    // If string contains time component, let Date handle it
+    if(isoStr.indexOf('T') !== -1 || isoStr.indexOf(' ') !== -1) return new Date(isoStr);
+    const m = isoStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(!m) return new Date(isoStr);
+    const y = parseInt(m[1],10);
+    const mo = parseInt(m[2],10) - 1;
+    const d = parseInt(m[3],10);
+    return new Date(y, mo, d);
+}
+
 function initializeTableEnhancements() {
     // Setup search
     const searchInput = document.getElementById('searchInput');
@@ -307,8 +320,8 @@ function sortTable(column) {
         if (column === 0) { // Date column
             const rawA = a.cells[column].getAttribute('data-date');
             const rawB = b.cells[column].getAttribute('data-date');
-            valueA = rawA ? new Date(rawA) : new Date('1900-01-01');
-            valueB = rawB ? new Date(rawB) : new Date('1900-01-01');
+            valueA = rawA ? parseDateOnly(rawA) : new Date('1900-01-01');
+            valueB = rawB ? parseDateOnly(rawB) : new Date('1900-01-01');
         } else if (column === 1 || column === 4) { // Amount columns
             valueA = parseFloat(cellA.replace(/[$,]/g, '')) || 0;
             valueB = parseFloat(cellB.replace(/[$,]/g, '')) || 0;
@@ -371,12 +384,12 @@ function filterTable() {
         if (visible && (dateFrom || dateTo)) {
             const paymentDateCell = row.cells[0].textContent.trim();
             if (paymentDateCell && paymentDateCell !== '-') {
-                const paymentDate = new Date(paymentDateCell);
+                const paymentDate = parseDateOnly(paymentDateCell) || new Date(paymentDateCell);
 
-                if (dateFrom && paymentDate < new Date(dateFrom)) {
+                if (dateFrom && paymentDate < parseDateOnly(dateFrom)) {
                     visible = false;
                 }
-                if (dateTo && paymentDate > new Date(dateTo)) {
+                if (dateTo && paymentDate > parseDateOnly(dateTo)) {
                     visible = false;
                 }
             } else if (dateFrom || dateTo) {
@@ -556,7 +569,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 const list = data.open_charges || [];
                 if (list.length === 0) { container.innerHTML = '<em class="text-muted">No open charges for this provider.</em>'; return; }
                 container.innerHTML = list.map(ch => {
-                    const label = ch.service_date ? new Date(ch.service_date).toLocaleDateString(undefined,{month:'numeric',day:'numeric'}) : '—';
+                    const parsed = ch.service_date ? parseDateOnly(ch.service_date) : null;
+                    const label = parsed ? parsed.toLocaleDateString(undefined,{month:'numeric',day:'numeric'}) : '—';
                     return `<div class="form-check form-check-sm">
                         <input class="form-check-input" type="checkbox" data-charge-id="${ch.id}" id="oc_${ch.id}">
                         <label class="form-check-label" for="oc_${ch.id}"><strong>${label}</strong> ${ch.description || ''} <span class="text-muted">(Rem: $${ch.remaining.toFixed(2)})</span></label>

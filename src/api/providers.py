@@ -1,8 +1,8 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from ..crud.provider import provider_crud
@@ -63,7 +63,7 @@ def create_provider(provider: ProviderCreate, db: Session = Depends(get_db)):
     )
     if existing:
         raise HTTPException(status_code=400, detail="Provider name already exists")
-    return provider_crud.create(db, provider.model_dump())
+    return provider_crud.create(db, provider.model_dump(), user="system")
 
 
 @router.get("/providers/exists")
@@ -115,7 +115,7 @@ def update_provider(
     if db_provider is None:
         raise HTTPException(status_code=404, detail="Provider not found")
     return provider_crud.update(
-        db, db_provider, provider.model_dump(exclude_unset=True)
+        db, db_provider, provider.model_dump(exclude_unset=True), user="system"
     )
 
 
@@ -258,6 +258,45 @@ def merge_provider(provider_id: int, request: dict, db: Session = Depends(get_db
 @router.get("/providers/active/", response_model=List[Provider])
 def read_active_providers(db: Session = Depends(get_db)):
     return provider_crud.get_active_providers(db)
+
+
+@router.get("/providers/search")
+def search_providers(request: Request, db: Session = Depends(get_db)):
+    """Return a compact list of providers matching the query for typeahead usage.
+
+    Reads query params defensively to avoid Pydantic validation errors (which
+    produced 422 responses when clients sent unexpected values).
+
+    Expected query params:
+    - q: optional substring to match provider_name
+    - limit: optional integer limit
+    """
+    q = request.query_params.get("q")
+    limit = request.query_params.get("limit")
+    """Return a compact list of providers matching the query for typeahead usage.
+
+    Returns a JSON array of objects with `id` and `provider_name`.
+    """
+    Model = provider_crud.model
+    # Defensive: try to coerce limit to a sane int to avoid validation errors
+    try:
+        limit_val = int(limit) if limit is not None else 20
+    except Exception:
+        limit_val = 20
+    if limit_val < 1:
+        limit_val = 1
+    if limit_val > 1000:
+        limit_val = 1000
+
+    query = db.query(Model.id, Model.provider_name, Model.provider_group)
+    if q:
+        like = f"%{q.strip()}%"
+        query = query.filter(
+            or_(Model.provider_name.ilike(like), Model.provider_group.ilike(like))
+        )
+    query = query.order_by(Model.provider_name).limit(limit_val)
+    rows = query.all()
+    return [{"id": r[0], "provider_name": r[1], "provider_group": r[2]} for r in rows]
 
 
 @router.get("/provider-groups")

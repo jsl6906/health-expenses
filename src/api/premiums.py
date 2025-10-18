@@ -17,7 +17,7 @@ def create_premium(premium: PremiumCreate, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=400, detail=f"Premium already exists for year {premium.year}"
         )
-    return premium_crud.create(db, premium.model_dump())
+    return premium_crud.create(db, premium.model_dump(), user="system")
 
 
 @router.get("/premiums/", response_model=List[Premium])
@@ -50,7 +50,9 @@ def update_premium(
     db_premium = premium_crud.get(db, premium_id)
     if db_premium is None:
         raise HTTPException(status_code=404, detail="Premium not found")
-    return premium_crud.update(db, db_premium, premium.model_dump(exclude_unset=True))
+    return premium_crud.update(
+        db, db_premium, premium.model_dump(exclude_unset=True), user="system"
+    )
 
 
 @router.delete("/premiums/{premium_id}")

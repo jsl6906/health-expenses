@@ -60,20 +60,58 @@ class ChargeCRUD(BaseCRUD[Charge]):
             obj = db.query(Charge).filter(Charge.id == cid).first()
             if not obj:
                 continue
-            current_notes = (obj.notes or "").strip()
+            current_notes = (getattr(obj, "notes", None) or "").strip()
             # If NO DUP already mentioned, skip
             if "NO DUP" in current_notes.upper():
                 continue
             # Append with a leading space if there are existing notes
             if current_notes:
-                obj.notes = f"{current_notes} NO DUP"
+                new_notes = f"{current_notes} NO DUP"
             else:
-                obj.notes = "NO DUP"
+                new_notes = "NO DUP"
+            # Use setattr to avoid static type-checker complaints about Column attributes
+            setattr(obj, "notes", new_notes)
             updated.append(cid)
 
         if updated:
             db.commit()
             # Optionally refresh objects if needed
+        return updated
+
+    def bulk_update(
+        self, db: Session, charge_ids: List[int], update_data: dict
+    ) -> List[int]:
+        """Update multiple charges with the provided data.
+
+        Only updates fields that are present in update_data.
+        Returns the list of charge IDs that were updated.
+        """
+        updated: List[int] = []
+        for cid in charge_ids:
+            obj = db.query(Charge).filter(Charge.id == cid).first()
+            if not obj:
+                continue
+            for field, value in update_data.items():
+                if not hasattr(obj, field):
+                    continue
+                if field == "notes":
+                    # Append new notes to existing notes rather than overwrite
+                    existing = (getattr(obj, "notes", None) or "").strip()
+                    to_append = (value or "").strip()
+                    if not to_append:
+                        # nothing to append
+                        continue
+                    if existing:
+                        # separate appended notes with a semicolon + space to make them distinct
+                        new_notes = f"{existing}; {to_append}"
+                    else:
+                        new_notes = to_append
+                    setattr(obj, "notes", new_notes)
+                else:
+                    setattr(obj, field, value)
+            updated.append(cid)
+        if updated:
+            db.commit()
         return updated
 
 

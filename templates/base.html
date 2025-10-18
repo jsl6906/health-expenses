@@ -31,7 +31,7 @@
                         <a class="nav-link" href="/providers">Providers</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/charges">Charges</a>
+                        <a class="nav-link charges-with-defaults" href="/charges">Charges</a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="/payments">Payments</a>
@@ -49,6 +49,39 @@
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    // Ensure main Charges links include the default 6-month date range when no explicit range is present.
+    // This keeps the charges page logic simple: the page will only honor URL params and will not set its own defaults.
+    (function() {
+        try {
+            const today = new Date();
+            const to = today.toISOString().slice(0,10);
+            const six = new Date();
+            six.setMonth(six.getMonth() - 6);
+            const from = six.toISOString().slice(0,10);
+
+            const anchors = document.querySelectorAll('a.charges-with-defaults');
+            anchors.forEach(a => {
+                try {
+                    // Build a URL using the page origin so searchParams works for relative paths
+                    const url = new URL(a.getAttribute('href'), window.location.origin);
+                    // Only add defaults if neither from nor to present
+                    if (!url.searchParams.has('from') && !url.searchParams.has('to')) {
+                        url.searchParams.set('from', from);
+                        url.searchParams.set('to', to);
+                        // Preserve only path + query (relative)
+                        a.href = url.pathname + url.search;
+                    }
+                } catch (e) {
+                    // ignore malformed hrefs
+                }
+            });
+        } catch (e) {
+            // non-fatal
+            console && console.error && console.error('charges default link setup failed', e);
+        }
+    })();
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

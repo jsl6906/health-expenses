@@ -26,6 +26,7 @@ async def bulk_create_charges(
     medical_type: str = Form(...),
     provider_id: int = Form(...),
     doctor_name: str | None = Form(None),
+    diagnosis_code: str | None = Form(None),
     eob_claim_num: str | None = Form(None),
     rows_json: str = Form(...),
     attachment: UploadFile | None = File(None),
@@ -89,6 +90,9 @@ async def bulk_create_charges(
                 if not any(amt_fields):
                     continue
             cpt_code = r.get("cpt_code") or r.get("cpt") or None
+            # Row-level diagnosis takes precedence; otherwise use batch-level diagnosis_code
+            diagnosis_code = r.get("diagnosis_code") or diagnosis_code or None
+            claim_submitted_date = r.get("claim_submitted_date") or None
             charge_in = {
                 "service_date": svc_date_obj.isoformat() if svc_date_obj else None,
                 "family_member": family_member,
@@ -97,6 +101,8 @@ async def bulk_create_charges(
                 "doctor_name": doctor_name,
                 "eob_claim_num": eob_claim_num,
                 "cpt_code": cpt_code,
+                "diagnosis_code": diagnosis_code,
+                "claim_submitted_date": claim_submitted_date,
                 "charge_description": desc,
                 "charged_amount": _num(r.get("charged_amount")),
                 "owed_amount": _num(r.get("owed_amount")),
@@ -107,7 +113,7 @@ async def bulk_create_charges(
                 "notes": None,
             }
             try:
-                created = charge_crud.create(db, charge_in)
+                created = charge_crud.create(db, charge_in, user="system")
                 db.flush()
                 cid = int(getattr(created, "id"))
                 created_ids.append(cid)
@@ -136,17 +142,35 @@ async def bulk_create_charges(
 
     attached_id = None
     if attachment and highest_charge_id is not None:
+        # Defensive read: ensure we catch any errors reading the uploaded file
+        # and return a clear error to the client instead of letting the connection
+        # be dropped which manifests as a "Failed to fetch" in the browser.
+        logger = logging.getLogger(__name__)
         try:
             file_bytes = await attachment.read()
-            from schemas.schemas import (
-                AttachmentCreate as _AttachmentCreate,  # type: ignore
+        except Exception as read_exc:
+            logger.exception(
+                "Error reading uploaded attachment '%s' (content_type=%s): %s",
+                getattr(attachment, "filename", None),
+                getattr(attachment, "content_type", None),
+                read_exc,
+            )
+            # Return a JSON error so the client receives a proper response
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to read uploaded file: {read_exc}",
             )
 
-            att_in = _AttachmentCreate(
-                charge_id=highest_charge_id,
-                payment_id=None,
-                notes="Attachment for batch (highest charge)",
-            )
+        from schemas.schemas import (
+            AttachmentCreate as _AttachmentCreate,  # type: ignore
+        )
+
+        att_in = _AttachmentCreate(
+            charge_id=highest_charge_id,
+            payment_id=None,
+            notes="Attachment for batch (highest charge)",
+        )
+        try:
             create_attachment(
                 db,
                 data=att_in,
@@ -154,11 +178,21 @@ async def bulk_create_charges(
                 content_type=attachment.content_type or "application/octet-stream",
                 file_size=len(file_bytes),
                 content_bytes=file_bytes,
+                user="system",
             )
             db.commit()
             attached_id = highest_charge_id
-        except Exception:
-            pass
+        except Exception as create_exc:
+            # Log details so we can inspect failures creating attachment records
+            logger.exception(
+                "Failed to store attachment for '%s' (content_type=%s): %s",
+                getattr(attachment, "filename", None),
+                getattr(attachment, "content_type", None),
+                create_exc,
+            )
+            # Do not fail the entire bulk create; return success for created rows but
+            # indicate attachment was not applied by leaving attached_id as None.
+            attached_id = None
 
     return {
         "created_count": len(created_ids),
@@ -181,7 +215,7 @@ def create_charge(charge: ChargeCreate, db: Session = Depends(get_db)):
             data["cpt_code"] = None
         else:
             data["cpt_code"] = cpt_norm
-    return charge_crud.create(db, data)
+    return charge_crud.create(db, data, user="system")
 
 
 @router.get("/charges/", response_model=List[Charge])
@@ -215,7 +249,7 @@ def update_charge(charge_id: int, charge: ChargeUpdate, db: Session = Depends(ge
             data["cpt_code"] = None
         else:
             data["cpt_code"] = cpt_norm
-    return charge_crud.update(db, db_charge, data)
+    return charge_crud.update(db, db_charge, data, user="system")
 
 
 @router.delete("/charges/{charge_id}")
@@ -224,8 +258,8 @@ def delete_charge(charge_id: int, db: Session = Depends(get_db)):
         from models.database import Attachment as _AttachmentModel  # type: ignore
         from models.database import ChargePaymentXref as _Xref
     except ImportError:
-        from .models.database import Attachment as _AttachmentModel  # type: ignore
-        from .models.database import ChargePaymentXref as _Xref
+        from ..models.database import Attachment as _AttachmentModel  # type: ignore
+        from ..models.database import ChargePaymentXref as _Xref
     ch_obj = charge_crud.get(db, charge_id)
     if ch_obj is None:
         raise HTTPException(status_code=404, detail="Charge not found")
@@ -276,8 +310,8 @@ def apply_payment_to_charge(
         from models.database import Charge as ChargeModel  # type: ignore
         from models.database import ChargePaymentXref as XrefModel
     except ImportError:
-        from .models.database import Charge as ChargeModel  # type: ignore
-        from .models.database import ChargePaymentXref as XrefModel
+        from ..models.database import Charge as ChargeModel  # type: ignore
+        from ..models.database import ChargePaymentXref as XrefModel
     charge_obj = db.query(ChargeModel).filter(ChargeModel.id == charge_id).first()
     if not charge_obj:
         raise HTTPException(status_code=404, detail="Charge not found")
@@ -323,7 +357,18 @@ def apply_payment_to_charge(
         .first()
     )
     if not existing:
-        db.add(XrefModel(charge_id=charge_id, payment_id=payment_obj.id))
+        from sqlalchemy import func
+
+        db.add(
+            XrefModel(
+                charge_id=charge_id,
+                payment_id=payment_obj.id,
+                created_at=func.now(),
+                updated_at=func.now(),
+                created_by="system",
+                updated_by="system",
+            )
+        )
     db.commit()
     from sqlalchemy import func as _func
 
@@ -371,8 +416,8 @@ def merge_charge(
         from models.database import Charge as ChargeModel  # type: ignore
         from models.database import ChargePaymentXref as XrefModel
     except ImportError:
-        from .models.database import Charge as ChargeModel  # type: ignore
-        from .models.database import ChargePaymentXref as XrefModel
+        from ..models.database import Charge as ChargeModel  # type: ignore
+        from ..models.database import ChargePaymentXref as XrefModel
 
     # Validate source charge exists
     source_charge = db.query(ChargeModel).filter(ChargeModel.id == charge_id).first()
@@ -407,8 +452,15 @@ def merge_charge(
 
         if not existing_link:
             # Create new link to target charge
+            from sqlalchemy import func
+
             new_xref = XrefModel(
-                charge_id=payload.target_charge_id, payment_id=xref.payment_id
+                charge_id=payload.target_charge_id,
+                payment_id=xref.payment_id,
+                created_at=func.now(),
+                updated_at=func.now(),
+                created_by="system",
+                updated_by="system",
             )
             db.add(new_xref)
             moved_payments.append(xref.payment_id)
@@ -428,8 +480,8 @@ def merge_charge(
     moved_attachments = []
 
     for attachment in attachments:
-        attachment.charge_id = payload.target_charge_id
-        moved_attachments.append(attachment.id)
+        setattr(attachment, "charge_id", payload.target_charge_id)
+        moved_attachments.append(getattr(attachment, "id", None))
 
     # Delete the source charge
     db.delete(source_charge)
@@ -455,8 +507,8 @@ def get_merge_comparison(
         from models.database import Charge as ChargeModel  # type: ignore
         from models.database import Provider as ProviderModel
     except ImportError:
-        from .models.database import Charge as ChargeModel  # type: ignore
-        from .models.database import Provider as ProviderModel
+        from ..models.database import Charge as ChargeModel  # type: ignore
+        from ..models.database import Provider as ProviderModel
 
     if len(payload.charge_ids) != 2:
         raise HTTPException(
@@ -469,35 +521,51 @@ def get_merge_comparison(
         if not charge:
             raise HTTPException(status_code=404, detail=f"Charge {charge_id} not found")
 
-        # Get provider info
+        # Get provider info safely
         provider = None
-        if charge.provider_id:
+        provider_id_val = getattr(charge, "provider_id", None)
+        if provider_id_val is not None:
             provider = (
                 db.query(ProviderModel)
-                .filter(ProviderModel.id == charge.provider_id)
+                .filter(ProviderModel.id == provider_id_val)
                 .first()
             )
 
+        # Safely extract values from SQLAlchemy objects to avoid static analysis issues
+        svc = getattr(charge, "service_date", None)
+        claim_sub = getattr(charge, "claim_submitted_date", None)
+
+        def _to_float_attr(obj, attr):
+            v = getattr(obj, attr, None)
+            try:
+                return float(v) if v is not None else 0.0
+            except Exception:
+                return 0.0
+
         charge_data = {
-            "id": charge.id,
-            "service_date": charge.service_date.isoformat()
-            if charge.service_date
-            else None,
-            "family_member": charge.family_member,
-            "medical_type": charge.medical_type,
-            "provider_id": charge.provider_id,
+            "id": getattr(charge, "id", None),
+            "service_date": svc.isoformat() if svc is not None else None,
+            "family_member": getattr(charge, "family_member", None),
+            "medical_type": getattr(charge, "medical_type", None),
+            "provider_id": provider_id_val,
             "provider_name": provider.provider_name if provider else None,
-            "doctor_name": charge.doctor_name,
-            "charge_description": charge.charge_description,
-            "cpt_code": charge.cpt_code,
-            "base_fee_amount": float(charge.base_fee_amount or 0),
-            "charged_amount": float(charge.charged_amount or 0),
-            "owed_amount": float(charge.owed_amount or 0),
-            "reimbursement_amount": float(charge.reimbursement_amount or 0),
-            "eob_claim_num": charge.eob_claim_num,
-            "insurance_discount_amount": float(charge.insurance_discount_amount or 0),
-            "insurance_paid_amount": float(charge.insurance_paid_amount or 0),
-            "notes": charge.notes,
+            "doctor_name": getattr(charge, "doctor_name", None),
+            "charge_description": getattr(charge, "charge_description", None),
+            "cpt_code": getattr(charge, "cpt_code", None),
+            "diagnosis_code": getattr(charge, "diagnosis_code", None),
+            "claim_submitted_date": claim_sub.isoformat()
+            if claim_sub is not None
+            else None,
+            "base_fee_amount": _to_float_attr(charge, "base_fee_amount"),
+            "charged_amount": _to_float_attr(charge, "charged_amount"),
+            "owed_amount": _to_float_attr(charge, "owed_amount"),
+            "reimbursement_amount": _to_float_attr(charge, "reimbursement_amount"),
+            "eob_claim_num": getattr(charge, "eob_claim_num", None),
+            "insurance_discount_amount": _to_float_attr(
+                charge, "insurance_discount_amount"
+            ),
+            "insurance_paid_amount": _to_float_attr(charge, "insurance_paid_amount"),
+            "notes": getattr(charge, "notes", None),
         }
         charges.append(charge_data)
 
@@ -514,9 +582,9 @@ def merge_charges_with_fields(
         from models.database import Charge as ChargeModel  # type: ignore
         from models.database import ChargePaymentXref as XrefModel
     except ImportError:
-        from .models.database import Attachment as AttachmentModel
-        from .models.database import Charge as ChargeModel  # type: ignore
-        from .models.database import ChargePaymentXref as XrefModel
+        from ..models.database import Attachment as AttachmentModel
+        from ..models.database import Charge as ChargeModel  # type: ignore
+        from ..models.database import ChargePaymentXref as XrefModel
 
     source_charge = (
         db.query(ChargeModel).filter(ChargeModel.id == payload.source_charge_id).first()
@@ -538,7 +606,9 @@ def merge_charges_with_fields(
             if field == "service_date" and value:
                 from datetime import datetime
 
-                target_charge.service_date = datetime.fromisoformat(value).date()
+                setattr(
+                    target_charge, "service_date", datetime.fromisoformat(value).date()
+                )
             elif field in [
                 "base_fee_amount",
                 "charged_amount",
@@ -574,8 +644,15 @@ def merge_charges_with_fields(
         )
 
         if not existing_link:
+            from sqlalchemy import func
+
             new_xref = XrefModel(
-                charge_id=payload.target_charge_id, payment_id=xref.payment_id
+                charge_id=payload.target_charge_id,
+                payment_id=xref.payment_id,
+                created_at=func.now(),
+                updated_at=func.now(),
+                created_by="system",
+                updated_by="system",
             )
             db.add(new_xref)
             moved_payments.append(xref.payment_id)
@@ -591,8 +668,8 @@ def merge_charges_with_fields(
     moved_attachments = []
 
     for attachment in attachments:
-        attachment.charge_id = payload.target_charge_id
-        moved_attachments.append(attachment.id)
+        setattr(attachment, "charge_id", payload.target_charge_id)
+        moved_attachments.append(getattr(attachment, "id", None))
 
     # Delete the source charge
     db.delete(source_charge)
@@ -621,4 +698,61 @@ def mark_charges_no_dup(payload: MarkNoDupRequest, db: Session = Depends(get_db)
     if not payload.charge_ids:
         raise HTTPException(status_code=400, detail="No charge_ids provided")
     updated = charge_crud.mark_as_no_dup(db, payload.charge_ids)
+    return {"updated_ids": updated, "requested": payload.charge_ids}
+
+
+class BulkUpdateRequest(BaseModel):
+    charge_ids: List[int]
+    update_data: dict
+
+
+@router.post("/charges/bulk-update")
+def bulk_update_charges(payload: BulkUpdateRequest, db: Session = Depends(get_db)):
+    """Update multiple charges with the provided data.
+
+    Only updates fields that are present in update_data.
+    Returns the list of charge IDs that were updated.
+    """
+    if not payload.charge_ids:
+        raise HTTPException(status_code=400, detail="No charge_ids provided")
+    if not payload.update_data:
+        raise HTTPException(status_code=400, detail="No update_data provided")
+    # Normalize/validate certain incoming fields before applying
+    upd = dict(payload.update_data)
+    # CPT code normalization: trim and reject empty-like markers
+    if "cpt_code" in upd:
+        c = upd.get("cpt_code")
+        if c is None:
+            upd.pop("cpt_code", None)
+        else:
+            c_norm = str(c).strip()
+            if not c_norm or c_norm.lower() in {"???", "na", "n/a"}:
+                upd.pop("cpt_code", None)
+            else:
+                upd["cpt_code"] = c_norm
+
+    # Diagnosis code - trim whitespace
+    if "diagnosis_code" in upd:
+        d = upd.get("diagnosis_code")
+        if d is None or str(d).strip() == "":
+            upd.pop("diagnosis_code", None)
+        else:
+            upd["diagnosis_code"] = str(d).strip()
+
+    # Claim submitted date: accept YYYY-MM-DD strings and coerce to ISO date string
+    if "claim_submitted_date" in upd:
+        cs = upd.get("claim_submitted_date")
+        if not cs:
+            upd.pop("claim_submitted_date", None)
+        else:
+            try:
+                dt = datetime.fromisoformat(str(cs))
+                upd["claim_submitted_date"] = dt.date().isoformat()
+            except Exception:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid claim_submitted_date format; use YYYY-MM-DD",
+                )
+
+    updated = charge_crud.bulk_update(db, payload.charge_ids, upd)
     return {"updated_ids": updated, "requested": payload.charge_ids}

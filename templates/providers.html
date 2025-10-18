@@ -158,6 +158,18 @@
                         <textarea class="form-control" id="provider_address" name="provider_address" rows="3"></textarea>
                     </div>
                     <div class="mb-3">
+                        <label for="phone_num" class="form-label">Phone Number</label>
+                        <input type="text" class="form-control" id="phone_num" name="phone_num">
+                    </div>
+                    <div class="mb-3">
+                        <label for="npi_number" class="form-label">NPI Number</label>
+                        <input type="text" class="form-control" id="npi_number" name="npi_number">
+                    </div>
+                    <div class="mb-3">
+                        <label for="tax_id" class="form-label">Tax ID</label>
+                        <input type="text" class="form-control" id="tax_id" name="tax_id">
+                    </div>
+                    <div class="mb-3">
                         <label for="one_way_miles" class="form-label">One-way Distance (miles)</label>
                         <input type="number" step="0.1" class="form-control" id="one_way_miles" name="one_way_miles">
                     </div>
@@ -700,6 +712,9 @@ function setupFormSubmission() {
             provider_name: formData.get('provider_name'),
             provider_group: formData.get('provider_group') || null,
             provider_address: formData.get('provider_address') || null,
+            phone_num: formData.get('phone_num') || null,
+            npi_number: formData.get('npi_number') || null,
+            tax_id: formData.get('tax_id') || null,
             one_way_miles: formData.get('one_way_miles') ? parseFloat(formData.get('one_way_miles')) : null,
             active_provider_flag: formData.get('active_provider_flag') === 'on'
         };

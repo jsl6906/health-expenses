@@ -41,11 +41,15 @@
       </div>
 
       <!-- Second row: Provider and Doctor (optional) -->
-      <div class="col-md-4">
-        <label for="providerSelect" class="form-label small mb-1">Provider</label>
-        <select id="providerSelect" class="form-select form-select-sm">
+      <div class="col-md-4 position-relative">
+        <label for="providerSearchInputEOB" class="form-label small mb-1">Provider</label>
+        <!-- Hidden select retained for programmatic sync -->
+        <select id="providerSelect" class="form-select form-select-sm" style="display:none;" aria-hidden="true" tabindex="-1">
           <option value="">(Select a provider)</option>
         </select>
+        <input id="providerSearchInputEOB" type="text" class="form-control form-control-sm" placeholder="Type to search providers" autocomplete="off">
+        <input type="hidden" id="providerIdInputEOB" name="provider_id">
+        <div id="providerSuggestionsEOB" class="list-group position-absolute" style="z-index:1050; width:100%; display:none; max-height:220px; overflow:auto;"></div>
       </div>
       <div class="col-md-4">
         <label for="eobNumber" class="form-label small mb-1">EOB # (optional)</label>
@@ -54,6 +58,10 @@
       <div class="col-md-4">
         <label for="doctorName" class="form-label small mb-1">Doctor (optional)</label>
         <input id="doctorName" name="doctor_name" class="form-control form-control-sm" placeholder="(Optional) Doctor name to apply to all rows" />
+      </div>
+      <div class="col-md-4">
+        <label for="diagnosisCode" class="form-label small mb-1">Diagnosis Code (optional)</label>
+        <input id="diagnosisCode" name="diagnosis_code" class="form-control form-control-sm" placeholder="e.g. M54.5" />
       </div>
     </form>
     <div class="small text-muted mt-2">Upload a single EOB to parse.</div>
@@ -130,18 +138,39 @@ let nextRowIndex = 0;
 async function fetchProviders() {
   try {
     const resp = await fetch('/api/providers/?limit=1000');
-    if (!resp.ok) return;
-    const data = await resp.json();
+    if (!resp.ok) {
+      console.warn('fetchProviders: non-ok response', resp.status);
+      return;
+    }
+    let data = await resp.json();
+    // Normalize response: some endpoints may return { providers: [...] } or an array
+    if (!Array.isArray(data)) {
+      if (data && Array.isArray(data.providers)) {
+        data = data.providers;
+      } else if (data && Array.isArray(data.items)) {
+        data = data.items;
+      } else {
+        console.warn('fetchProviders: unexpected response shape', data);
+        return;
+      }
+    }
     const sel = document.getElementById('providerSelect');
+    if (!sel) return;
+    // Clear existing options and cache, then add a default placeholder
+    sel.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '(Select a provider)';
+    sel.appendChild(placeholder);
+    providersCache.length = 0;
     // sort alphabetically by provider_name then populate
-    data.sort((a,b) => (a.provider_name||'').toLowerCase().localeCompare((b.provider_name||'').toLowerCase()));
+    data.sort((a,b) => (a && a.provider_name||'').toLowerCase().localeCompare((b && b.provider_name||'').toLowerCase()));
     data.forEach(p => {
-      // populate select
+      if (!p) return;
       const opt = document.createElement('option');
       opt.value = p.id;
-      opt.textContent = p.provider_name;
+      opt.textContent = p.provider_name || p.name || String(p.id || '');
       sel.appendChild(opt);
-      // cache for later lookup
       providersCache.push(p);
     });
   } catch { /* ignore */ }
@@ -232,6 +261,11 @@ async function loadSession() {
         const dn = document.getElementById('doctorName');
         if (dn) dn.value = data.doctor_name;
         metaParts.push(`Doctor: ${data.doctor_name}`);
+      }
+      if (data.diagnosis_code) {
+        const diag = document.getElementById('diagnosisCode');
+        if (diag) diag.value = data.diagnosis_code;
+        metaParts.push(`Diagnosis: ${data.diagnosis_code}`);
       }
       if (data.eob_number) {
         const en = document.getElementById('eobNumber');
@@ -433,6 +467,32 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('importSelectedBtn').addEventListener('click', (e) => { e.preventDefault(); importSelected(); });
   document.getElementById('resetSessionBtn').addEventListener('click', (e) => { e.preventDefault(); resetUI(); });
+  // Provider typeahead on EOB page
+  (function initProviderTypeaheadEob(){
+    const input = document.getElementById('providerSearchInputEOB');
+    const idInput = document.getElementById('providerIdInputEOB');
+    const suggestionsEl = document.getElementById('providerSuggestionsEOB');
+    const hiddenSelect = document.getElementById('providerSelect');
+    if(!input || !idInput || !suggestionsEl) return;
+
+    let providerResults = [];
+    let debounce;
+    function clearSuggestions(){ suggestionsEl.innerHTML=''; suggestionsEl.style.display='none'; }
+    function renderSuggestions(items){ providerResults = items||[]; if(!providerResults.length){ clearSuggestions(); return; } suggestionsEl.innerHTML = providerResults.map(p => `<button type="button" class="list-group-item list-group-item-action" data-id="${p.id}">${p.provider_name}${p.provider_group ? ' • ' + p.provider_group : ''}</button>`).join(''); suggestionsEl.style.display='block'; }
+    async function fetchProvidersRemote(q){ try{ const resp = await fetch('/api/providers/search?q=' + encodeURIComponent(q)); if(!resp.ok) return []; const items = await resp.json(); return Array.isArray(items) ? items : []; }catch(e){ return []; } }
+
+    input.addEventListener('input', (e) => {
+      const v = e.target.value.trim(); idInput.value=''; if(debounce) clearTimeout(debounce); if(!v){ clearSuggestions(); return; }
+      const q = v.toLowerCase();
+      const localMatches = providersCache.filter(p => { const name=(p.provider_name||'').toLowerCase(); const group=(p.provider_group||'').toLowerCase(); return name.includes(q) || group.includes(q); });
+      if(localMatches.length){ renderSuggestions(localMatches); } else { clearSuggestions(); }
+      debounce = setTimeout(async () => { const remote = await fetchProvidersRemote(v); if(remote && remote.length){ const merged=[]; const seen=new Set(); (localMatches.concat(remote)).forEach(p=>{ if(!p||!p.id) return; if(seen.has(String(p.id))) return; seen.add(String(p.id)); merged.push(p); }); renderSuggestions(merged); } else if(!localMatches.length){ renderSuggestions([]); } }, 200);
+    });
+
+    suggestionsEl.addEventListener('click', (ev)=>{ const btn = ev.target.closest('button[data-id]'); if(!btn) return; const id=btn.getAttribute('data-id'); const name = btn.textContent || btn.innerText; input.value = name; idInput.value = id; if(hiddenSelect){ try{ hiddenSelect.value = String(id); }catch(e){} } clearSuggestions(); });
+    document.addEventListener('click', (ev)=>{ if(ev.target===input) return; if(ev.target.closest && ev.target.closest('#providerSuggestionsEOB')) return; clearSuggestions(); });
+    input.addEventListener('blur', ()=>{ setTimeout(()=>{ if(idInput.value) return; const typed = input.value.trim().toLowerCase(); if(!typed) return; const match = providerResults.find(p => (p.provider_name||'').toLowerCase() === typed); if(match) idInput.value = String(match.id); }, 150); });
+  })();
 });
 </script>
 {% endblock %}

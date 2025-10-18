@@ -35,6 +35,8 @@
           <dt class="col-5">Provider</dt><dd class="col-7">{% if provider %}<a href="/providers/{{ provider.id }}">{{ provider.provider_name }}</a>{% else %}-{% endif %}</dd>
           <dt class="col-5">Doctor</dt><dd class="col-7">{{ charge.doctor_name or '-' }}</dd>
           <dt class="col-5">Description</dt><dd class="col-7">{% if charge.cpt_code and charge.cpt_code.lower() not in ['???','na','n/a'] %}<span class="text-muted">({{ charge.cpt_code }})</span> {% endif %}{{ charge.charge_description or '-' }}</dd>
+          <dt class="col-5">Diagnosis Code</dt><dd class="col-7">{{ charge.diagnosis_code or '-' }}</dd>
+          <dt class="col-5">Claim Submitted Date</dt><dd class="col-7">{{ charge.claim_submitted_date.strftime('%#m/%#d/%y') if charge.claim_submitted_date else '-' }}</dd>
           <dt class="col-5">Base Fee</dt><dd class="col-7">{{ charge.base_fee_amount | currency }}</dd>
           <dt class="col-5">Charged</dt><dd class="col-7">{{ charge.charged_amount | currency }}</dd>
           <dt class="col-5">Insurance Paid</dt><dd class="col-7">{{ charge.insurance_paid_amount | currency }}</dd>
@@ -46,6 +48,8 @@
           <dt class="col-5">EOB / Claim #</dt><dd class="col-7">{{ charge.eob_claim_num or '-' }}</dd>
           <dt class="col-5">Ignore Flag</dt><dd class="col-7">{% if charge.ignore_for_issue_spotting %}<span class="badge bg-warning text-dark">Yes</span>{% else %}-{% endif %}</dd>
           <dt class="col-5">Notes</dt><dd class="col-7">{{ charge.notes or '-' }}</dd>
+          <dt class="col-5">Created</dt><dd class="col-7">{{ charge.created_at | format_datetime_est }} {% if charge.created_by %}by {{ charge.created_by }}{% endif %}</dd>
+          <dt class="col-5">Updated</dt><dd class="col-7">{{ charge.updated_at | format_datetime_est }} {% if charge.updated_by %}by {{ charge.updated_by }}{% endif %}</dd>
         </dl>
       </div>
     </div>
@@ -123,6 +127,18 @@
 <script>
 function applyStriping(tableId){const t=document.getElementById(tableId);if(!t)return;const rows=[...t.querySelectorAll('tbody tr')].filter(r=>r.style.display!=='none');rows.forEach(r=>r.classList.remove('table-alt'));rows.forEach((r,i)=>{if(i%2===1)r.classList.add('table-alt');});}
 applyStriping('paymentsTable');
+
+// Helper: parse an ISO date-only string (YYYY-MM-DD) as a local Date at midnight
+function parseDateOnly(isoStr){
+  if(!isoStr) return null;
+  if(isoStr.indexOf('T') !== -1 || isoStr.indexOf(' ') !== -1) return new Date(isoStr);
+  const m = isoStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return new Date(isoStr);
+  const y = parseInt(m[1],10);
+  const mo = parseInt(m[2],10) - 1;
+  const d = parseInt(m[3],10);
+  return new Date(y, mo, d);
+}
 
 // Add Payment Modal logic (create + link in one call)
 window.addEventListener('DOMContentLoaded',()=>{
@@ -315,14 +331,17 @@ window.addEventListener('DOMContentLoaded',()=>{
         if (!a.service_date && !b.service_date) return 0;
         if (!a.service_date) return 1;
         if (!b.service_date) return -1;
-        return new Date(b.service_date) - new Date(a.service_date);
+        const da = parseDateOnly(a.service_date) || new Date(a.service_date);
+        const db = parseDateOnly(b.service_date) || new Date(b.service_date);
+        return db - da;
       });
 
       charges.forEach(c => {
         const option = document.createElement('option');
         option.value = c.id;
 
-        const serviceDate = c.service_date ? new Date(c.service_date).toLocaleDateString() : 'No date';
+  const sd = c.service_date ? parseDateOnly(c.service_date) : null;
+  const serviceDate = sd ? sd.toLocaleDateString() : 'No date';
         const description = c.charge_description || 'No description';
         const cptCode = c.cpt_code ? `(${c.cpt_code})` : '';
         const providerName = c.provider_name || 'No provider';
@@ -475,6 +494,8 @@ window.addEventListener('DOMContentLoaded',()=>{
         { key: 'doctor_name', label: 'Doctor Name', type: 'text' },
         { key: 'charge_description', label: 'Description', type: 'text' },
         { key: 'cpt_code', label: 'CPT Code', type: 'text' },
+        { key: 'diagnosis_code', label: 'Diagnosis Code', type: 'text' },
+        { key: 'claim_submitted_date', label: 'Claim Submitted Date', type: 'date' },
         { key: 'charged_amount', label: 'Charged Amount', type: 'number' },
         { key: 'owed_amount', label: 'Owed Amount', type: 'number' },
         { key: 'base_fee_amount', label: 'Base Fee', type: 'number' },
@@ -762,7 +783,15 @@ function highlightMergeDifferencesOnDetail() {
               <label class="form-label">CPT Code</label>
               <input type="text" name="cpt_code" class="form-control" value="{{ charge.cpt_code or '' }}">
             </div>
-            <div class="col-md-9 mb-2">
+            <div class="col-md-3 mb-2">
+              <label class="form-label">Diagnosis Code</label>
+              <input type="text" name="diagnosis_code" class="form-control" value="{{ charge.diagnosis_code or '' }}">
+            </div>
+            <div class="col-md-3 mb-2">
+              <label class="form-label">Claim Submitted Date</label>
+              <input type="date" name="claim_submitted_date" class="form-control" value="{{ charge.claim_submitted_date }}">
+            </div>
+            <div class="col-md-3 mb-2">
               <label class="form-label">Description *</label>
               <input type="text" name="charge_description" class="form-control" value="{{ charge.charge_description or '' }}" required>
             </div>

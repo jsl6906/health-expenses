@@ -1487,6 +1487,12 @@ async def eob_upload(request: Request, file: UploadFile = File(...)):
             session.doctor_name = dn
         except Exception:
             pass
+    diag = _get_text("diagnosis_code")
+    if diag:
+        try:
+            session.diagnosis_code = diag
+        except Exception:
+            pass
     en = _get_text("eob_number") or _get_text("eob_number")
     if en:
         try:
@@ -1520,6 +1526,7 @@ class EOBImportRequest(BaseModel):
     provider_id: int | None = None
     overrides: list[dict] | None = None
     medical_type: str | None = None
+    diagnosis_code: str | None = None
 
 
 class EOBImportResult(BaseModel):
@@ -1657,6 +1664,12 @@ def eob_import(
                     "eob_claim_num", getattr(r, "eob_claim_num", None)
                 )
                 or batch_eob_num,
+                # diagnosis_code: prefer explicit override, then session-level, then parsed row
+                "diagnosis_code": ov.get(
+                    "diagnosis_code", getattr(r, "diagnosis_code", None)
+                )
+                or getattr(session, "diagnosis_code", None)
+                or payload.diagnosis_code,
                 "notes": None,
             }
             if highest_row is not None and r.index != highest_row:

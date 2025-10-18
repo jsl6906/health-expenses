@@ -16,7 +16,7 @@ def create_payment(payment: PaymentCreate, db: Session = Depends(get_db)):
     data = payment.model_dump()
     if data.get("expense_type") and hasattr(data["expense_type"], "value"):
         data["expense_type"] = data["expense_type"].value
-    return payment_crud.create(db, data)
+    return payment_crud.create(db, data, user="system")
 
 
 @router.get("/payments/", response_model=List[Payment])
@@ -44,7 +44,7 @@ def update_payment(
     data = payment.model_dump(exclude_unset=True)
     if data.get("expense_type") and hasattr(data["expense_type"], "value"):
         data["expense_type"] = data["expense_type"].value
-    return payment_crud.update(db, db_payment, data)
+    return payment_crud.update(db, db_payment, data, user="system")
 
 
 @router.delete("/payments/{payment_id}")
@@ -105,7 +105,7 @@ def create_payment_with_charges(
         "reimbursement_amount": payload.reimbursement_amount,
         "notes": payload.notes,
     }
-    payment_obj = payment_crud.create(db, payment_data)
+    payment_obj = payment_crud.create(db, payment_data, user="system")
     if payload.charge_ids:
         existing_charges = {
             c.id

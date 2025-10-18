@@ -21,10 +21,15 @@
           <dt class="col-5">Name</dt><dd class="col-7">{{ provider.provider_name }}</dd>
           <dt class="col-5">Group</dt><dd class="col-7">{{ provider.provider_group or '-' }}</dd>
           <dt class="col-5">Address</dt><dd class="col-7">{{ provider.provider_address or '-' }}</dd>
+          <dt class="col-5">Phone Number</dt><dd class="col-7">{{ provider.phone_num or '-' }}</dd>
+          <dt class="col-5">NPI Number</dt><dd class="col-7">{{ provider.npi_number or '-' }}</dd>
+          <dt class="col-5">Tax ID</dt><dd class="col-7">{{ provider.tax_id or '-' }}</dd>
           <dt class="col-5">One Way Miles</dt><dd class="col-7">{{ provider.one_way_miles or '-' }}</dd>
           <dt class="col-5">Last Charge</dt><dd class="col-7">{{ provider.last_charge_date.strftime('%m/%d/%Y') if provider.last_charge_date else '-' }}</dd>
           <dt class="col-5">Last Payment</dt><dd class="col-7">{{ provider.last_payment_date.strftime('%m/%d/%Y') if provider.last_payment_date else '-' }}</dd>
           <dt class="col-5">Active</dt><dd class="col-7">{% if provider.active_provider_flag %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</dd>
+          <dt class="col-5">Created</dt><dd class="col-7">{{ provider.created_at | format_datetime_est }} {% if provider.created_by %}by {{ provider.created_by }}{% endif %}</dd>
+          <dt class="col-5">Updated</dt><dd class="col-7">{{ provider.updated_at | format_datetime_est }} {% if provider.updated_by %}by {{ provider.updated_by }}{% endif %}</dd>
         </dl>
       </div>
     </div>
@@ -202,6 +207,18 @@ function applyStriping(tableId) {
 }
 ['chargesTable','paymentsTable'].forEach(applyStriping);
 
+// Helper: parse an ISO date-only string (YYYY-MM-DD) as a local Date at midnight
+function parseDateOnly(isoStr){
+    if(!isoStr) return null;
+    if(isoStr.indexOf('T') !== -1 || isoStr.indexOf(' ') !== -1) return new Date(isoStr);
+    const m = isoStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(!m) return new Date(isoStr);
+    const y = parseInt(m[1],10);
+    const mo = parseInt(m[2],10) - 1;
+    const d = parseInt(m[3],10);
+    return new Date(y, mo, d);
+}
+
 // Provider-scoped Add Charge modal submission
 document.addEventListener('DOMContentLoaded', () => {
   const providerMetaEl = document.getElementById('providerDetailMeta');
@@ -272,7 +289,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const list = data.open_charges || [];
         if (list.length === 0) { openChargesBox.innerHTML = '<em class="text-muted">No open charges.</em>'; return; }
         openChargesBox.innerHTML = list.map(ch => {
-          const label = ch.service_date ? new Date(ch.service_date).toLocaleDateString(undefined,{month:'numeric',day:'numeric'}) : '—';
+          const parsed = ch.service_date ? parseDateOnly(ch.service_date) : null;
+          const label = parsed ? parsed.toLocaleDateString(undefined,{month:'numeric',day:'numeric'}) : '—';
           return `<div class="form-check form-check-sm">\n  <input class="form-check-input" type="checkbox" data-charge-id="${ch.id}" id="poc_${ch.id}">\n  <label class="form-check-label" for="poc_${ch.id}"><strong>${label}</strong> ${ch.description || ''} <span class="text-muted">(Rem: $${ch.remaining.toFixed(2)})</span></label>\n</div>`;
         }).join('');
       } catch(ex) { openChargesBox.innerHTML = '<span class="text-danger">Error loading charges.</span>'; }
@@ -581,6 +599,9 @@ console.log('Merge provider functionality setup complete');
           <div class="mb-2"><label class="form-label">Name *</label><input type="text" name="provider_name" class="form-control" value="{{ provider.provider_name }}" required></div>
           <div class="mb-2"><label class="form-label">Group</label><input type="text" name="provider_group" class="form-control" value="{{ provider.provider_group or '' }}"></div>
           <div class="mb-2"><label class="form-label">Address</label><textarea name="provider_address" rows="2" class="form-control">{{ provider.provider_address or '' }}</textarea></div>
+          <div class="mb-2"><label class="form-label">Phone Number</label><input type="text" name="phone_num" class="form-control" value="{{ provider.phone_num or '' }}"></div>
+          <div class="mb-2"><label class="form-label">NPI Number</label><input type="text" name="npi_number" class="form-control" value="{{ provider.npi_number or '' }}"></div>
+          <div class="mb-2"><label class="form-label">Tax ID</label><input type="text" name="tax_id" class="form-control" value="{{ provider.tax_id or '' }}"></div>
           <div class="mb-2"><label class="form-label">One Way Miles</label><input type="number" step="0.1" name="one_way_miles" class="form-control" value="{{ provider.one_way_miles or '' }}"></div>
           <div class="mb-2"><label class="form-label">Active *</label>
             <select name="active_provider_flag" class="form-select" required>
@@ -609,11 +630,26 @@ document.addEventListener('DOMContentLoaded',()=>{
       e.preventDefault();
       const fd=new FormData(form);
       const payload={};
-      fd.forEach((v,k)=>{payload[k]=v||null;});
+      fd.forEach((v,k)=>{
+        payload[k]=v||null;
+      });
       if(payload['one_way_miles']!==null && payload['one_way_miles']!=='') payload['one_way_miles']=parseFloat(payload['one_way_miles']); else payload['one_way_miles']=null;
       payload['active_provider_flag']= payload['active_provider_flag']==='true';
-      try{const resp=await fetch(`/api/providers/${providerId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); if(resp.ok){location.reload();} else { const j=await resp.json().catch(()=>({})); alert('Update failed: '+(j.detail||resp.status)); }}
-      catch(ex){alert('Network error updating provider: '+ex.message);}
+      try{
+        const resp=await fetch(`/api/providers/${providerId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+        if(resp.ok){
+          console.log('Update successful');
+          location.reload();
+        } else {
+          const j=await resp.json().catch(()=>({}));
+          console.error('Update failed:', j);
+          alert('Update failed: '+(j.detail||resp.status));
+        }
+      }
+      catch(ex){
+        console.error('Network error:', ex);
+        alert('Network error updating provider: '+ex.message);
+      }
     });
   }
 });

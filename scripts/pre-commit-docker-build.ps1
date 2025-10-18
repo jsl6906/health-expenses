@@ -130,22 +130,53 @@ $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $ImageName = "personal-expenses"
 $ImageTag = "$ImageName`:$Timestamp"
 
+# Helper: save docker image with a retry to handle transient IO errors (e.g., 'Stream was not readable')
+function Save-Image-WithRetry([string]$Tag, [string]$PathToFile, [int]$Attempts=2) {
+    $lastOutput = ''
+    for ($i = 1; $i -le $Attempts; $i++) {
+        $SaveStdOutFile = [System.IO.Path]::GetTempFileName()
+        $SaveStdErrFile = [System.IO.Path]::GetTempFileName()
+        try {
+            $sp = Start-Process -FilePath "docker" -ArgumentList @("save", "-o", $PathToFile, $Tag) -NoNewWindow -PassThru -RedirectStandardOutput $SaveStdOutFile -RedirectStandardError $SaveStdErrFile -Wait
+            $out = ''
+            if (Test-Path $SaveStdOutFile) { $out += (Get-Content $SaveStdOutFile -Raw -ErrorAction SilentlyContinue) }
+            if (Test-Path $SaveStdErrFile) { $out += (Get-Content $SaveStdErrFile -Raw -ErrorAction SilentlyContinue) }
+            $lastOutput = $out
+            if ($sp.ExitCode -eq 0) {
+                return @{ Success = $true; Output = $out }
+            } else {
+                Write-Host "docker save attempt $i failed (exit code $($sp.ExitCode)). Retrying..." -ForegroundColor Yellow
+            }
+        } catch {
+            $lastOutput = $_.Exception.Message
+            Write-Host "docker save attempt $i error: $lastOutput" -ForegroundColor Yellow
+        } finally {
+            if (Test-Path $SaveStdOutFile) { Remove-Item $SaveStdOutFile -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $SaveStdErrFile) { Remove-Item $SaveStdErrFile -Force -ErrorAction SilentlyContinue }
+        }
+        Start-Sleep -Milliseconds 200
+    }
+    return @{ Success = $false; Output = $lastOutput }
+}
+
 try {
     # Build the Docker image
     Write-Host "Running: docker build -t $ImageTag ." -ForegroundColor Gray
 
+    $BuildStdOutFile = [System.IO.Path]::GetTempFileName()
+    $BuildStdErrFile = [System.IO.Path]::GetTempFileName()
     $BuildOutput = ""
-    $Process = Start-Process -FilePath "docker" -ArgumentList @("build", "-t", $ImageTag, ".") -NoNewWindow -PassThru -RedirectStandardOutput "docker-build-stdout.tmp" -RedirectStandardError "docker-build-stderr.tmp"
+    $Process = Start-Process -FilePath "docker" -ArgumentList @("build", "-t", $ImageTag, ".") -NoNewWindow -PassThru -RedirectStandardOutput $BuildStdOutFile -RedirectStandardError $BuildStdErrFile
     $Process.WaitForExit()
 
     # Capture output
-    if (Test-Path "docker-build-stdout.tmp") {
-        $BuildOutput += Get-Content "docker-build-stdout.tmp" -Raw
-        Remove-Item "docker-build-stdout.tmp" -Force -ErrorAction SilentlyContinue
+    if (Test-Path $BuildStdOutFile) {
+        $BuildOutput += Get-Content $BuildStdOutFile -Raw -ErrorAction SilentlyContinue
+        Remove-Item $BuildStdOutFile -Force -ErrorAction SilentlyContinue
     }
-    if (Test-Path "docker-build-stderr.tmp") {
-        $BuildOutput += Get-Content "docker-build-stderr.tmp" -Raw
-        Remove-Item "docker-build-stderr.tmp" -Force -ErrorAction SilentlyContinue
+    if (Test-Path $BuildStdErrFile) {
+        $BuildOutput += Get-Content $BuildStdErrFile -Raw -ErrorAction SilentlyContinue
+        Remove-Item $BuildStdErrFile -Force -ErrorAction SilentlyContinue
     }
 
     if ($Process.ExitCode -eq 0) {
@@ -155,16 +186,48 @@ try {
         $ImageFile = Join-Path $DistDir "$ImageName-$Timestamp.tar"
         Write-Host "Saving image to: $ImageFile" -ForegroundColor Gray
 
-        $SaveProcess = Start-Process -FilePath "docker" -ArgumentList @("save", "-o", $ImageFile, $ImageTag) -NoNewWindow -PassThru -Wait
+        # Helper: save docker image with a retry to handle transient IO errors (e.g., 'Stream was not readable')
+        function Save-Image-WithRetry([string]$Tag, [string]$PathToFile, [int]$Attempts=2) {
+            $lastOutput = ''
+            for ($i = 1; $i -le $Attempts; $i++) {
+                $SaveStdOutFile = [System.IO.Path]::GetTempFileName()
+                $SaveStdErrFile = [System.IO.Path]::GetTempFileName()
+                try {
+                    $sp = Start-Process -FilePath "docker" -ArgumentList @("save", "-o", $PathToFile, $Tag) -NoNewWindow -PassThru -RedirectStandardOutput $SaveStdOutFile -RedirectStandardError $SaveStdErrFile -Wait
+                    $out = ''
+                    if (Test-Path $SaveStdOutFile) { $out += (Get-Content $SaveStdOutFile -Raw -ErrorAction SilentlyContinue) }
+                    if (Test-Path $SaveStdErrFile) { $out += (Get-Content $SaveStdErrFile -Raw -ErrorAction SilentlyContinue) }
+                    $lastOutput = $out
+                    if ($sp.ExitCode -eq 0) {
+                        return @{ Success = $true; Output = $out }
+                    } else {
+                        Write-Host "docker save attempt $i failed (exit code $($sp.ExitCode)). Retrying..." -ForegroundColor Yellow
+                    }
+                } catch {
+                    $lastOutput = $_.Exception.Message
+                    Write-Host "docker save attempt $i error: $lastOutput" -ForegroundColor Yellow
+                } finally {
+                    if (Test-Path $SaveStdOutFile) { Remove-Item $SaveStdOutFile -Force -ErrorAction SilentlyContinue }
+                    if (Test-Path $SaveStdErrFile) { Remove-Item $SaveStdErrFile -Force -ErrorAction SilentlyContinue }
+                }
+                Start-Sleep -Milliseconds 200
+            }
+            return @{ Success = $false; Output = $lastOutput }
+        }
 
-        if ($SaveProcess.ExitCode -eq 0) {
+        $saveResult = Save-Image-WithRetry -Tag $ImageTag -PathToFile $ImageFile -Attempts 2
+        if ($saveResult.Success) {
             Write-Host "Image saved successfully!" -ForegroundColor Green
 
             # Update hash file to avoid rebuilding
             Set-Content -Path $HashFile -Value $CurrentHash
 
             # Clean up intermediate image to save space
-            $RemoveProcess = Start-Process -FilePath "docker" -ArgumentList @("rmi", $ImageTag) -NoNewWindow -PassThru -Wait
+            $RmiStdOutFile = [System.IO.Path]::GetTempFileName()
+            $RmiStdErrFile = [System.IO.Path]::GetTempFileName()
+            $RemoveProcess = Start-Process -FilePath "docker" -ArgumentList @("rmi", $ImageTag) -NoNewWindow -PassThru -RedirectStandardOutput $RmiStdOutFile -RedirectStandardError $RmiStdErrFile -Wait
+            if (Test-Path $RmiStdOutFile) { Remove-Item $RmiStdOutFile -Force -ErrorAction SilentlyContinue }
+            if (Test-Path $RmiStdErrFile) { Remove-Item $RmiStdErrFile -Force -ErrorAction SilentlyContinue }
             if ($RemoveProcess.ExitCode -eq 0) {
                 Write-Host "Cleaned up intermediate image." -ForegroundColor Gray
             }
@@ -172,10 +235,9 @@ try {
             Write-Host ""
             Write-Host "Docker image built and saved to dist/$ImageName-$Timestamp.tar" -ForegroundColor Green
             Write-Host "Use 'docker load -i dist/$ImageName-$Timestamp.tar' to load the image" -ForegroundColor Cyan
-
         } else {
-            Write-Host "Failed to save Docker image!" -ForegroundColor Red
-            Write-Host $BuildOutput -ForegroundColor Gray
+            Write-Host "Failed to save Docker image after retries!" -ForegroundColor Red
+            Write-Host $saveResult.Output -ForegroundColor Gray
             exit 1
         }
 
@@ -186,30 +248,23 @@ try {
         if ($ImageExists) {
             Write-Host "Build completed with warnings but image was created." -ForegroundColor Yellow
 
-            # Save the Docker image to dist directory
+            # Save the Docker image to dist directory (with retry)
             $ImageFile = Join-Path $DistDir "$ImageName-$Timestamp.tar"
             Write-Host "Saving image to: $ImageFile" -ForegroundColor Gray
-
-            $SaveProcess = Start-Process -FilePath "docker" -ArgumentList @("save", "-o", $ImageFile, $ImageTag) -NoNewWindow -PassThru -Wait
-
-            if ($SaveProcess.ExitCode -eq 0) {
+            $saveResult2 = Save-Image-WithRetry -Tag $ImageTag -PathToFile $ImageFile -Attempts 2
+            if ($saveResult2.Success) {
                 Write-Host "Image saved successfully!" -ForegroundColor Green
-
-                # Update hash file to avoid rebuilding
                 Set-Content -Path $HashFile -Value $CurrentHash
-
-                # Clean up intermediate image to save space
-                $RemoveProcess = Start-Process -FilePath "docker" -ArgumentList @("rmi", $ImageTag) -NoNewWindow -PassThru -Wait
-                if ($RemoveProcess.ExitCode -eq 0) {
-                    Write-Host "Cleaned up intermediate image." -ForegroundColor Gray
-                }
-
-                Write-Host ""
-                Write-Host "Docker image built and saved to dist/$ImageName-$Timestamp.tar" -ForegroundColor Green
-                Write-Host "Use 'docker load -i dist/$ImageName-$Timestamp.tar' to load the image" -ForegroundColor Cyan
-
+                $RmiStdOutFile = [System.IO.Path]::GetTempFileName()
+                $RmiStdErrFile = [System.IO.Path]::GetTempFileName()
+                $RemoveProcess = Start-Process -FilePath "docker" -ArgumentList @("rmi", $ImageTag) -NoNewWindow -PassThru -RedirectStandardOutput $RmiStdOutFile -RedirectStandardError $RmiStdErrFile -Wait
+                if (Test-Path $RmiStdOutFile) { Remove-Item $RmiStdOutFile -Force -ErrorAction SilentlyContinue }
+                if (Test-Path $RmiStdErrFile) { Remove-Item $RmiStdErrFile -Force -ErrorAction SilentlyContinue }
+                if ($RemoveProcess.ExitCode -eq 0) { Write-Host "Cleaned up intermediate image." -ForegroundColor Gray }
+                Write-Host ""; Write-Host "Docker image built and saved to dist/$ImageName-$Timestamp.tar" -ForegroundColor Green; Write-Host "Use 'docker load -i dist/$ImageName-$Timestamp.tar' to load the image" -ForegroundColor Cyan
             } else {
-                Write-Host "Failed to save Docker image!" -ForegroundColor Red
+                Write-Host "Failed to save Docker image after retries!" -ForegroundColor Red
+                Write-Host $saveResult2.Output -ForegroundColor Gray
                 exit 1
             }
         } else {

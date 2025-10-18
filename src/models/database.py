@@ -1,19 +1,18 @@
 """SQLAlchemy ORM models for Personal Expenses application.
-
-This file was reconstructed after accidental truncation.
 """
 
 from sqlalchemy import (
     Boolean,
     Column,
     Date,
+    DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
     func,
-    select,
 )
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import declarative_base, relationship
@@ -28,8 +27,15 @@ class Provider(Base):
     provider_name = Column(String, nullable=False)
     provider_group = Column(String)
     provider_address = Column(String)
+    phone_num = Column(String)
+    npi_number = Column(String)
+    tax_id = Column(String)
     one_way_miles = Column(Numeric(10, 2))
     active_provider_flag = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_by = Column(String)
+    updated_by = Column(String)
 
     # Relationships
     charges = relationship("Charge", back_populates="provider")
@@ -87,6 +93,8 @@ class Charge(Base):
     family_member = Column(String)
     medical_type = Column(String)
     cpt_code = Column(String)
+    diagnosis_code = Column(String)
+    claim_submitted_date = Column(Date)
     provider_id = Column(Integer, ForeignKey("providers.id"))
     doctor_name = Column(String)
     charge_description = Column(String)
@@ -101,6 +109,10 @@ class Charge(Base):
     insurance_paid_amount = Column(Numeric(10, 2))
     ignore_for_issue_spotting = Column(Boolean, default=False)
     notes = Column(Text)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_by = Column(String)
+    updated_by = Column(String)
 
     # Relationships
     provider = relationship("Provider", back_populates="charges")
@@ -126,6 +138,10 @@ class Payment(Base):
         Numeric(10, 2), comment="Amount reimbursed by HSA / FSA"
     )
     notes = Column(Text)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_by = Column(String)
+    updated_by = Column(String)
 
     # Relationships
     provider = relationship("Provider", back_populates="payments")
@@ -142,10 +158,12 @@ class Attachment(Base):
     original_filename = Column(String)
     content_type = Column(String)
     file_size = Column(Integer)
-    content = Column(
-        Text
-    )  # Depending on prior implementation this could be LargeBinary
+    content = Column(LargeBinary)  # store raw file bytes for attachments
     notes = Column(Text)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_by = Column(String)
+    updated_by = Column(String)
 
     charge = relationship("Charge", back_populates="attachments")
     payment = relationship("Payment", back_populates="attachments")
@@ -157,6 +175,10 @@ class ChargePaymentXref(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     charge_id = Column(Integer, ForeignKey("charges.id"))
     payment_id = Column(Integer, ForeignKey("payments.id"))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_by = Column(String)
+    updated_by = Column(String)
 
     charge = relationship("Charge", back_populates="charge_payments")
     payment = relationship("Payment", back_populates="payment_charges")
@@ -171,3 +193,18 @@ class Premium(Base):
     dental_premium = Column(Numeric(12, 2))
     vision_premium = Column(Numeric(12, 2))
     hsa_fsa_paid = Column(Numeric(12, 2))
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_by = Column(String)
+    updated_by = Column(String)
+
+
+class RefExpenseTypes(Base):
+    __tablename__ = "ref_expense_types"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    expense_type_name = Column(String)
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    created_by = Column(String)
+    updated_by = Column(String)

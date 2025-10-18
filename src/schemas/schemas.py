@@ -2,7 +2,7 @@
 Pydantic schemas for API request and response models.
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
 from typing import Optional
@@ -42,6 +42,9 @@ class ProviderBase(BaseModel):
     provider_name: str
     provider_group: Optional[str] = None
     provider_address: Optional[str] = None
+    phone_num: Optional[str] = None
+    npi_number: Optional[str] = None
+    tax_id: Optional[str] = None
     one_way_miles: Optional[Decimal] = None
     active_provider_flag: bool = True
 
@@ -54,6 +57,9 @@ class ProviderUpdate(BaseModel):
     provider_name: Optional[str] = None
     provider_group: Optional[str] = None
     provider_address: Optional[str] = None
+    phone_num: Optional[str] = None
+    npi_number: Optional[str] = None
+    tax_id: Optional[str] = None
     one_way_miles: Optional[Decimal] = None
     active_provider_flag: Optional[bool] = None
 
@@ -62,6 +68,10 @@ class Provider(ProviderBase):
     id: int
     last_charge_date: Optional[date] = None
     last_payment_date: Optional[date] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    created_by: Optional[str] = None
+    updated_by: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -73,6 +83,8 @@ class ChargeBase(BaseModel):
     family_member: Optional[FamilyMemberEnum] = None
     medical_type: Optional[MedicalTypeEnum] = None
     cpt_code: Optional[str] = None
+    diagnosis_code: Optional[str] = None
+    claim_submitted_date: Optional[date] = None
     provider_id: Optional[int] = None
     doctor_name: Optional[str] = None
     charge_description: Optional[str] = None
@@ -98,6 +110,8 @@ class ChargeUpdate(BaseModel):
     family_member: Optional[FamilyMemberEnum] = None
     medical_type: Optional[MedicalTypeEnum] = None
     cpt_code: Optional[str] = None
+    diagnosis_code: Optional[str] = None
+    claim_submitted_date: Optional[date] = None
     provider_id: Optional[int] = None
     doctor_name: Optional[str] = None
     charge_description: Optional[str] = None
