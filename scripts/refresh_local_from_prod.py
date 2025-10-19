@@ -541,9 +541,6 @@ def main():
                 txt = plain_sql.read_text(
                     encoding="utf-8", errors="ignore"
                 ).splitlines()
-                blocked_prefixes = [
-                    "SET transaction_timeout =",
-                ]
                 # --- Dynamic role detection & sanitation ---
                 # Collect local roles so we can identify which referenced roles are missing.
                 local_roles: set[str] = set()
@@ -647,10 +644,13 @@ def main():
 
                 kept = []
                 sanitized_counts = {r: 0 for r in unknown_roles}
+                removed_count = 0
                 for line in txt:
                     stripped = line.strip()
-                    # Remove unsupported GUC lines
-                    if any(stripped.startswith(bp) for bp in blocked_prefixes):
+                    # Remove unsupported GUC lines (case-insensitive, robust match)
+                    low = stripped.lower()
+                    if "transaction_timeout" in low and low.startswith("set"):
+                        removed_count += 1
                         continue
                     # Optional global drop of owner clauses
                     if args.drop_owner_clauses and "OWNER TO" in line.upper():
@@ -690,6 +690,10 @@ def main():
                     for ur, ct in sanitized_counts.items():
                         print(f"  {ur}: {ct} line(s) affected")
                 filtered_sql.write_text("\n".join(kept), encoding="utf-8")
+                if removed_count:
+                    print(
+                        f"Filtered out {removed_count} transaction_timeout SET line(s)"
+                    )
                 # Replace original custom dump strategy: we'll restore from filtered plain SQL
                 orig_name = dump_file.with_suffix(".orig.dump")
                 try:
@@ -1047,8 +1051,12 @@ def main():
                         ]
 
                         for ln in txt:
-                            # Remove unsupported GUC lines
-                            if ln.strip().startswith("SET transaction_timeout ="):
+                            # Remove unsupported GUC lines (case-insensitive, robust match)
+                            lstr = ln.strip()
+                            if (
+                                "transaction_timeout" in lstr.lower()
+                                and lstr.lower().startswith("set")
+                            ):
                                 continue
 
                             # Check if line references any unknown roles

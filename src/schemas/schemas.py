@@ -124,6 +124,7 @@ class Charge(ChargeBase):
     id: int
     provider: Optional[Provider] = None
     family_member: Optional["FamilyMember"] = None
+    insurance_submission_status: Optional[str] = None
 
 
 # FamilyMember Schemas

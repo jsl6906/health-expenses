@@ -462,12 +462,12 @@ async def charges_page(request: Request, db: Session = Depends(get_db)):
     annotate_charges_with_paid(db, charges)
 
     # Identify potential duplicates
-    # Group by service_date, family_member, medical_type, base_fee_amount, charged_amount
+    # Group by service_date, family_member_id, medical_type, base_fee_amount, charged_amount
     # so both the base fee and charged amount are considered when detecting duplicates
     duplicate_groups = (
         db.query(
             ChargeModel.service_date,
-            ChargeModel.family_member,
+            ChargeModel.family_member_id,
             ChargeModel.medical_type,
             ChargeModel.base_fee_amount,
             ChargeModel.charged_amount,
@@ -475,7 +475,7 @@ async def charges_page(request: Request, db: Session = Depends(get_db)):
         )
         .group_by(
             ChargeModel.service_date,
-            ChargeModel.family_member,
+            ChargeModel.family_member_id,
             ChargeModel.medical_type,
             ChargeModel.base_fee_amount,
             ChargeModel.charged_amount,
@@ -629,7 +629,8 @@ async def manual_claim_page(
 
     # Convert grouping map into a flat list of claim cards
     # Each card contains insurance, insured, service_member, provider, and charges
-    claim_cards = []
+    summaries = []
+    details = []
     for _, g in group_map.items():
         ins = g.get("insurance")
         insured = None
@@ -645,21 +646,103 @@ async def manual_claim_page(
                     "id": getattr(im, "id", None),
                 }
 
+        # Collect all detail cards for this insurance
+        detail_cards = []
         for _, f in g["families"].items():
             service_member = f["service_member"]
             for _, p in f["providers"].items():
                 provider = p["provider"]
                 charges = p["charges"]
-                claim_cards.append(
-                    {
-                        "insurance": ins,
-                        "insured": insured,
-                        "service_member": service_member,
-                        "provider": provider,
-                        "charges": charges,
-                        "medical_type": g["medical_type"],
+                card = {
+                    "insurance": ins,
+                    "insured": insured,
+                    "service_member": service_member,
+                    "provider": provider,
+                    "charges": charges,
+                    "medical_type": g["medical_type"],
+                    "is_summary": False,
+                }
+                detail_cards.append(card)
+
+        # If more than one detail page, add a summary page
+        if len(detail_cards) > 1:
+            provider_summaries = {}
+            for card in detail_cards:
+                prov = card["provider"]
+                serv_mem = card["service_member"]
+                key = f"{prov.id if prov else 'none'}_{serv_mem.id if serv_mem else 'none'}"
+                if key not in provider_summaries:
+                    provider_summaries[key] = {
+                        "provider": prov,
+                        "service_member": serv_mem,
+                        "charge_count": 0,
+                        "total_amount": 0.0,
                     }
+                provider_summaries[key]["charge_count"] += len(card["charges"])
+                for ch in card["charges"]:
+                    provider_summaries[key]["total_amount"] += float(
+                        ch.base_fee_amount or 0
+                    )
+
+            summary_card = {
+                "insurance": ins,
+                "insured": insured,
+                "service_member": None,
+                "provider": None,
+                "charges": [],
+                "medical_type": g["medical_type"],
+                "is_summary": True,
+                "provider_summaries": list(provider_summaries.values()),
+            }
+            summaries.append(summary_card)
+
+        details.extend(detail_cards)
+
+    claim_cards = summaries + details
+
+    # Compute data quality warnings
+    warnings = {
+        "charges_missing_codes": [],
+        "providers_missing_info": [],
+        "missing_insurance": [],
+    }
+
+    # Get unique providers and medical types
+    providers_set = set()
+    medical_types = set()
+    for ch in charges:
+        if ch.provider_id:
+            providers_set.add(ch.provider_id)
+        if ch.medical_type:
+            medical_types.add(ch.medical_type)
+
+    # Check charges for missing codes
+    for ch in charges:
+        if not ch.cpt_code or not ch.diagnosis_code:
+            warnings["charges_missing_codes"].append(f"Charge {ch.id}")
+
+    # Check providers for missing info
+    for pid in providers_set:
+        prov = db.query(ProviderModel).filter(ProviderModel.id == pid).first()
+        if prov:
+            missing = []
+            if not prov.npi_number:
+                missing.append("NPI")
+            if not prov.tax_id:
+                missing.append("EIN")
+            if not prov.phone_num:
+                missing.append("Phone")
+            if not prov.provider_address:
+                missing.append("Address")
+            if missing:
+                warnings["providers_missing_info"].append(
+                    f"{prov.provider_name} ({', '.join(missing)})"
                 )
+
+    # Check for missing insurance records
+    for mt in medical_types:
+        if mt not in insurance_map or not insurance_map[mt]:
+            warnings["missing_insurance"].append(f"'{mt}'")
 
     return templates.TemplateResponse(
         "manual_claim.html",
@@ -667,6 +750,8 @@ async def manual_claim_page(
             "request": request,
             "claim_cards": claim_cards,
             "charge_count": len(charges),
+            "charge_ids": ids,
+            "warnings": warnings,
         },
     )
 

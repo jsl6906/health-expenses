@@ -47,12 +47,12 @@ class FamilyMember(Base):
     @hybrid_property
     def full_name(self):
         """Full name including middle initial."""
-        parts = [self.first_name or ""]
-        if self.middle_initial:
+        parts = [self.first_name or ""]  # type: ignore
+        if self.middle_initial:  # type: ignore
             parts.append(self.middle_initial)
-        if self.last_name:
+        if self.last_name:  # type: ignore
             parts.append(self.last_name)
-        return " ".join(parts).strip() or None
+        return " ".join(parts).strip() or None  # type: ignore
 
 
 class Provider(Base):
@@ -76,8 +76,8 @@ class Provider(Base):
     charges = relationship("Charge", back_populates="provider")
     payments = relationship("Payment", back_populates="provider")
 
-    @hybrid_property
-    def last_charge_date(self):
+    @hybrid_property  # type: ignore
+    def last_charge_date(self):  # type: ignore
         """Get the most recent charge date for this provider."""
         if self.charges:
             return max(
@@ -96,8 +96,8 @@ class Provider(Base):
             .scalar_subquery()
         )
 
-    @hybrid_property
-    def last_payment_date(self):
+    @hybrid_property  # type: ignore
+    def last_payment_date(self):  # type: ignore
         """Get the most recent payment date for this provider."""
         if self.payments:
             return max(
@@ -154,6 +154,36 @@ class Charge(Base):
     family_member = relationship("FamilyMember", back_populates="charges")
     charge_payments = relationship("ChargePaymentXref", back_populates="charge")
     attachments = relationship("Attachment", back_populates="charge")
+
+    @hybrid_property  # type: ignore
+    def insurance_submission_status(self):  # type: ignore
+        """Determine insurance submission status based on charge fields."""
+        if self.insurance_paid_amount or self.eob_claim_num:  # type: ignore
+            return "Insurance Processed"
+        elif self.claim_submitted_date:  # type: ignore
+            return "Insurance Submitted"
+        elif self.owed_amount and self.owed_amount > 0:  # type: ignore
+            return "Not Submitted"
+        else:
+            return "N/A"
+
+    @insurance_submission_status.expression
+    def insurance_submission_status(cls):
+        """SQL expression for insurance submission status."""
+        from sqlalchemy import case, func, or_
+
+        return case(
+            (
+                or_(
+                    func.coalesce(cls.insurance_paid_amount, 0) > 0,
+                    cls.eob_claim_num.isnot(None),
+                ),
+                "Insurance Processed",
+            ),
+            (cls.claim_submitted_date.isnot(None), "Insurance Submitted"),
+            (func.coalesce(cls.owed_amount, 0) > 0, "Not Submitted"),
+            else_="N/A",
+        )
 
 
 class Payment(Base):

@@ -60,7 +60,14 @@
                 </select>
             </div>
             <div class="col-md-2">
-                <!-- Spacer column for alignment -->
+                <label for="insuranceStatusFilter" class="form-label">Insurance Status</label>
+                <select class="form-control" id="insuranceStatusFilter">
+                    <option value="">All Status</option>
+                    <option value="Insurance Processed">Insurance Processed</option>
+                    <option value="Insurance Submitted">Insurance Submitted</option>
+                    <option value="Not Submitted">Not Submitted</option>
+                    <option value="N/A">N/A</option>
+                </select>
             </div>
             <div class="col-md-1 d-flex align-items-end">
                 <button type="button" class="btn btn-secondary" onclick="clearFilters()">
@@ -161,6 +168,7 @@
                                 data-medical-type="{{ charge.medical_type or '' }}"
                                 data-status="{{ 'paid' if (charge.owed_amount or 0) > 0 and (charge.paid_amount_agg or 0) >= (charge.owed_amount or 0) else 'outstanding' if (charge.owed_amount or 0) > 0 else 'na' }}"
                                 data-service-date="{{ charge.service_date.strftime('%Y-%m-%d') if charge.service_date else '' }}"
+                                data-insurance-status="{{ charge.insurance_submission_status or '' }}"
                                 data-potential-duplicate="{{ 'true' if charge.is_potential_duplicate else 'false' }}">
                                 <td>
                                     <input type="checkbox" class="charge-select" value="{{ charge.id }}" aria-label="Select charge {{ charge.id }}">
@@ -431,6 +439,7 @@ function initializeTableEnhancements() {
     const familyMemberFilter = document.getElementById('familyMemberFilter');
     const medicalTypeFilter = document.getElementById('medicalTypeFilter');
     const statusFilter = document.getElementById('statusFilter');
+    const insuranceStatusFilter = document.getElementById('insuranceStatusFilter');
     const duplicateFilter = document.getElementById('duplicateFilter');
     const dateFrom = document.getElementById('dateFrom');
     const dateTo = document.getElementById('dateTo');
@@ -438,6 +447,7 @@ function initializeTableEnhancements() {
     if (familyMemberFilter) familyMemberFilter.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
     if (medicalTypeFilter) medicalTypeFilter.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
     if (statusFilter) statusFilter.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
+    if (insuranceStatusFilter) insuranceStatusFilter.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
     if (duplicateFilter) duplicateFilter.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
     if (dateFrom) dateFrom.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
     if (dateTo) dateTo.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
@@ -535,6 +545,7 @@ function filterTable() {
     const familyMember = document.getElementById('familyMemberFilter').value.toLowerCase();
     const medicalType = document.getElementById('medicalTypeFilter').value.toLowerCase();
     const status = document.getElementById('statusFilter').value.toLowerCase();
+    const insuranceStatus = document.getElementById('insuranceStatusFilter').value.toLowerCase();
     const duplicateFilter = document.getElementById('duplicateFilter').value;
     const dateFrom = document.getElementById('dateFrom').value;
     const dateTo = document.getElementById('dateTo').value;
@@ -573,6 +584,14 @@ function filterTable() {
         if (visible && status) {
             const statusAttr = (row.getAttribute('data-status') || '').toLowerCase();
             if (!statusAttr.includes(status)) {
+                visible = false;
+            }
+        }
+
+        // Insurance status filter
+        if (visible && insuranceStatus) {
+            const insuranceStatusAttr = (row.getAttribute('data-insurance-status') || '').toLowerCase();
+            if (!insuranceStatusAttr.includes(insuranceStatus)) {
                 visible = false;
             }
         }
@@ -627,6 +646,7 @@ function clearFilters() {
     document.getElementById('familyMemberFilter').value = '';
     document.getElementById('medicalTypeFilter').value = '';
     document.getElementById('statusFilter').value = '';
+    document.getElementById('insuranceStatusFilter').value = '';
     document.getElementById('duplicateFilter').value = '';
     document.getElementById('dateFrom').value = '';
     document.getElementById('dateTo').value = '';
@@ -757,6 +777,7 @@ function updateQueryFromFilters() {
     const fam = document.getElementById('familyMemberFilter').value.trim();
     const mtype = document.getElementById('medicalTypeFilter').value.trim();
     const stat = document.getElementById('statusFilter').value.trim();
+    const ins = document.getElementById('insuranceStatusFilter').value.trim();
     const dup = document.getElementById('duplicateFilter').value.trim();
     const df = document.getElementById('dateFrom').value.trim();
     const dt = document.getElementById('dateTo').value.trim();
@@ -764,6 +785,7 @@ function updateQueryFromFilters() {
     fam ? params.set('family', fam) : params.delete('family');
     mtype ? params.set('type', mtype) : params.delete('type');
     stat ? params.set('status', stat) : params.delete('status');
+    ins ? params.set('insurance', ins) : params.delete('insurance');
     dup ? params.set('duplicate', dup) : params.delete('duplicate');
     df ? params.set('from', df) : params.delete('from');
     dt ? params.set('to', dt) : params.delete('to');
@@ -778,6 +800,7 @@ function restoreFiltersFromQuery() {
         family: 'familyMemberFilter',
         type: 'medicalTypeFilter',
         status: 'statusFilter',
+        insurance: 'insuranceStatusFilter',
         duplicate: 'duplicateFilter',
         from: 'dateFrom',
         to: 'dateTo'

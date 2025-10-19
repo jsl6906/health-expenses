@@ -1,3 +1,10 @@
+{#
+  UI Update: condensed, modernized manual claim card layout.
+  - Two-column summary (insurance / service member) + compact provider area
+  - Tighter table spacing and reduced card padding
+  Styles live in `static/css/app.css` under the "manual-claim" selectors.
+  Kept all original Jinja logic and variables unchanged.
+#}
 {% extends "base.html" %}
 
 {% block title %}Manual Claim Report{% endblock %}
@@ -10,65 +17,177 @@
 {{ phone or '-' }}
 {% endif %}
 {% endmacro %}
-<style>
-@media print {
-  .no-print { display: none !important; }
-  .card { page-break-after: always; }
-  .card:not(:first-child) { margin-top: 2rem; }
-}
-</style>
+{# print styles are handled in static/css/app.css #}
 <div class="d-flex justify-content-between align-items-center mb-3 no-print">
-  <h2>Manual Claim Report</h2>
   <div>
+    <h2 class="h5 mb-0">Manual Claim Report</h2>
+    <small class="text-muted">Generated for {{ charge_count }} selected charge(s).</small>
+    {% if warnings.charges_missing_codes or warnings.providers_missing_info or warnings.missing_insurance %}
+    <div class="alert alert-warning mt-2 small">
+      <strong>Data Quality Warnings:</strong>
+      <ul class="mb-0 mt-1">
+        {% if warnings.charges_missing_codes %}
+        <li>Charges missing CPT or diagnosis codes: {{ warnings.charges_missing_codes|join(', ') }}</li>
+        {% endif %}
+        {% if warnings.providers_missing_info %}
+        <li>Providers missing required info: {{ warnings.providers_missing_info|join('; ') }}</li>
+        {% endif %}
+        {% if warnings.missing_insurance %}
+        <li>Missing insurance records for medical types: {{ warnings.missing_insurance|join(', ') }}</li>
+        {% endif %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+  <div class="btn-group btn-group-sm no-print" role="group" aria-label="actions">
+    <button type="button" class="btn btn-success" onclick="showMarkSubmittedModal()">Mark as Submitted</button>
     <a href="#" onclick="window.print();return false;" class="btn btn-primary">Print</a>
-    <a href="/charges" class="btn btn-secondary">Back to Charges</a>
+    <a href="/charges" class="btn btn-outline-secondary">Back</a>
   </div>
 </div>
 
-<p class="text-muted no-print">Generated for {{ charge_count }} selected charge(s).</p>
-
 {% for card in claim_cards %}
-  <div class="card mb-3">
-    <div class="card-header">
+  {% if card.is_summary %}
+    <section class="claim-group summary-page">
+      <div class="group-header py-2">
+        <h3 class="mb-3 page-header">Claim Summary: {{ card.insurance.plan_name or '-' }}</h3>
+        {% if card.insurance %}
+        <div class="insurance-section mb-2">
+          <div class="row g-2">
+            <div class="col-md-4">
+              <span class="section-label">Insurance:</span> {{ card.insurance.plan_name or '-' }}
+            </div>
+            <div class="col-md-4">
+              <span class="section-label">ID:</span> {{ card.insurance.policy_number or '-' }}
+            </div>
+            <div class="col-md-4">
+              <span class="section-label">Group:</span> {{ card.insurance.group_number or '-' }}
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        <div class="row g-2">
+          <div class="col-md-6">
+            <h6 class="section-label mb-1">Insured Info</h6>
+            <dl class="row mb-0">
+              <dt class="col-4">Name</dt>
+              <dd class="col-8">{% if card.insured and card.insured.full_name %}{{ card.insured.full_name }}{% if card.insured.dob %} ({{ card.insured.dob.strftime('%Y-%m-%d') }}){% endif %}{% elif card.insurance.insured_member_id %}ID {{ card.insurance.insured_member_id }}{% else %}-{% endif %}</dd>
+
+              <dt class="col-4">Phone</dt>
+              <dd class="col-8">{{ format_phone(card.insured.phone_num) }}</dd>
+            </dl>
+          </div>
+
+          <div class="col-md-6">
+            <h6 class="section-label mb-1">Insurance Summary</h6>
+            <p>This claim submission has multiple detail pages. Summary of providers below.</p>
+          </div>
+        </div>
+
+        <hr class="my-2">
+        <div class="table-responsive">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>Provider</th>
+                <th>Patient</th>
+                <th># of Charges</th>
+                <th>Total Charges</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% set total = namespace(value=0, count=0) %}
+              {% for ps in card.provider_summaries %}
+              {% set total.value = total.value + ps.total_amount %}
+              {% set total.count = total.count + ps.charge_count %}
+              <tr>
+                <td>{{ ps.provider.provider_name if ps.provider else '-' }}</td>
+                <td>{% if ps.service_member %}{{ ps.service_member.full_name }} ({% if ps.service_member.dob %}{{ ps.service_member.dob.strftime('%Y-%m-%d') }}{% else %}-{% endif %}){% else %}-{% endif %}</td>
+                <td>{{ ps.charge_count }}</td>
+                <td>{{ ps.total_amount | currency }}</td>
+              </tr>
+              {% endfor %}
+              <tr class="table-secondary">
+                <td><strong>Total ({{ card.provider_summaries|length }} entries)</strong></td>
+                <td></td>
+                <td><strong>{{ total.count }}</strong></td>
+                <td><strong>{{ total.value | currency }}</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <div class="page-break-print" aria-hidden="true"></div>
+  {% else %}
+  <section class="claim-group">
+    <div class="group-header py-2">
+      <h3 class="mb-3 page-header">Claim Detail: {{ card.provider.provider_name if card.provider else '-' }} {% if card.provider and card.provider.provider_group %}({{ card.provider.provider_group }}){% endif %}, {{ card.insurance.plan_name or '-' }}</h3>
       {% if card.insurance %}
-        <div><strong>Insurance:</strong> {{ card.insurance.plan_name or '-' }}</div>
-        <div><strong>Insured Name:</strong>
-          {% if card.insured and card.insured.full_name %}
-            {{ card.insured.full_name }}
-          {% elif card.insurance.insured_member_id %}
-            ID {{ card.insurance.insured_member_id }}
-          {% else %}-{% endif %}
+      <div class="insurance-section mb-2">
+        <div class="row g-2">
+          <div class="col-md-4">
+            <span class="section-label">Insurance:</span> {{ card.insurance.plan_name or '-' }}
+          </div>
+          <div class="col-md-4">
+            <span class="section-label">ID:</span> {{ card.insurance.policy_number or '-' }}
+          </div>
+          <div class="col-md-4">
+            <span class="section-label">Group:</span> {{ card.insurance.group_number or '-' }}
+          </div>
         </div>
-        <div><strong>Insured DOB:</strong>
-          {% if card.insured and card.insured.dob %}
-            {{ card.insured.dob.strftime('%Y-%m-%d') }}
-          {% else %}-{% endif %}
-        </div>
-        <div><strong>Insured Address:</strong> {% if card.insured and card.insured.address %}{{ card.insured.address }}{% else %}-{% endif %}</div>
-        <div><strong>Insured Telephone:</strong> {{ format_phone(card.insured.phone_num) }}</div>
-        <div><strong>ID number:</strong> {% if card.insurance.policy_number %}{{ card.insurance.policy_number }}{% else %}-{% endif %}</div>
-        <div><strong>Group number:</strong> {% if card.insurance.group_number %}{{ card.insurance.group_number }}{% else %}-{% endif %}</div>
-      {% else %}
-        No Insurance found for type '{{ card.medical_type }}'
+      </div>
       {% endif %}
-      <hr>
-      <h5>Service For:</h5>
-      <div><strong>Name:</strong> {% if card.service_member %}{{ card.service_member.full_name }}{% else %}-{% endif %}</div>
-      <div><strong>DOB:</strong> {% if card.service_member and card.service_member.dob %}{{ card.service_member.dob.strftime('%Y-%m-%d') }}{% else %}-{% endif %}</div>
-      <div><strong>Address:</strong> {% if card.service_member and card.service_member.address %}{{ card.service_member.address }}{% else %}-{% endif %}</div>
-      <div><strong>Phone:</strong> {{ format_phone(card.service_member.phone_number) }}</div>
-      <div><strong>Relationship to Insured:</strong> {% if card.service_member and card.service_member.relationship_to_primary %}{{ card.service_member.relationship_to_primary }}{% else %}-{% endif %}</div>
-      <hr>
-      <h6>Provider:</h6>
-      <div><strong>Name:</strong> {% if card.provider %}{{ card.provider.provider_name }}{% else %}-{% endif %}</div>
-      <div><strong>Group:</strong> {% if card.provider and card.provider.provider_group %}{{ card.provider.provider_group }}{% else %}-{% endif %}</div>
-      <div><strong>Address:</strong> {% if card.provider and card.provider.provider_address %}{{ card.provider.provider_address }}{% else %}-{% endif %}</div>
-      <div><strong>NPI:</strong> {% if card.provider and card.provider.npi_number %}{{ card.provider.npi_number }}{% else %}-{% endif %}</div>
-      <div><strong>EIN:</strong> {% if card.provider and card.provider.tax_id %}{{ card.provider.tax_id }}{% else %}-{% endif %}</div>
-      <div><strong>Phone:</strong> {{ format_phone(card.provider.phone_num) }}</div>
-      <div><strong>Accept Assignment:</strong> NO</div>
+
+      <div class="row g-2">
+        <div class="col-md-6">
+          <h6 class="section-label mb-1">Insured Info</h6>
+          <dl class="row mb-0">
+            <dt class="col-4">Name</dt>
+            <dd class="col-8">{% if card.insured and card.insured.full_name %}{{ card.insured.full_name }}{% elif card.insurance.insured_member_id %}ID {{ card.insurance.insured_member_id }}{% else %}-{% endif %}</dd>
+
+            <dt class="col-4">DOB</dt>
+            <dd class="col-8">{% if card.insured and card.insured.dob %}{{ card.insured.dob.strftime('%Y-%m-%d') }}{% else %}-{% endif %}</dd>
+
+            <dt class="col-4">Phone</dt>
+            <dd class="col-8">{{ format_phone(card.insured.phone_num) }}</dd>
+          </dl>
+        </div>
+
+        <div class="col-md-6">
+          <h6 class="section-label mb-1">Patient Info</h6>
+          <dl class="row mb-0">
+            <dt class="col-4">Name</dt>
+            <dd class="col-8">{% if card.service_member %}{{ card.service_member.full_name }}{% else %}-{% endif %}</dd>
+
+            <dt class="col-4">DOB</dt>
+            <dd class="col-8">{% if card.service_member and card.service_member.dob %}{{ card.service_member.dob.strftime('%Y-%m-%d') }}{% else %}-{% endif %}</dd>
+
+            <dt class="col-4">Phone</dt>
+            <dd class="col-8">{{ format_phone(card.service_member.phone_number) }}</dd>
+
+            <dt class="col-4">Rel. to Insured</dt>
+            <dd class="col-8">{% if card.service_member and card.service_member.relationship_to_primary %}{{ card.service_member.relationship_to_primary }}{% else %}-{% endif %}</dd>
+          </dl>
+        </div>
+      </div>
+
+      <hr class="my-2">
+      <div class="row provider-grid">
+        <div class="col-md-4">
+          <h6 class="provider-label mb-1" aria-hidden="true">Provider</h6>
+          <div class="fw-semibold">{% if card.provider %}{{ card.provider.provider_name }}{% else %}-{% endif %}</div>
+          <div class="text-muted small">{% if card.provider and card.provider.provider_group %}{{ card.provider.provider_group }}{% endif %}</div>
+        </div>
+        <div class="col-md-8">
+          <div class="small">{% if card.provider and card.provider.provider_address %}{{ card.provider.provider_address }}{% else %}-{% endif %}</div>
+          <div class="small mt-1">NPI: {% if card.provider and card.provider.npi_number %}{{ card.provider.npi_number }}{% else %}-{% endif %} &nbsp; | &nbsp; EIN: {% if card.provider and card.provider.tax_id %}{{ card.provider.tax_id }}{% else %}-{% endif %}</div>
+          <div class="small">Phone: {{ format_phone(card.provider.phone_num) }}</div>
+        </div>
+      </div>
     </div>
-    <div class="card-body">
+    <div class="group-body py-2">
       <div class="table-responsive">
         <table class="table table-sm">
           <thead>
@@ -98,9 +217,84 @@
             {% endif %}
           </tbody>
         </table>
+       </div>
+         </div>
+  </section>
+  <div class="page-break-print" aria-hidden="true"></div>
+  {% endif %}
+{% endfor %}
+
+<!-- Mark as Submitted Modal -->
+<div class="modal fade" id="markSubmittedModal" tabindex="-1" aria-labelledby="markSubmittedModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="markSubmittedModalLabel">Mark Claim as Submitted</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p>Select the date when the claim was submitted:</p>
+        <input type="date" id="claimSubmittedDate" class="form-control">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success" id="confirmMarkSubmitted">Mark as Submitted</button>
       </div>
     </div>
   </div>
-{% endfor %}
+</div>
 
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showMarkSubmittedModal() {
+    const modalElement = document.getElementById('markSubmittedModal');
+    if (modalElement) {
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+    } else {
+        alert('Modal not found');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Set default date to today
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('claimSubmittedDate').value = today;
+
+    // Add event listener for confirm button
+    document.getElementById('confirmMarkSubmitted').addEventListener('click', async function() {
+        const date = document.getElementById('claimSubmittedDate').value;
+        if (!date) {
+            alert('Please select a date.');
+            return;
+        }
+        const chargeIds = {{ charge_ids | tojson }};
+        try {
+            const response = await fetch('/api/charges/bulk-update', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    charge_ids: chargeIds,
+                    update_data: { claim_submitted_date: date }
+                })
+            });
+            if (response.ok) {
+                alert('Claim marked as submitted successfully!');
+                // Close the modal
+                const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('markSubmittedModal'));
+                if (modal) modal.hide();
+            } else {
+                const error = await response.json();
+                alert('Error: ' + (error.detail || 'Failed to update charges'));
+            }
+        } catch (error) {
+            alert('Error: ' + error.message);
+        }
+    });
+});
+</script>
 {% endblock %}

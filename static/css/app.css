@@ -195,3 +195,85 @@ input.eob-amt, input.eob-amt::-webkit-outer-spin-button, input.eob-amt::-webkit-
 .fam-avatar--sam { background: linear-gradient(180deg,#e9f9ee,#dff6df); color: #0b6b20; border-color: rgba(11,107,32,0.12); }
 .fam-avatar--riley { background: linear-gradient(180deg,#fff0f9,#ffe6f5); color: #ad0f6f; border-color: rgba(173,15,111,0.08); }
 .fam-avatar--jordan { background: linear-gradient(180deg,#e6ffff,#dffbfb); color: #006d6d; border-color: rgba(0,109,109,0.12); }
+
+/* Compact, modern styles for manual_claim template */
+.claim-group { border-top: 1px solid rgba(0,0,0,0.06); padding: 0.75rem 0; }
+.claim-group:first-child { border-top: none; padding-top: 0; }
+.group-header { background: transparent; padding:0; margin:0; }
+.group-header dl.row { font-size: 0.9rem; }
+.group-header dt { color:#6c757d; font-weight:600; }
+.group-header dd { margin-bottom:0.35rem; }
+.provider-grid { align-items:flex-start; }
+.provider-grid > .col-md-4 { padding-right: 1rem; }
+.provider-grid > .col-md-8 { padding-left: 0.25rem; }
+.group-body { padding-top:0.35rem; padding-bottom:0.35rem; }
+.claim-group table.table { margin-bottom:0; }
+
+/* Responsive tweaks: make headers stack more compactly on small screens */
+@media (max-width: 576px) {
+  .provider-grid { flex-direction:column; gap:0.25rem; }
+  .group-header dl.row { display:block; }
+  .group-header dt, .group-header dd { float:none; display:block; width:100%; }
+}
+
+/* Emphasize Provider / Contact labels */
+.provider-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0d6efd; /* use primary blue for emphasis */
+  letter-spacing: 0.2px;
+}
+
+/* Section labels for manual claim */
+.section-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #0d6efd; /* use primary blue for emphasis */
+  letter-spacing: 0.2px;
+}
+
+/* Print rules: ensure each claim group's table and its header stay together and break after the group's table */
+@media print {
+  .no-print { display: none !important; }
+
+  /* Claim-group break behavior */
+  section.claim-group {
+    break-inside: avoid; /* avoid splitting inside */
+    -webkit-column-break-inside: avoid;
+    page-break-inside: avoid;
+    padding-top: 0;
+    padding-bottom: 0.5rem;
+    border-top: none; /* remove borders during printing */
+  }
+
+  /* Make responsive wrapper visible so it doesn't block page breaks */
+  .table-responsive { overflow: visible !important; }
+
+  /* Ensure tables behave like tables when printing so headers can repeat */
+  table { border-collapse: collapse; display: table; width: 100%; }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
+  tbody { display: table-row-group; }
+
+  /* Prefer not to break inside table rows/cells */
+  tr, td, th { page-break-inside: avoid; break-inside: avoid; }
+
+  /* Print-only explicit page-break helper (hidden on-screen) */
+  .page-break-print { display: block; height: 0; margin: 0; padding: 0; break-after: page; page-break-after: always; }
+}
+
+/* Page headers for manual claim report */
+.page-header {
+  color: white;
+  background-color: #0d6efd; /* Bootstrap primary blue */
+  padding: 0.5rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 0.25rem;
+  font-weight: 600;
+}
+
+/* Strong in-print break element placed immediately after the table */
+.force-page-break { display: none; }
+@media print {
+  .force-page-break { display: block; height: 0; margin: 0; padding: 0; visibility: hidden; break-after: page; page-break-after: always; }
+}
