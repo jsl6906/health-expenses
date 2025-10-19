@@ -55,7 +55,11 @@ COPY --from=builder /app/.venv /app/.venv
 COPY src/ src/
 COPY templates/ templates/
 COPY static/ static/
-COPY alembic.ini alembic/
+# Ensure alembic.ini is in the container working directory so `alembic` CLI
+# can find it when run from /app. Also copy the whole alembic/ directory so
+# migrations and env.py are available at runtime.
+COPY alembic.ini ./
+COPY alembic/ alembic/
 COPY main.py .
 COPY init_db.py .
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh

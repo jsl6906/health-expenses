@@ -18,11 +18,14 @@ while ! python -c "from src.database_config import test_connection; import sys; 
   sleep $SLEEP_SECONDS
 done
 
-echo "DB is reachable. Running Alembic migrations..."
+echo "DB is reachable. Running Alembic migrations using /app/alembic.ini..."
 
 # Run Alembic upgrade using the environment's python (the image sets PATH to the venv)
-# It's intentionally tolerant: if alembic fails, we show output and exit non-zero.
-python -m alembic upgrade head
+# Use an explicit config file path so the CLI doesn't depend on the current working directory.
+if ! python -m alembic -c /app/alembic.ini upgrade head; then
+  echo "Alembic migration failed. Showing alembic output above. Exiting with non-zero status."
+  exit 1
+fi
 
 echo "Migrations applied. Starting application..."
 
