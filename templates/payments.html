@@ -53,6 +53,16 @@
                 </button>
             </div>
         </div>
+        <div class="row">
+            <div class="col-md-3">
+                <label for="paymentAmountFrom" class="form-label">Payment Amount From</label>
+                <input type="number" step="0.01" class="form-control" id="paymentAmountFrom">
+            </div>
+            <div class="col-md-3">
+                <label for="paymentAmountTo" class="form-label">Payment Amount To</label>
+                <input type="number" step="0.01" class="form-control" id="paymentAmountTo">
+            </div>
+        </div>
     </div>
 </div>
 
@@ -68,9 +78,8 @@
                                 <th class="sortable" data-column="1">Amount <i class="bi bi-arrow-down-up"></i></th>
                                 <th class="sortable" data-column="2">Type <i class="bi bi-arrow-down-up"></i></th>
                                 <th class="sortable" data-column="3">Provider <i class="bi bi-arrow-down-up"></i></th>
-                                <th class="sortable" data-column="4">Reimbursement <i class="bi bi-arrow-down-up"></i></th>
-                                <th class="sortable" data-column="5">Receipt <i class="bi bi-arrow-down-up"></i></th>
-                                <th class="sortable" data-column="6"># Charges <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="4">Receipt <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="5"># Charges <i class="bi bi-arrow-down-up"></i></th>
                                 <th>Attchs</th>
                             </tr>
                         </thead>
@@ -101,7 +110,6 @@
                                         -
                                     {% endif %}
                                 </td>
-                                <td>{{ payment.reimbursement_amount | currency }}</td>
                                 <td>
                                     {% if payment.has_receipt_indicator %}
                                         <span class="badge {% if payment.has_receipt_indicator.lower() in ['yes', 'y', 'true'] %}bg-success{% else %}bg-warning{% endif %}">
@@ -268,11 +276,15 @@ function initializeTableEnhancements() {
     const providerFilter = document.getElementById('providerFilter');
     const dateFrom = document.getElementById('dateFrom');
     const dateTo = document.getElementById('dateTo');
+    const paymentAmountFrom = document.getElementById('paymentAmountFrom');
+    const paymentAmountTo = document.getElementById('paymentAmountTo');
 
     if (expenseTypeFilter) expenseTypeFilter.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
     if (providerFilter) providerFilter.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
     if (dateFrom) dateFrom.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
     if (dateTo) dateTo.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
+    if (paymentAmountFrom) paymentAmountFrom.addEventListener('input', ()=>{updateQueryFromFilters(); filterTable();});
+    if (paymentAmountTo) paymentAmountTo.addEventListener('input', ()=>{updateQueryFromFilters(); filterTable();});
 
     // Setup sortable headers
     const sortableHeaders = document.querySelectorAll('.sortable');
@@ -322,10 +334,10 @@ function sortTable(column) {
             const rawB = b.cells[column].getAttribute('data-date');
             valueA = rawA ? parseDateOnly(rawA) : new Date('1900-01-01');
             valueB = rawB ? parseDateOnly(rawB) : new Date('1900-01-01');
-        } else if (column === 1 || column === 4) { // Amount columns
+        } else if (column === 1) { // Amount column
             valueA = parseFloat(cellA.replace(/[$,]/g, '')) || 0;
             valueB = parseFloat(cellB.replace(/[$,]/g, '')) || 0;
-        } else if (column === 6) { // # Charges numeric
+        } else if (column === 5) { // # Charges numeric
             valueA = parseInt(cellA.replace(/[^0-9]/g,'')) || 0;
             valueB = parseInt(cellB.replace(/[^0-9]/g,'')) || 0;
         } else { // Text columns
@@ -349,6 +361,8 @@ function filterTable() {
     const provider = document.getElementById('providerFilter').value.toLowerCase();
     const dateFrom = document.getElementById('dateFrom').value;
     const dateTo = document.getElementById('dateTo').value;
+    const paymentAmountFrom = document.getElementById('paymentAmountFrom').value;
+    const paymentAmountTo = document.getElementById('paymentAmountTo').value;
 
     const table = document.getElementById('paymentsTable');
     const rows = table.querySelectorAll('tbody tr');
@@ -398,6 +412,18 @@ function filterTable() {
             }
         }
 
+        // Payment amount range filter
+        if (visible && (paymentAmountFrom || paymentAmountTo)) {
+            const amountCell = row.cells[1].textContent.trim();
+            const amount = parseFloat(amountCell.replace(/[$,]/g, '')) || 0;
+            if (paymentAmountFrom && amount < parseFloat(paymentAmountFrom)) {
+                visible = false;
+            }
+            if (paymentAmountTo && amount > parseFloat(paymentAmountTo)) {
+                visible = false;
+            }
+        }
+
         row.style.display = visible ? '' : 'none';
     });
 
@@ -432,6 +458,8 @@ function clearFilters() {
     document.getElementById('providerFilter').value = '';
     document.getElementById('dateFrom').value = '';
     document.getElementById('dateTo').value = '';
+    document.getElementById('paymentAmountFrom').value = '';
+    document.getElementById('paymentAmountTo').value = '';
     updateQueryFromFilters();
     filterTable();
 }
@@ -526,11 +554,15 @@ function updateQueryFromFilters() {
     const prov = document.getElementById('providerFilter').value.trim();
     const df = document.getElementById('dateFrom').value.trim();
     const dt = document.getElementById('dateTo').value.trim();
+    const af = document.getElementById('paymentAmountFrom').value.trim();
+    const at = document.getElementById('paymentAmountTo').value.trim();
     q ? params.set('q', q) : params.delete('q');
     et ? params.set('type', et) : params.delete('type');
     prov ? params.set('provider', prov) : params.delete('provider');
     df ? params.set('from', df) : params.delete('from');
     dt ? params.set('to', dt) : params.delete('to');
+    af ? params.set('amount_from', af) : params.delete('amount_from');
+    at ? params.set('amount_to', at) : params.delete('amount_to');
     const newUrl = window.location.pathname + (params.toString() ? ('?' + params.toString()) : '');
     window.history.replaceState({}, '', newUrl);
 }
@@ -542,7 +574,9 @@ function restoreFiltersFromQuery() {
         type: 'expenseTypeFilter',
         provider: 'providerFilter',
         from: 'dateFrom',
-        to: 'dateTo'
+        to: 'dateTo',
+        amount_from: 'paymentAmountFrom',
+        amount_to: 'paymentAmountTo'
     };
     for (const [key, id] of Object.entries(map)) {
         const val = params.get(key);

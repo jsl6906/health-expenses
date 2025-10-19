@@ -18,11 +18,9 @@ from sqlalchemy.orm import Session
 
 
 def even_allocation_map(db: Session, charge_ids: Iterable[int]) -> Dict[int, float]:
-    """Return mapping charge_id -> total paid (even allocation across its linked payments).
+    """Return mapping charge_id -> total paid (sum of allocated amounts or even allocation).
 
-    Each payment's amount is divided equally among all charges it links to via the
-    ChargePaymentXref association table. The returned total for a charge is the sum
-    of its share from each linked payment.
+    If allocated_amounts are set (sum > 0 for payments), use them; otherwise, fall back to even allocation.
     """
     charge_ids = list({int(cid) for cid in charge_ids if cid is not None})
     if not charge_ids:
@@ -38,39 +36,111 @@ def even_allocation_map(db: Session, charge_ids: Iterable[int]) -> Dict[int, flo
 
     # Fetch all xrefs for provided charge ids.
     xrefs = (
-        db.query(XrefModel.payment_id, XrefModel.charge_id)
+        db.query(XrefModel.payment_id, XrefModel.charge_id, XrefModel.allocated_amount)
         .filter(XrefModel.charge_id.in_(charge_ids))
         .all()
     )
     if not xrefs:
         return {cid: 0.0 for cid in charge_ids}
 
-    payment_ids = {pid for pid, _ in xrefs}
-    # Load payment amounts once.
-    payments_map: Dict[int, float] = {}
-    if payment_ids:
-        for p in db.query(PaymentModel).filter(PaymentModel.id.in_(payment_ids)).all():
-            raw_amt = getattr(p, "payment_amount", None)
-            try:
-                payments_map[int(getattr(p, "id"))] = (
-                    float(raw_amt) if raw_amt is not None else 0.0
-                )
-            except Exception:
-                payments_map[int(getattr(p, "id"))] = 0.0
+    # Check if allocated_amounts are set (sum > 0 for any payment)
+    payment_allocated_sum = {}
+    for pid, cid, amt in xrefs:
+        payment_allocated_sum[pid] = payment_allocated_sum.get(pid, 0.0) + float(
+            amt or 0.0
+        )
 
-    # Build mapping payment -> list of charge ids.
-    payment_to_charges: Dict[int, List[int]] = {}
-    for pid, cid in xrefs:
-        payment_to_charges.setdefault(pid, []).append(cid)
+    use_allocated = any(s > 0 for s in payment_allocated_sum.values())
 
-    allocation: Dict[int, float] = {cid: 0.0 for cid in charge_ids}
-    for pid, cids in payment_to_charges.items():
-        amount = payments_map.get(pid, 0.0)
-        if not cids:
-            continue
-        share = amount / len(cids) if len(cids) else 0.0
-        for cid in cids:
-            allocation[cid] = allocation.get(cid, 0.0) + share
+    if use_allocated:
+        # Use allocated amounts
+        allocation: Dict[int, float] = {cid: 0.0 for cid in charge_ids}
+        for pid, cid, amt in xrefs:
+            allocation[cid] = allocation.get(cid, 0.0) + float(amt or 0.0)
+        return allocation
+    else:
+        # Fall back to even allocation
+        payment_ids = {pid for pid, _, _ in xrefs}
+        # Load payment amounts once.
+        payments_map: Dict[int, float] = {}
+        if payment_ids:
+            for p in (
+                db.query(PaymentModel).filter(PaymentModel.id.in_(payment_ids)).all()
+            ):
+                raw_amt = getattr(p, "payment_amount", None)
+                try:
+                    payments_map[int(getattr(p, "id"))] = (
+                        float(raw_amt) if raw_amt is not None else 0.0
+                    )
+                except Exception:
+                    payments_map[int(getattr(p, "id"))] = 0.0
+
+        # Build mapping payment -> list of charge ids.
+        payment_to_charges: Dict[int, List[int]] = {}
+        for pid, cid, _ in xrefs:
+            payment_to_charges.setdefault(pid, []).append(cid)
+
+        allocation: Dict[int, float] = {cid: 0.0 for cid in charge_ids}
+        for pid, cids in payment_to_charges.items():
+            amount = payments_map.get(pid, 0.0)
+            if not cids:
+                continue
+            share = amount / len(cids) if len(cids) else 0.0
+            for cid in cids:
+                allocation[cid] = allocation.get(cid, 0.0) + share
+        return allocation
+
+
+def allocate_payment_to_charges(
+    db: Session, payment_amount: float, charge_ids: List[int]
+) -> Dict[int, float]:
+    """Allocate payment amount to charges using priority logic.
+
+    Sorts charges by current owed amount descending, then allocates payment sequentially:
+    - For all but the last charge, apply as much as possible to cover owed.
+    - For the last charge, apply the remaining payment amount.
+
+    Returns dict of charge_id -> allocated_amount.
+    """
+    if not charge_ids or payment_amount <= 0:
+        return {cid: 0.0 for cid in charge_ids}
+
+    try:
+        from src.models.database import Charge as ChargeModel  # type: ignore
+    except Exception:  # pragma: no cover
+        from ..models.database import Charge as ChargeModel  # type: ignore
+
+    # Get current paid for each charge
+    current_paid = even_allocation_map(db, charge_ids)
+
+    # Get charges with owed amounts
+    charges = db.query(ChargeModel).filter(ChargeModel.id.in_(charge_ids)).all()
+    charge_owed = {}
+    for c in charges:
+        cid = c.id
+        owed = float(getattr(c, "owed_amount", 0.0) or 0.0)
+        paid = current_paid.get(cid, 0.0)
+        remaining = max(owed - paid, 0.0)
+        charge_owed[cid] = remaining
+
+    # Sort charges by owed descending
+    sorted_charges = sorted(charge_owed.items(), key=lambda x: x[1], reverse=True)
+
+    allocation = {cid: 0.0 for cid in charge_ids}
+    remaining_payment = payment_amount
+
+    for i, (cid, owed) in enumerate(sorted_charges):
+        if remaining_payment <= 0:
+            break
+        if i == len(sorted_charges) - 1:
+            # Last charge gets all remaining
+            allocation[cid] = remaining_payment
+        else:
+            # Apply as much as possible to this charge
+            alloc = min(remaining_payment, owed)
+            allocation[cid] = alloc
+            remaining_payment -= alloc
+
     return allocation
 
 

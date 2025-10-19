@@ -241,6 +241,7 @@ class ChargePaymentXref(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     charge_id = Column(Integer, ForeignKey("charges.id"))
     payment_id = Column(Integer, ForeignKey("payments.id"))
+    allocated_amount = Column(Numeric(10, 2), nullable=False, default=0.0)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     created_by = Column(String)

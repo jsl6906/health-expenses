@@ -51,6 +51,7 @@
                 <th class="text-end">This Share</th>
                 <th class="text-end">Total Paid</th>
                 <th class="text-end">Remaining</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -63,10 +64,11 @@
                 <td class="text-end">{{ c.allocated_share | currency }}</td>
                 <td class="text-end">{{ c.total_paid_all | currency }}</td>
                 <td class="text-end">{{ c.remaining_after_all | currency }}</td>
+                <td><button class="btn btn-sm btn-outline-danger unlink-charge-btn" data-charge-id="{{ c.id }}"><i class="bi bi-unlink"></i> Unlink</button></td>
               </tr>
               {% endfor %}
               {% if charges|length == 0 %}
-              <tr><td colspan="7" class="text-center text-muted small">No charges linked to this payment.</td></tr>
+              <tr><td colspan="8" class="text-center text-muted small">No charges linked to this payment.</td></tr>
               {% endif %}
             </tbody>
           </table>
@@ -219,10 +221,10 @@ document.addEventListener('DOMContentLoaded',()=>{
       const cid = cidRaw ? parseInt(cidRaw,10) : null;
       if(!cid){ alert('Please enter a valid charge id'); return; }
       try{
-        const resp = await fetch(`/api/charges/${cid}/apply-payment`,{
+        const resp = await fetch(`/api/payments/${paymentId}/link-charges`,{
           method: 'POST',
           headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({ payment_id: paymentId })
+          body: JSON.stringify({ charge_ids: [cid] })
         });
         if(resp.ok){
           // Close modal then refresh to show updated allocation
@@ -238,6 +240,26 @@ document.addEventListener('DOMContentLoaded',()=>{
       }catch(ex){ alert('Network error linking charge: '+ex.message); }
     });
   }
+
+  // Handle unlink charge buttons
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.unlink-charge-btn');
+    if (!btn) return;
+    const chargeId = parseInt(btn.dataset.chargeId, 10);
+    if (!chargeId) return;
+    if (!confirm('Unlink this charge from the payment? This will recompute allocations for remaining charges.')) return;
+    try {
+      const resp = await fetch(`/api/payments/${paymentId}/charges/${chargeId}`, { method: 'DELETE' });
+      if (resp.ok) {
+        location.reload();
+      } else {
+        const j = await resp.json().catch(()=>({}));
+        alert('Failed to unlink charge: ' + (j.detail || resp.status));
+      }
+    } catch (ex) {
+      alert('Network error unlinking charge: ' + ex.message);
+    }
+  });
 });
 </script>
     <div class="modal-content">

@@ -228,11 +228,13 @@ async def provider_detail_page(
     try:
         from models.database import Charge as ChargeModel
         from models.database import ChargePaymentXref as XrefModel
+        from models.database import FamilyMember as FamilyMemberModel  # type: ignore
         from models.database import Payment as PaymentModel
         from models.database import Provider as ProviderModel  # type: ignore
     except ImportError:  # pragma: no cover
         from ..models.database import Charge as ChargeModel
         from ..models.database import ChargePaymentXref as XrefModel
+        from ..models.database import FamilyMember as FamilyMemberModel  # type: ignore
         from ..models.database import Payment as PaymentModel
         from ..models.database import Provider as ProviderModel  # type: ignore
 
@@ -998,9 +1000,12 @@ async def payment_detail_page(
         else None
     )
     xref_rows = (
-        db.query(XrefModel.charge_id).filter(XrefModel.payment_id == payment_id).all()
+        db.query(XrefModel.charge_id, XrefModel.allocated_amount)
+        .filter(XrefModel.payment_id == payment_id)
+        .all()
     )
-    charge_ids = [cid for (cid,) in xref_rows]
+    charge_ids = [cid for (cid, _) in xref_rows]
+    alloc_map = {cid: float(amt or 0.0) for cid, amt in xref_rows}
     raw_amt = getattr(payment, "payment_amount", None)
     try:
         total_amount = float(raw_amt) if raw_amt is not None else 0.0
@@ -1013,9 +1018,8 @@ async def payment_detail_page(
             .order_by(ChargeModel.service_date.desc(), ChargeModel.id.desc())
             .all()
         )
-        share_current = total_amount / len(charge_ids) if len(charge_ids) else 0.0
         for ch in charges:
-            setattr(ch, "allocated_share", share_current)
+            setattr(ch, "allocated_share", alloc_map.get(ch.id, 0.0))
     else:
         charges = []
     try:
@@ -1024,84 +1028,20 @@ async def payment_detail_page(
         payment_attachments = []
     # Recompute full paid context for each linked charge (all payments)
     if charges:
-        try:
-            all_charge_xrefs = (
-                db.query(XrefModel.payment_id, XrefModel.charge_id)
-                .filter(XrefModel.charge_id.in_(charge_ids))
-                .all()
+        annotate_charges_with_paid(db, charges)
+        for ch in charges:
+            owed_val = getattr(ch, "owed_amount", None)
+            try:
+                owed_f = float(owed_val) if owed_val is not None else 0.0
+            except Exception:
+                owed_f = 0.0
+            total_paid_all = getattr(ch, "paid_amount_agg", 0.0)
+            setattr(
+                ch,
+                "prior_paid",
+                max(total_paid_all - getattr(ch, "allocated_share", 0.0), 0.0),
             )
-            if all_charge_xrefs:
-                all_payment_ids = {pid for pid, _ in all_charge_xrefs}
-                payment_amounts = {}
-                if all_payment_ids:
-                    for p in (
-                        db.query(PaymentModel)
-                        .filter(PaymentModel.id.in_(all_payment_ids))
-                        .all()
-                    ):
-                        raw_amt2 = getattr(p, "payment_amount", None)
-                        try:
-                            payment_amounts[p.id] = (
-                                float(raw_amt2) if raw_amt2 is not None else 0.0
-                            )
-                        except Exception:
-                            payment_amounts[p.id] = 0.0
-                payment_to_charges_map = {}
-                for pid, cid in all_charge_xrefs:
-                    payment_to_charges_map.setdefault(pid, []).append(cid)
-                total_paid_all_map: dict[int, float] = {}
-                for pid, c_list in payment_to_charges_map.items():
-                    amt = payment_amounts.get(pid, 0.0)
-                    if not c_list:
-                        continue
-                    per_share = amt / len(c_list) if len(c_list) else 0.0
-                    for cid in c_list:
-                        total_paid_all_map[cid] = (
-                            total_paid_all_map.get(cid, 0.0) + per_share
-                        )
-                for ch in charges:
-                    owed_val = getattr(ch, "owed_amount", None)
-                    try:
-                        owed_f = float(owed_val) if owed_val is not None else 0.0
-                    except Exception:
-                        owed_f = 0.0
-                    ch_id_raw = getattr(ch, "id")
-                    try:
-                        ch_id_int = int(ch_id_raw) if ch_id_raw is not None else -1
-                    except Exception:
-                        ch_id_int = -1
-                    total_paid_all = total_paid_all_map.get(ch_id_int, 0.0)
-                    setattr(ch, "total_paid_all", total_paid_all)
-                    setattr(
-                        ch,
-                        "prior_paid",
-                        max(total_paid_all - getattr(ch, "allocated_share", 0.0), 0.0),
-                    )
-                    setattr(
-                        ch, "remaining_after_all", max(owed_f - total_paid_all, 0.0)
-                    )
-            else:
-                for ch in charges:
-                    owed_val = getattr(ch, "owed_amount", None)
-                    try:
-                        owed_f = float(owed_val) if owed_val is not None else 0.0
-                    except Exception:
-                        owed_f = 0.0
-                    share_val = getattr(ch, "allocated_share", 0.0) or 0.0
-                    setattr(ch, "total_paid_all", share_val)
-                    setattr(ch, "prior_paid", 0.0)
-                    setattr(ch, "remaining_after_all", max(owed_f - share_val, 0.0))
-        except Exception:
-            for ch in charges:
-                owed_val = getattr(ch, "owed_amount", None)
-                try:
-                    owed_f = float(owed_val) if owed_val is not None else 0.0
-                except Exception:
-                    owed_f = 0.0
-                share_val = getattr(ch, "allocated_share", 0.0) or 0.0
-                setattr(ch, "total_paid_all", share_val)
-                setattr(ch, "prior_paid", 0.0)
-                setattr(ch, "remaining_after_all", max(owed_f - share_val, 0.0))
+            setattr(ch, "remaining_after_all", max(owed_f - total_paid_all, 0.0))
     return templates.TemplateResponse(
         "payment_detail.html",
         {
