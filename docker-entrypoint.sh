@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# If this script was invoked under a POSIX /bin/sh (or has CRLF shebang issues),
+# re-exec under bash so `set -o pipefail` and other bashisms work reliably.
+if [ -z "${BASH_VERSION:-}" ]; then
+  exec /bin/bash "$0" "$@"
+fi
+
 set -euo pipefail
 
 echo "Starting container entrypoint: waiting for DB and applying migrations"
