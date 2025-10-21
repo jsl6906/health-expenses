@@ -1,5 +1,5 @@
-#!/bin/sh
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
 echo "Starting container entrypoint: waiting for DB and applying migrations"
 

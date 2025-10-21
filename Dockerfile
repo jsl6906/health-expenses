@@ -38,10 +38,11 @@ ENV VIRTUAL_ENV="/app/.venv"
 # Include both /app (to import package `src`) and /app/src (to support top-level imports like `models`)
 ENV PYTHONPATH="/app:/app/src"
 
-# Install runtime dependencies
+# Install runtime dependencies (ensure bash is available for the entrypoint)
 RUN apt-get update && apt-get install -y \
     libpq5 \
     curl \
+    bash \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --shell /bin/bash app
 
@@ -79,5 +80,5 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/ || exit 1
 
 # Default command
-ENTRYPOINT ["/bin/sh", "/app/docker-entrypoint.sh"]
+ENTRYPOINT ["/usr/bin/env", "bash", "/app/docker-entrypoint.sh"]
 CMD ["python", "main.py"]
