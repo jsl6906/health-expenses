@@ -157,19 +157,67 @@ def create_session(
                             svc_date = _d(int(parts[0]), int(parts[1]), int(parts[2]))
                         except Exception:
                             svc_date = None
+                # Normalize numeric fields and apply fallback: when there is no
+                # insurance support parsed (charged may be null/0) but base fee
+                # equals owed amount, assume charged == owed so charges aren't
+                # zeroed out.
+                charged = r.get("charged_amount")
+                owed = r.get("owed_amount")
+                base_fee = r.get("base_fee_amount")
+                try:
+                    # Coerce numeric-like strings to float when reasonable
+                    if charged is not None and isinstance(charged, str):
+                        charged = float(charged) if charged.strip() != "" else None
+                except Exception:
+                    charged = None
+                try:
+                    if owed is not None and isinstance(owed, str):
+                        owed = float(owed) if owed.strip() != "" else None
+                except Exception:
+                    owed = None
+                try:
+                    if base_fee is not None and isinstance(base_fee, str):
+                        base_fee = float(base_fee) if base_fee.strip() != "" else None
+                except Exception:
+                    base_fee = None
+
+                # If charged missing/zero but base_fee equals owed and owed is present,
+                # use that as charged amount.
+                if (not charged or float(charged) == 0) and (
+                    base_fee is not None
+                    and owed is not None
+                    and float(base_fee) == float(owed)
+                    and float(owed) != 0
+                ):
+                    charged = owed
+
+                # New rule: if parsing only produced a base_fee (charged and owed
+                # are missing or zero) then assume charged and owed equal base_fee
+                # so the import doesn't create zero-valued charges.
+                if base_fee is not None:
+                    charged_missing = charged is None or (
+                        isinstance(charged, (int, float)) and float(charged) == 0
+                    )
+                    owed_missing = owed is None or (
+                        isinstance(owed, (int, float)) and float(owed) == 0
+                    )
+                    if charged_missing and owed_missing:
+                        charged = float(base_fee)
+                        owed = float(base_fee)
+
                 parsed_rows.append(
                     ParsedChargeRow(
                         index=idx,
                         service_date=svc_date,
                         cpt_code=r.get("cpt_code"),
                         description=r.get("description") or "(No description)",
-                        charged_amount=r.get("charged_amount"),
-                        owed_amount=r.get("owed_amount"),
+                        charged_amount=charged,
+                        owed_amount=owed,
                         provider_name=r.get("provider_name"),
                         family_member=r.get("family_member"),
                         insurance_paid_amount=r.get("insurance_paid_amount"),
                         insurance_discount_amount=r.get("insurance_discount_amount"),
-                        base_fee_amount=r.get("base_fee_amount"),
+                        base_fee_amount=base_fee,
                         reimbursement_amount=r.get("reimbursement_amount"),
                     )
                 )

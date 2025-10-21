@@ -10,7 +10,7 @@
             <i class="bi bi-plus-circle"></i> Add Charge
         </button>
         <a href="/charges/import/eob" class="btn btn-outline-primary">
-            <i class="bi bi-file-earmark-medical"></i> Add Charges from EOB
+            <i class="bi bi-file-earmark-medical"></i> Import Charges from Document
         </a>
         <a href="/charges/add-multiple" class="btn btn-outline-primary">
             <i class="bi bi-receipt"></i> Add Multiple Charges
@@ -1199,10 +1199,16 @@ function populateChargeMergeModal(charges) {
         if (field.type === 'number') {
             val1 = actualVal1 !== null && actualVal1 !== undefined && actualVal1 !== '' ? formatCurrency(actualVal1) : '';
             val2 = actualVal2 !== null && actualVal2 !== undefined && actualVal2 !== '' ? formatCurrency(actualVal2) : '';
-        } else if (field.key === 'provider_id') {
+        } else if (field.key === 'provider_id' || field.key === 'family_member') {
             // Display the provider's name but keep the key as provider_id so the server can update provider_id
-            val1 = charge1.provider_name || '';
-            val2 = charge2.provider_name || '';
+            if (field.key === 'provider_id') {
+                val1 = charge1.provider_name || '';
+                val2 = charge2.provider_name || '';
+            } else {
+                // family_member: API now returns id in `family_member` and a display string in `family_member_display`
+                val1 = charge1.family_member_display || '';
+                val2 = charge2.family_member_display || '';
+            }
         } else {
             val1 = actualVal1 || '';
             val2 = actualVal2 || '';
@@ -1291,18 +1297,21 @@ function populateChargeMergeModal(charges) {
         console.log('merge-compare field', field.key, 'differ=', differ, 'val1=', val1, 'val2=', val2);
     }
 
+        // For family_member we want to submit the id (or empty) as merged field under key 'family_member_id'
+        const inputKey = (field.key === 'family_member') ? 'family_member_id' : field.key;
+
         html += `
             <div class="row mb-2 align-items-center">
                 <div class="col-md-4"><label class="form-label mb-0">${field.label}</label></div>
                 <div class="col-md-4">
                     <div class="form-check">
-                        <input class="form-check-input" type="radio" name="${field.key}" value="${actualVal1 || ''}" id="${field.key}_1" ${defaultSelection === 1 ? 'checked' : ''}>
+                        <input class="form-check-input" type="radio" name="${inputKey}" value="${(field.key === 'family_member' ? (charge1.family_member || '') : (actualVal1 || ''))}" id="${field.key}_1" ${defaultSelection === 1 ? 'checked' : ''}>
                         <label class="form-check-label ${labelClass}" for="${field.key}_1" aria-label="${(val1 || '(empty)')}${diffHint1 ? ' - ' + diffHint1 : ''}">${val1 || '(empty)'}</label>
                     </div>
                 </div>
                 <div class="col-md-4">
                     <div class="form-check">
-                        <input class="form-check-input" type="radio" name="${field.key}" value="${actualVal2 || ''}" id="${field.key}_2" ${defaultSelection === 2 ? 'checked' : ''}>
+                        <input class="form-check-input" type="radio" name="${inputKey}" value="${(field.key === 'family_member' ? (charge2.family_member || '') : (actualVal2 || ''))}" id="${field.key}_2" ${defaultSelection === 2 ? 'checked' : ''}>
                         <label class="form-check-label ${labelClass}" for="${field.key}_2" aria-label="${(val2 || '(empty)')}${diffHint2 ? ' - ' + diffHint2 : ''}">${val2 || '(empty)'}</label>
                     </div>
                 </div>

@@ -30,6 +30,55 @@ class ChargeCRUD(BaseCRUD[Charge]):
             db.query(Charge).filter(Charge.family_member_id == family_member_id).all()
         )
 
+    def get_by_family_member(self, db: Session, family_member) -> List[Charge]:
+        """Get charges by family member id or name.
+
+        Accepts either an integer id, a numeric string, or a name string. If a
+        name is provided, attempts to match first+last name or either first or
+        last name (case-insensitive).
+        """
+        # Local import to avoid circular import issues in some execution modes
+        try:
+            from models.database import FamilyMember  # type: ignore
+        except Exception:
+            from ..models.database import FamilyMember  # type: ignore
+
+        # If passed an integer, delegate to the id-based method
+        if isinstance(family_member, int):
+            return self.get_by_family_member_id(db, family_member)
+
+        fam = (str(family_member or "")).strip()
+        # If it's a numeric string, treat as id
+        if fam.isdigit():
+            return self.get_by_family_member_id(db, int(fam))
+
+        if not fam:
+            return []
+
+        from sqlalchemy import func, or_
+
+        parts = fam.split()
+        q = db.query(Charge).join(
+            FamilyMember, Charge.family_member_id == FamilyMember.id
+        )
+
+        # If looks like 'First Last' try to match both
+        if len(parts) >= 2:
+            first = parts[0]
+            last = " ".join(parts[1:])
+            return q.filter(
+                func.lower(FamilyMember.first_name) == first.lower(),
+                func.lower(FamilyMember.last_name) == last.lower(),
+            ).all()
+
+        # Otherwise match either first or last name (case-insensitive)
+        return q.filter(
+            or_(
+                func.lower(FamilyMember.first_name) == fam.lower(),
+                func.lower(FamilyMember.last_name) == fam.lower(),
+            )
+        ).all()
+
     def get_by_medical_type(self, db: Session, medical_type: str) -> List[Charge]:
         """Get charges by medical type."""
         return db.query(Charge).filter(Charge.medical_type == medical_type).all()

@@ -168,13 +168,13 @@ async def bulk_create_charges(
         att_in = _AttachmentCreate(
             charge_id=highest_charge_id,
             payment_id=None,
-            notes="Attachment for batch (highest charge)",
+            notes=f"Created via bulk upload, attachment on charge #{highest_charge_id}",
         )
         try:
             create_attachment(
                 db,
                 data=att_in,
-                original_filename=attachment.filename or "attachment",
+                original_filename="Bulk Charge Uploaded Attachment",
                 content_type=attachment.content_type or "application/octet-stream",
                 file_size=len(file_bytes),
                 content_bytes=file_bytes,
@@ -182,6 +182,38 @@ async def bulk_create_charges(
             )
             db.commit()
             attached_id = highest_charge_id
+            # Update notes on other created charges to reference where the attachment was stored
+            try:
+                note_text = f"Created via bulk upload, attachment on charge #{highest_charge_id}"
+                logger.debug(f"Updating notes on other charges to: {note_text}")
+                for cid in created_ids:
+                    if cid == highest_charge_id:
+                        continue
+                    try:
+                        from models.database import (
+                            Charge as ChargeModel,  # type: ignore
+                        )
+                    except ImportError:
+                        from ..models.database import (
+                            Charge as ChargeModel,  # type: ignore
+                        )
+                    ch_obj = db.query(ChargeModel).filter(ChargeModel.id == cid).first()
+                    if not ch_obj:
+                        continue
+                    existing = (getattr(ch_obj, "notes", None) or "").strip()
+                    if existing:
+                        new_notes = f"{existing}; {note_text}"
+                    else:
+                        new_notes = note_text
+                    setattr(ch_obj, "notes", new_notes)
+                db.commit()
+                logger.debug(
+                    f"Updated notes for {len(created_ids)-1} charges (excluding attached)"
+                )
+            except Exception as note_exc:
+                logger.exception(
+                    "Failed to update notes on non-attached charges: %s", note_exc
+                )
         except Exception as create_exc:
             # Log details so we can inspect failures creating attachment records
             logger.exception(
@@ -368,6 +400,37 @@ def apply_payment_to_charge(
             )
         )
     db.commit()
+
+    # Recompute allocations for this payment so allocated_amount fields are set.
+    try:
+        from ..services.allocation import allocate_payment_to_charges
+    except Exception:
+        from services.allocation import allocate_payment_to_charges
+
+    # Get all linked charge ids for this payment and compute allocations
+    all_xrefs = db.query(XrefModel).filter(XrefModel.payment_id == payment_obj.id).all()
+    all_charge_ids = [xref.charge_id for xref in all_xrefs]
+    try:
+        allocations = allocate_payment_to_charges(
+            db,
+            float(getattr(payment_obj, "payment_amount", 0.0) or 0.0),
+            all_charge_ids,
+        )
+    except Exception:
+        allocations = {cid: 0.0 for cid in all_charge_ids}
+
+    # Update xrefs with new allocated amounts
+    try:
+        from sqlalchemy import func as _func
+
+        for xref in all_xrefs:
+            xref.allocated_amount = allocations.get(xref.charge_id, 0.0)
+            xref.updated_at = _func.now()
+            xref.updated_by = "system"
+        db.commit()
+    except Exception:
+        # If updates fail, log nothing here but ensure we don't crash the endpoint
+        db.rollback()
     from sqlalchemy import func as _func
 
     from models.database import Payment as PaymentModel  # type: ignore
@@ -481,6 +544,65 @@ def merge_charge(
         setattr(attachment, "charge_id", payload.target_charge_id)
         moved_attachments.append(getattr(attachment, "id", None))
 
+    # Ensure DB session is flushed so newly-created xrefs are visible to subsequent queries
+    # This makes allocation recompute see the updated links before we query/update xrefs.
+    try:
+        db.flush()
+    except Exception:
+        # If flush fails, continue and allow the recompute block to attempt best-effort updates.
+        pass
+
+    # Recompute allocations for payments that are now linked to the target charge
+    try:
+        try:
+            from ..services.allocation import allocate_payment_to_charges
+        except Exception:
+            from services.allocation import allocate_payment_to_charges
+
+        try:
+            from models.database import Payment as PaymentModel  # type: ignore
+        except ImportError:
+            from .models.database import Payment as PaymentModel  # type: ignore
+
+        # Get distinct payment_ids now linked to the target charge
+        linked_pay_rows = (
+            db.query(XrefModel.payment_id)
+            .filter(XrefModel.charge_id == payload.target_charge_id)
+            .distinct()
+            .all()
+        )
+        linked_payment_ids = [r[0] for r in linked_pay_rows if r and r[0] is not None]
+
+        for pid in set(linked_payment_ids):
+            # Get all charges linked to this payment
+            xrefs_for_payment = (
+                db.query(XrefModel).filter(XrefModel.payment_id == pid).all()
+            )
+            charge_ids = [getattr(x, "charge_id", None) for x in xrefs_for_payment]
+            if not charge_ids:
+                continue
+            pay_obj = db.query(PaymentModel).filter(PaymentModel.id == pid).first()
+            amt = float(getattr(pay_obj, "payment_amount", 0.0) or 0.0)
+            try:
+                allocs = allocate_payment_to_charges(db, amt, charge_ids)
+            except Exception:
+                allocs = {cid: 0.0 for cid in charge_ids}
+
+            # Update xrefs for this payment
+            from sqlalchemy import func as _func
+
+            for x in xrefs_for_payment:
+                try:
+                    x.allocated_amount = allocs.get(x.charge_id, 0.0)
+                    x.updated_at = _func.now()
+                    x.updated_by = "system"
+                except Exception:
+                    # Best-effort: if updating one xref fails, continue with others
+                    continue
+    except Exception:
+        # Do not fail the merge if allocation recompute errors; proceed to commit
+        pass
+
     # Delete the source charge
     db.delete(source_charge)
 
@@ -540,10 +662,33 @@ def get_merge_comparison(
             except Exception:
                 return 0.0
 
+        # Build a safe, JSON-friendly representation for family member: include id and display string
+        fm_obj = getattr(charge, "family_member", None)
+        fm_id = getattr(charge, "family_member_id", None)
+        fm_display = None
+        if fm_obj:
+            try:
+                fm_display = (
+                    fm_obj.emoji
+                    if getattr(fm_obj, "emoji", None)
+                    else (
+                        (fm_obj.first_name or "")
+                        + (
+                            " " + fm_obj.last_name
+                            if getattr(fm_obj, "last_name", None)
+                            else ""
+                        )
+                    )
+                )
+            except Exception:
+                fm_display = None
+
         charge_data = {
             "id": getattr(charge, "id", None),
             "service_date": svc.isoformat() if svc is not None else None,
-            "family_member": getattr(charge, "family_member", None),
+            # family_member: provide both an id (used for updates) and a human-friendly display string for the UI
+            "family_member": fm_id,
+            "family_member_display": fm_display,
             "medical_type": getattr(charge, "medical_type", None),
             "provider_id": provider_id_val,
             "provider_name": provider.provider_name if provider else None,
@@ -618,8 +763,16 @@ def merge_charges_with_fields(
                 setattr(
                     target_charge, field, float(value) if value is not None else None
                 )
-            elif field == "provider_id":
-                setattr(target_charge, field, int(value) if value is not None else None)
+            elif field in ("provider_id", "family_member_id"):
+                # Coerce to int for foreign key columns
+                try:
+                    setattr(
+                        target_charge,
+                        field,
+                        int(value) if value is not None and value != "" else None,
+                    )
+                except Exception:
+                    setattr(target_charge, field, None)
             else:
                 setattr(target_charge, field, value)
 
@@ -668,6 +821,60 @@ def merge_charges_with_fields(
     for attachment in attachments:
         setattr(attachment, "charge_id", payload.target_charge_id)
         moved_attachments.append(getattr(attachment, "id", None))
+
+    # Ensure DB session is flushed so newly-created xrefs are visible to subsequent queries
+    # This makes allocation recompute see the updated links before we query/update xrefs.
+    try:
+        db.flush()
+    except Exception:
+        # If flush fails, continue and allow the recompute block to attempt best-effort updates.
+        pass
+
+    # Recompute allocations for payments that are now linked to the target charge
+    try:
+        try:
+            from ..services.allocation import allocate_payment_to_charges
+        except Exception:
+            from services.allocation import allocate_payment_to_charges
+
+        try:
+            from models.database import Payment as PaymentModel  # type: ignore
+        except ImportError:
+            from .models.database import Payment as PaymentModel  # type: ignore
+
+        linked_pay_rows = (
+            db.query(XrefModel.payment_id)
+            .filter(XrefModel.charge_id == payload.target_charge_id)
+            .distinct()
+            .all()
+        )
+        linked_payment_ids = [r[0] for r in linked_pay_rows if r and r[0] is not None]
+
+        for pid in set(linked_payment_ids):
+            xrefs_for_payment = (
+                db.query(XrefModel).filter(XrefModel.payment_id == pid).all()
+            )
+            charge_ids = [getattr(x, "charge_id", None) for x in xrefs_for_payment]
+            if not charge_ids:
+                continue
+            pay_obj = db.query(PaymentModel).filter(PaymentModel.id == pid).first()
+            amt = float(getattr(pay_obj, "payment_amount", 0.0) or 0.0)
+            try:
+                allocs = allocate_payment_to_charges(db, amt, charge_ids)
+            except Exception:
+                allocs = {cid: 0.0 for cid in charge_ids}
+
+            from sqlalchemy import func as _func
+
+            for x in xrefs_for_payment:
+                try:
+                    x.allocated_amount = allocs.get(x.charge_id, 0.0)
+                    x.updated_at = _func.now()
+                    x.updated_by = "system"
+                except Exception:
+                    continue
+    except Exception:
+        pass
 
     # Delete the source charge
     db.delete(source_charge)

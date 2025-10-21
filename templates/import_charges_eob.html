@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Import Charges from EOB{% endblock %}
+{% block title %}Import Charges from Document{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h2><i class="bi bi-file-earmark-medical"></i> Import Charges from EOB</h2>
+  <h2><i class="bi bi-file-earmark-medical"></i> Import Charges from Document</h2>
   <a href="/charges" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back to Charges</a>
 </div>
 <div class="card mb-3">
@@ -10,7 +10,7 @@
     <form id="eobUploadForm" class="row g-2 align-items-end" enctype="multipart/form-data">
       <!-- First row: EOB file, Family Member, Upload -->
       <div class="col-md-5 d-flex flex-column">
-        <label for="eobFile" class="form-label small mb-1">EOB File (PDF / any)</label>
+        <label for="eobFile" class="form-label small mb-1">Document File (PDF / any)</label>
         <input type="file" class="form-control form-control-sm h-100" id="eobFile" name="file" required>
       </div>
       <div class="col-md-3 d-flex flex-column">
@@ -27,11 +27,11 @@
         <label for="medicalType" class="form-label small mb-1">Medical Type</label>
         <select id="medicalType" class="form-select form-select-sm h-100">
           <option value="">(Select type)</option>
-          <option value="medical">Medical</option>
-          <option value="dental">Dental</option>
-          <option value="vision">Vision</option>
-          <option value="pharmacy">Pharmacy</option>
-          <option value="other">Other</option>
+          <option value="Medical">Medical</option>
+          <option value="Dental">Dental</option>
+          <option value="Vision">Vision</option>
+          <option value="Mental Health">Mental Health</option>
+          <option value="Other">Other</option>
         </select>
       </div>
       <div class="col-md-2 d-flex align-items-stretch">
@@ -64,7 +64,7 @@
         <input id="diagnosisCode" name="diagnosis_code" class="form-control form-control-sm" placeholder="e.g. M54.5" />
       </div>
     </form>
-    <div class="small text-muted mt-2">Upload a single EOB to parse.</div>
+    <div class="small text-muted mt-2">Upload a single document to parse (EOB, invoice, or other).</div>
   </div>
 </div>
 

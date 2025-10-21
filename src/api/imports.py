@@ -1622,6 +1622,42 @@ def eob_import(
     except Exception:
         batch_family = None
 
+    # Attempt to resolve batch-level family_member string to an id (if available)
+    batch_family_id = None
+    try:
+        from models.database import FamilyMember as FamilyMemberModel  # type: ignore
+    except Exception:
+        from .models.database import FamilyMember as FamilyMemberModel
+    try:
+        if batch_family:
+            # Try parse as int id first
+            try:
+                parsed = int(batch_family)
+                fam_obj = db.get(FamilyMemberModel, parsed)
+                if fam_obj:
+                    batch_family_id = getattr(fam_obj, "id", None)
+            except Exception:
+                # Fallback: match by the label generation used in templates (emoji or 'First Last')
+                fams = db.query(FamilyMemberModel).all()
+                for fm in fams:
+                    label = (
+                        fm.emoji
+                        if getattr(fm, "emoji", None)
+                        else (
+                            getattr(fm, "first_name", "")
+                            + (
+                                " " + getattr(fm, "last_name", "")
+                                if getattr(fm, "last_name", None)
+                                else ""
+                            )
+                        )
+                    )
+                    if label == batch_family:
+                        batch_family_id = getattr(fm, "id", None)
+                        break
+    except Exception:
+        batch_family_id = None
+
     # Inspect overrides for any provided eob or doctor or provider-like name
     for ov in overrides_map.values():
         if not batch_eob_num:
@@ -1683,12 +1719,60 @@ def eob_import(
                 if ov.get("service_date")
                 else (r.service_date.isoformat() if r.service_date else None)
             )
+            # Resolve family member for this row: allow id or label
+            fam_field = ov.get("family_member", r.family_member or batch_family)
+            family_member_id_for_row = None
+            if fam_field is not None:
+                try:
+                    # If a numeric id was provided
+                    parsed_id = int(fam_field)
+                    fam_obj = db.get(FamilyMemberModel, parsed_id)
+                    if fam_obj:
+                        family_member_id_for_row = getattr(fam_obj, "id", None)
+                except Exception:
+                    # Match by label (emoji or 'First Last') using same logic as UI
+                    try:
+                        fams = db.query(FamilyMemberModel).all()
+                        for fm in fams:
+                            label = (
+                                fm.emoji
+                                if getattr(fm, "emoji", None)
+                                else (
+                                    getattr(fm, "first_name", "")
+                                    + (
+                                        " " + getattr(fm, "last_name", "")
+                                        if getattr(fm, "last_name", None)
+                                        else ""
+                                    )
+                                )
+                            )
+                            if label == fam_field:
+                                family_member_id_for_row = getattr(fm, "id", None)
+                                break
+                    except Exception:
+                        family_member_id_for_row = None
+
+            # Fallback to batch-level resolved id
+            if family_member_id_for_row is None:
+                family_member_id_for_row = batch_family_id
+
+            # Determine medical_type: prefer per-row override, then explicit
+            # payload value, then session-level value, then fallback to 'Medical'.
+            row_medical_type = (
+                ov.get("medical_type")
+                or getattr(payload, "medical_type", None)
+                or (
+                    session.get("medical_type")
+                    if isinstance(session, dict)
+                    else getattr(session, "medical_type", None)
+                )
+                or "Medical"
+            )
+
             charge_in = {
                 "service_date": ov_service_date,
-                "family_member": ov.get(
-                    "family_member", r.family_member or batch_family
-                ),
-                "medical_type": "Medical",
+                "family_member_id": family_member_id_for_row,
+                "medical_type": row_medical_type,
                 "provider_id": payload.provider_id or batch_provider_override,
                 "cpt_code": ov.get("cpt_code", r.cpt_code),
                 "charge_description": ov.get("description", r.description),
@@ -1724,8 +1808,9 @@ def eob_import(
                 or payload.diagnosis_code,
                 "notes": None,
             }
-            if highest_row is not None and r.index != highest_row:
-                charge_in["notes"] = "EOB file attached to highest charge in this batch"
+            # No per-row placeholder notes here; we'll attach the EOB to the highest
+            # charge after creating all rows and then update other charges with
+            # an exact reference to the charge that received the attachment.
             created = charge_crud.create(db, charge_in)
             raw_id = getattr(created, "id", None)
             if raw_id is not None:
@@ -1748,20 +1833,78 @@ def eob_import(
                     AttachmentCreate as _AttachmentCreate,  # type: ignore
                 )
 
+                # Make the attachment notes and filename include the original
+                # uploaded filename when available so users can identify the
+                # source easily in the UI.
+                orig_name = None
+                try:
+                    orig_name = (
+                        session.get("filename")
+                        if isinstance(session, dict)
+                        else getattr(session, "filename", None)
+                    )
+                except Exception:
+                    orig_name = None
+
+                notes_for_attachment = (
+                    f"Original EOB document: {orig_name}"
+                    if orig_name
+                    else "Original EOB document"
+                )
+
                 att_in = _AttachmentCreate(
                     charge_id=highest_created_id,
                     payment_id=None,
-                    notes="Original EOB document",
+                    notes=notes_for_attachment,
                 )
+
+                attachment_filename = (
+                    f"original_eob_{highest_created_id}_{orig_name}"
+                    if orig_name
+                    else f"original_eob_{highest_created_id}"
+                )
+
                 create_attachment(
                     db,
                     data=att_in,
-                    original_filename=session.filename,
+                    original_filename=attachment_filename,
                     content_type=session.content_type or "application/octet-stream",
                     file_size=len(session.file_bytes),
                     content_bytes=session.file_bytes,
                 )
                 db.commit()
+                # Update notes on the other created charges to point to the charge
+                # that received the attachment so users can discover where the
+                # file is stored. Use a clear, human-friendly message.
+                try:
+                    note_text = f"Created via bulk upload, attachment on charge #{highest_created_id}"
+                    for cid in created_ids:
+                        if cid == highest_created_id:
+                            continue
+                        try:
+                            # Safely append or set notes on the charge
+                            from models.database import (
+                                Charge as ChargeModel,  # type: ignore
+                            )
+                        except ImportError:
+                            from .models.database import (
+                                Charge as ChargeModel,  # type: ignore
+                            )
+                        ch_obj = (
+                            db.query(ChargeModel).filter(ChargeModel.id == cid).first()
+                        )
+                        if not ch_obj:
+                            continue
+                        existing = (getattr(ch_obj, "notes", None) or "").strip()
+                        if existing:
+                            new_notes = f"{existing}; {note_text}"
+                        else:
+                            new_notes = note_text
+                        setattr(ch_obj, "notes", new_notes)
+                    db.commit()
+                except Exception:
+                    # Don't let note-updating failures block the import outcome
+                    pass
         except Exception:
             pass
     eob_delete_session(session_id)
