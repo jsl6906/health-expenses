@@ -80,6 +80,72 @@ class LinkChargesPayload(BaseModel):
     charge_ids: List[int] = []
 
 
+class PaymentWithChargesPayload(PaymentCreate):
+    charge_ids: List[int] = []
+
+
+@router.post("/payments/with-charges")
+def create_payment_with_charges(
+    payload: PaymentWithChargesPayload, db: Session = Depends(get_db)
+):
+    """Create a payment and immediately link it to the provided charge ids.
+
+    The client sends payment fields at the top level with an additional `charge_ids` list.
+    This endpoint creates the payment, validates the provided charges, computes
+    allocations and inserts ChargePaymentXref rows.
+    """
+    data = payload.model_dump()
+    charge_ids = data.pop("charge_ids", []) or []
+    # Normalize enum values if present
+    if data.get("expense_type") and hasattr(data["expense_type"], "value"):
+        data["expense_type"] = data["expense_type"].value
+
+    # Create payment
+    payment_obj = payment_crud.create(db, data, user="system")
+
+    if not charge_ids:
+        return {"payment_id": payment_obj.id, "linked_charge_ids": []}
+
+    # Validate provided charge ids and compute allocations
+    try:
+        from models.database import Charge as ChargeModel  # type: ignore
+        from models.database import ChargePaymentXref as XrefModel
+    except ImportError:
+        from .models.database import Charge as ChargeModel  # type: ignore
+        from .models.database import ChargePaymentXref as XrefModel
+
+    existing_charges = {
+        c.id
+        for c in db.query(ChargeModel.id).filter(ChargeModel.id.in_(charge_ids)).all()
+    }
+    valid_new_charge_ids = [cid for cid in charge_ids if cid in existing_charges]
+
+    if not valid_new_charge_ids:
+        return {"payment_id": payment_obj.id, "linked_charge_ids": []}
+
+    try:
+        from ..services.allocation import allocate_payment_to_charges
+    except ImportError:
+        from services.allocation import allocate_payment_to_charges
+
+    allocations = allocate_payment_to_charges(
+        db, float(payment_obj.payment_amount or 0.0), valid_new_charge_ids
+    )
+
+    # Insert xrefs for validated charges
+    for cid in valid_new_charge_ids:
+        alloc_amt = allocations.get(cid, 0.0)
+        db.add(
+            XrefModel(
+                charge_id=cid, payment_id=payment_obj.id, allocated_amount=alloc_amt
+            )
+        )
+
+    db.commit()
+
+    return {"payment_id": payment_obj.id, "linked_charge_ids": valid_new_charge_ids}
+
+
 @router.post("/payments/{payment_id}/link-charges")
 def link_charges_to_payment(
     payment_id: int, payload: LinkChargesPayload, db: Session = Depends(get_db)

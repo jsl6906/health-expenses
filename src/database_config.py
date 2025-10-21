@@ -31,7 +31,16 @@ class DatabaseConfig:
     """
 
     def __init__(self):
-        self.env_mode = (os.getenv("ENV_MODE", "PROD") or "PROD").upper()
+        # Read ENV_MODE and normalize historical/alternate names.
+        # The codebase historically used both TEST and DEV in different places
+        # (see main.py and DOCKER.md). Treat DEV as an alias for TEST so a single
+        # environment value works consistently for database selection and the
+        # template debug banner.
+        raw_env = (os.getenv("ENV_MODE", "PROD") or "PROD").upper()
+        if raw_env == "DEV":
+            raw_env = "TEST"
+        self.env_mode = raw_env
+
         if self.env_mode not in {"TEST", "PROD"}:
             print(f"WARNING: Unknown ENV_MODE '{self.env_mode}' - defaulting to PROD")
             self.env_mode = "PROD"

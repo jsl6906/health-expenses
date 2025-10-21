@@ -36,10 +36,16 @@ import pytz
 
 router = APIRouter(tags=["pages"])  # no prefix -> root-level paths
 
-# Template setup (duplicated from app bootstrap; could be centralized later)
-project_root = Path(__file__).resolve().parents[2]  # .../project_root
-templates = Jinja2Templates(directory=str(project_root / "templates"))
-templates.env.globals["ENV_MODE"] = getattr(db_config, "env_mode", "PROD")
+# Reuse the central templates instance from the application bootstrap so
+# globals (like ENV_MODE) remain consistent across all page renderers.
+try:
+    # When running as a package, import the app-level templates
+    from ..app import templates  # type: ignore
+except Exception:
+    # Fallback: create a local templates instance (should be rare)
+    project_root = Path(__file__).resolve().parents[2]  # .../project_root
+    templates = Jinja2Templates(directory=str(project_root / "templates"))
+    templates.env.globals["ENV_MODE"] = getattr(db_config, "env_mode", "PROD")
 
 
 def format_currency(value):
@@ -97,12 +103,40 @@ def format_datetime_est(dt):
 templates.env.filters["format_datetime_est"] = format_datetime_est
 
 
+def render_template(name: str, context: dict):
+    """Render a template while ensuring ENV_MODE is present in the context.
+
+    This guarantees that even if Jinja globals get out of sync for any reason,
+    templates will still receive the effective ENV_MODE used by the app.
+    """
+    ctx = dict(context or {})
+    try:
+        # Ensure db_config is available (import relative fallback handled above)
+        ctx.setdefault("ENV_MODE", getattr(db_config, "env_mode", "PROD"))
+    except Exception:
+        ctx.setdefault("ENV_MODE", "PROD")
+    # Emit a debug log of the context so runtime requests can be inspected
+    import logging
+
+    log = logging.getLogger("personal_expenses")
+    try:
+        log.debug(
+            "Rendering template %s with context keys: %s",
+            name,
+            sorted(list(ctx.keys())),
+        )
+        log.debug("ENV_MODE in context: %s", ctx.get("ENV_MODE"))
+    except Exception:
+        pass
+    return templates.TemplateResponse(name, ctx)
+
+
 @router.get("/", response_class=HTMLResponse)
 @router.get("/home", response_class=HTMLResponse)
 async def home_page(request: Request, db: Session = Depends(get_db)):
     """Landing home dashboard page."""
     # Lightweight aggregates (optional future enhancement) – for now just render template.
-    return templates.TemplateResponse("index.html", {"request": request})
+    return render_template("index.html", {"request": request})
 
 
 @router.get("/providers", response_class=HTMLResponse)
@@ -194,7 +228,7 @@ async def providers_page(request: Request, db: Session = Depends(get_db)):
                 "last_payment_date": last_payment_date,
             }
         )
-    return templates.TemplateResponse(
+    return render_template(
         "providers.html", {"request": request, "providers": providers_with_financials}
     )
 
@@ -215,7 +249,7 @@ async def family_members_page(request: Request, db: Session = Depends(get_db)):
 
     # Pass ORM objects directly so SQLAlchemy-returned datetime objects
     # (created_at/updated_at) are preserved for template filters.
-    return templates.TemplateResponse(
+    return render_template(
         "family_members.html", {"request": request, "members": members}
     )
 
@@ -431,7 +465,7 @@ async def provider_detail_page(
         # Ensure numeric types are compatible (SQLAlchemy may return Decimal)
         "net_outstanding": float((float(total_owed or 0) - float(total_payments or 0))),
     }
-    return templates.TemplateResponse(
+    return render_template(
         "provider_detail.html",
         {
             "request": request,
@@ -549,7 +583,7 @@ async def charges_page(request: Request, db: Session = Depends(get_db)):
             att_count_map = {}
     for ch in charges:
         setattr(ch, "attachment_count", att_count_map.get(ch.id, 0))
-    return templates.TemplateResponse(
+    return render_template(
         "charges.html",
         {
             "request": request,
@@ -750,7 +784,7 @@ async def manual_claim_page(
         if mt not in insurance_map or not insurance_map[mt]:
             warnings["missing_insurance"].append(f"'{mt}'")
 
-    return templates.TemplateResponse(
+    return render_template(
         "manual_claim.html",
         {
             "request": request,
@@ -776,7 +810,7 @@ async def charges_import_json_page(request: Request, db: Session = Depends(get_d
         .order_by(FamilyMemberModel.first_name, FamilyMemberModel.last_name)
         .all()
     )
-    return templates.TemplateResponse(
+    return render_template(
         "import_charges_json.html",
         {"request": request, "providers": providers, "family_members": family_members},
     )
@@ -795,7 +829,7 @@ async def charges_import_eob_page(request: Request, db: Session = Depends(get_db
         .order_by(FamilyMemberModel.first_name, FamilyMemberModel.last_name)
         .all()
     )
-    return templates.TemplateResponse(
+    return render_template(
         "import_charges_eob.html",
         {"request": request, "providers": providers, "family_members": family_members},
     )
@@ -814,7 +848,7 @@ async def add_multiple_charges_page(request: Request, db: Session = Depends(get_
         .order_by(FamilyMemberModel.first_name, FamilyMemberModel.last_name)
         .all()
     )
-    return templates.TemplateResponse(
+    return render_template(
         "add_multiple_charges.html",
         {"request": request, "providers": providers, "family_members": family_members},
     )
@@ -917,7 +951,7 @@ async def charge_detail_page(
         .all()
     )
 
-    return templates.TemplateResponse(
+    return render_template(
         "charge_detail.html",
         {
             "request": request,
@@ -975,7 +1009,7 @@ async def payments_page(request: Request, db: Session = Depends(get_db)):
             pay_att_counts = {}
     for p in payments:
         setattr(p, "attachment_count", pay_att_counts.get(p.id, 0))
-    return templates.TemplateResponse(
+    return render_template(
         "payments.html",
         {"request": request, "payments": payments, "providers": providers},
     )
@@ -1046,7 +1080,7 @@ async def payment_detail_page(
                 max(total_paid_all - getattr(ch, "allocated_share", 0.0), 0.0),
             )
             setattr(ch, "remaining_after_all", max(owed_f - total_paid_all, 0.0))
-    return templates.TemplateResponse(
+    return render_template(
         "payment_detail.html",
         {
             "request": request,
@@ -1062,9 +1096,7 @@ async def payment_detail_page(
 @router.get("/premiums", response_class=HTMLResponse)
 async def premiums_page(request: Request, db: Session = Depends(get_db)):
     premiums = premium_crud.get_all(db, limit=None)
-    return templates.TemplateResponse(
-        "premiums.html", {"request": request, "premiums": premiums}
-    )
+    return render_template("premiums.html", {"request": request, "premiums": premiums})
 
 
 @router.get("/insurance", response_class=HTMLResponse)
@@ -1086,7 +1118,7 @@ async def insurance_page(request: Request, db: Session = Depends(get_db)):
         .order_by(FamilyMemberModel.first_name, FamilyMemberModel.last_name)
         .all()
     )
-    return templates.TemplateResponse(
+    return render_template(
         "insurance.html",
         {"request": request, "insurances": ins, "family_members": family_members},
     )

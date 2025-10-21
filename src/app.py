@@ -9,6 +9,7 @@ Modularized root containing only:
 All CRUD JSON endpoints now reside in dedicated routers under api/.
 """
 
+import os
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -98,6 +99,24 @@ app.include_router(family_members_router)
 app.include_router(insurance_router)
 
 
+# Configure basic logging for startup diagnostics
+import logging
+
+logger = logging.getLogger("personal_expenses")
+if not logger.handlers:
+    # Configure a simple handler if none configured by the process
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    )
+    logger.addHandler(handler)
+# Allow enabling debug logs via APP_DEBUG env var (useful for troubleshooting)
+if str(os.getenv("APP_DEBUG", "False")).lower() in ("1", "true", "yes"):
+    logger.setLevel(logging.DEBUG)
+else:
+    logger.setLevel(logging.INFO)
+
+
 # Startup event: test DB connectivity and log result so container logs are helpful
 @app.on_event("startup")
 def startup_check_db():
@@ -114,6 +133,21 @@ def startup_check_db():
             print("\u26A0\ufe0f Database connectivity test failed on startup")
     except Exception as e:
         print(f"\u274c Exception during DB startup test: {e}")
+    # Log environment and non-sensitive DB configuration for diagnostics
+    try:
+        from database_config import db_config
+    except Exception:
+        from .database_config import db_config  # type: ignore
+
+    logger.info("Application ENV_MODE=%s", getattr(db_config, "env_mode", "UNKNOWN"))
+    # Log DB connection details without sensitive info (no password)
+    logger.info(
+        "Database config: host=%s port=%s db=%s user=%s",
+        getattr(db_config, "db_host", "<unknown>"),
+        getattr(db_config, "db_port", "<unknown>"),
+        getattr(db_config, "db_name", "<unknown>"),
+        getattr(db_config, "db_user", "<unknown>"),
+    )
 
 
 ## HTML page routes moved to pages router (api/pages.py)
