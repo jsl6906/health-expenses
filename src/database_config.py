@@ -19,14 +19,18 @@ except ImportError:
 
 # Load environment variables
 load_dotenv()
+print(f"DEBUG: CWD: {os.getcwd()}")
+print(f"DEBUG: .env exists: {os.path.exists('.env')}")
+print(f"DEBUG: TEST_DB_NAME from env: {os.getenv('TEST_DB_NAME')}")
+print(f"DEBUG: ENV_MODE from env: {os.getenv('ENV_MODE')}")
 
 
 class DatabaseConfig:
     """Database configuration class with ENV_MODE (TEST|PROD) support.
 
     Priority of credential selection:
-      1. ENV_MODE=TEST uses TEST_DB_* variables.
-      2. ENV_MODE=PROD (default) uses PROD_DB_* variables.
+      1. ENV_MODE=TEST (default) uses TEST_DB_* variables.
+      2. ENV_MODE=PROD uses PROD_DB_* variables.
       3. If corresponding prefixed variables absent, fall back to generic DB_* variables.
     """
 
@@ -36,17 +40,19 @@ class DatabaseConfig:
         # (see main.py and DOCKER.md). Treat DEV as an alias for TEST so a single
         # environment value works consistently for database selection and the
         # template debug banner.
-        raw_env = (os.getenv("ENV_MODE", "PROD") or "PROD").upper()
+        # Default to TEST unless explicitly set to PROD. This makes local/dev
+        # work safer: running locally without ENV_MODE set will use TEST.
+        raw_env = (os.getenv("ENV_MODE", "TEST") or "TEST").upper()
         if raw_env == "DEV":
             raw_env = "TEST"
         self.env_mode = raw_env
 
         if self.env_mode not in {"TEST", "PROD"}:
-            print(f"WARNING: Unknown ENV_MODE '{self.env_mode}' - defaulting to PROD")
-            self.env_mode = "PROD"
+            print(f"WARNING: Unknown ENV_MODE '{self.env_mode}' - defaulting to TEST")
+            self.env_mode = "TEST"
 
         # Determine prefix based on mode
-        prefix = "TEST" if self.env_mode == "TEST" else "PROD"
+        prefix = "PROD" if self.env_mode == "PROD" else "TEST"
 
         def first(*names: str, default: str | None = None):
             for n in names:
@@ -68,6 +74,7 @@ class DatabaseConfig:
         if self.env_mode == "TEST" and self.db_host not in {
             "localhost",
             "127.0.0.1",
+            "0.0.0.0",
             "192.0.2.10",
         }:
             print(f"WARNING: ENV_MODE=TEST but host={self.db_host} is not local.")
@@ -81,6 +88,9 @@ class DatabaseConfig:
         self.database_url = (
             f"postgresql://{self.db_user}:{encoded_password}@"
             f"{self.db_host}:{self.db_port}/{self.db_name}"
+        )
+        print(
+            f"DEBUG: Database URL: {self.database_url.replace(encoded_password, '***')}"
         )
 
 

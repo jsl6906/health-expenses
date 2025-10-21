@@ -45,7 +45,7 @@ except Exception:
     # Fallback: create a local templates instance (should be rare)
     project_root = Path(__file__).resolve().parents[2]  # .../project_root
     templates = Jinja2Templates(directory=str(project_root / "templates"))
-    templates.env.globals["ENV_MODE"] = getattr(db_config, "env_mode", "PROD")
+    templates.env.globals["ENV_MODE"] = getattr(db_config, "env_mode", "TEST")
 
 
 def format_currency(value):
@@ -617,12 +617,10 @@ async def manual_claim_page(
 
     try:
         from models.database import Charge as ChargeModel
-        from models.database import FamilyMember as FamilyMemberModel
         from models.database import Insurance as InsuranceModel
         from models.database import Provider as ProviderModel
     except ImportError:  # pragma: no cover - fallback relative imports
         from ..models.database import Charge as ChargeModel
-        from ..models.database import FamilyMember as FamilyMemberModel
         from ..models.database import Insurance as InsuranceModel
         from ..models.database import Provider as ProviderModel
 
@@ -633,7 +631,12 @@ async def manual_claim_page(
     # Preload insurance entries by medical_type for efficiency
     insurance_map: dict[str, InsuranceModel | None] = {}
     for ch in charges:
-        mt = ch.medical_type or ""
+        # Coerce potential SQLAlchemy instrumented attributes to plain strings
+        mt = (
+            str(getattr(ch, "medical_type"))
+            if getattr(ch, "medical_type", None) is not None
+            else ""
+        )
         if mt and mt not in insurance_map:
             ins = (
                 db.query(InsuranceModel)
@@ -645,7 +648,11 @@ async def manual_claim_page(
     # Build nested grouping: insurance -> service family member -> provider -> charges
     group_map: dict = {}
     for ch in charges:
-        mt = ch.medical_type or "Unknown"
+        mt = (
+            str(getattr(ch, "medical_type"))
+            if getattr(ch, "medical_type", None) is not None
+            else "Unknown"
+        )
         ins = insurance_map.get(mt) if mt else None
         ins_key = f"ins_{ins.id}" if ins else f"noins_{mt}"
         gm = group_map.setdefault(
@@ -751,14 +758,23 @@ async def manual_claim_page(
     providers_set = set()
     medical_types = set()
     for ch in charges:
-        if ch.provider_id:
-            providers_set.add(ch.provider_id)
-        if ch.medical_type:
-            medical_types.add(ch.medical_type)
+        pid = getattr(ch, "provider_id", None)
+        if pid is not None:
+            providers_set.add(pid)
+        mt = getattr(ch, "medical_type", None)
+        if mt is not None and str(mt).strip() != "":
+            medical_types.add(str(mt))
 
     # Check charges for missing codes
     for ch in charges:
-        if not ch.cpt_code or not ch.diagnosis_code:
+        cpt = getattr(ch, "cpt_code", None)
+        diag = getattr(ch, "diagnosis_code", None)
+        if (
+            cpt is None
+            or diag is None
+            or str(cpt).strip() == ""
+            or str(diag).strip() == ""
+        ):
             warnings["charges_missing_codes"].append(f"Charge {ch.id}")
 
     # Check providers for missing info
@@ -766,13 +782,17 @@ async def manual_claim_page(
         prov = db.query(ProviderModel).filter(ProviderModel.id == pid).first()
         if prov:
             missing = []
-            if not prov.npi_number:
+            npi = getattr(prov, "npi_number", None)
+            if npi is None or str(npi).strip() == "":
                 missing.append("NPI")
-            if not prov.tax_id:
+            tax = getattr(prov, "tax_id", None)
+            if tax is None or str(tax).strip() == "":
                 missing.append("EIN")
-            if not prov.phone_num:
+            phone = getattr(prov, "phone_num", None)
+            if phone is None or str(phone).strip() == "":
                 missing.append("Phone")
-            if not prov.provider_address:
+            addr = getattr(prov, "provider_address", None)
+            if addr is None or str(addr).strip() == "":
                 missing.append("Address")
             if missing:
                 warnings["providers_missing_info"].append(
@@ -1044,11 +1064,12 @@ async def payment_detail_page(
     )
     charge_ids = [cid for (cid, _) in xref_rows]
     alloc_map = {cid: float(amt or 0.0) for cid, amt in xref_rows}
+    # payment_amount is parsed below when allocating shares; keep a safe parse here if needed later
     raw_amt = getattr(payment, "payment_amount", None)
     try:
-        total_amount = float(raw_amt) if raw_amt is not None else 0.0
+        _ = float(raw_amt) if raw_amt is not None else 0.0
     except Exception:
-        total_amount = 0.0
+        _ = 0.0
     if charge_ids:
         charges = (
             db.query(ChargeModel)

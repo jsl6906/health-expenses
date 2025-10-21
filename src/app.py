@@ -37,7 +37,7 @@ app = FastAPI(title="Personal Health Expenses Management System", version="1.0.0
 
 project_root = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(project_root / "templates"))
-templates.env.globals["ENV_MODE"] = getattr(db_config, "env_mode", "PROD")
+templates.env.globals["ENV_MODE"] = getattr(db_config, "env_mode", "TEST")
 app.mount("/static", StaticFiles(directory=str(project_root / "static")), name="static")
 
 
