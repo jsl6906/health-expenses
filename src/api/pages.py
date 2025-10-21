@@ -654,7 +654,11 @@ async def manual_claim_page(
             service_member = f["service_member"]
             for _, p in f["providers"].items():
                 provider = p["provider"]
-                charges = p["charges"]
+                # Sort charges by service_date (place None last), then by id
+                charges = sorted(
+                    p["charges"],
+                    key=lambda ch: (ch.service_date is None, ch.service_date, ch.id),
+                )
                 card = {
                     "insurance": ins,
                     "insured": insured,

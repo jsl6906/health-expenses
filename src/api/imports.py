@@ -1121,6 +1121,12 @@ def commit_json_import(
             "insurance_paid_amount": r.insurance_paid_amount,
             "doctor_name": r.doctor_name,
             "eob_claim_num": r.eob_claim_num,
+            # Apply diagnosis code: prefer session-level header value, then parsed row, then any top-level payload override
+            "diagnosis_code": (
+                sess.get("diagnosis_code")
+                or getattr(r, "diagnosis_code", None)
+                or getattr(payload, "diagnosis_code", None)
+            ),
             "notes": notes_text,
         }
 
@@ -1800,12 +1806,18 @@ def eob_import(
                     "eob_claim_num", getattr(r, "eob_claim_num", None)
                 )
                 or batch_eob_num,
-                # diagnosis_code: prefer explicit override, then session-level, then parsed row
-                "diagnosis_code": ov.get(
-                    "diagnosis_code", getattr(r, "diagnosis_code", None)
-                )
-                or getattr(session, "diagnosis_code", None)
-                or payload.diagnosis_code,
+                # diagnosis_code: prefer explicit per-row override, then session-level
+                # header value, then parsed row, then payload-level override.
+                "diagnosis_code": (
+                    ov.get("diagnosis_code", None)
+                    or (
+                        session.get("diagnosis_code")
+                        if isinstance(session, dict)
+                        else getattr(session, "diagnosis_code", None)
+                    )
+                    or getattr(r, "diagnosis_code", None)
+                    or getattr(payload, "diagnosis_code", None)
+                ),
                 "notes": None,
             }
             # No per-row placeholder notes here; we'll attach the EOB to the highest
