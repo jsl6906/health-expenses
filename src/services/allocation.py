@@ -5,6 +5,12 @@ Centralizes logic that was previously duplicated across page routes for:
  - Computing total paid per charge via even-split logic
  - Identifying open charges (remaining > 0)
 
+This module now treats negative payment amounts (refunds) symmetrically with
+positive payments: explicit negative allocated_amounts are respected, and
+`allocate_payment_to_charges` will distribute negative payment amounts across
+linked charges (reducing previously applied paid amounts) using mirrored
+priority logic.
+
 All functions are read-only helpers working off the SQLAlchemy session and
 existing ORM models (Charge, Payment, ChargePaymentXref).
 """
@@ -43,14 +49,17 @@ def even_allocation_map(db: Session, charge_ids: Iterable[int]) -> Dict[int, flo
     if not xrefs:
         return {cid: 0.0 for cid in charge_ids}
 
-    # Check if allocated_amounts are set (sum > 0 for any payment)
+    # Check if allocated_amounts are set (non-zero sum for any payment).
+    # Previously we only checked for sums > 0 which ignored negative
+    # allocated amounts (refunds). Treat any non-zero sum as a sign that
+    # explicit allocations exist and should be used.
     payment_allocated_sum = {}
     for pid, cid, amt in xrefs:
         payment_allocated_sum[pid] = payment_allocated_sum.get(pid, 0.0) + float(
             amt or 0.0
         )
 
-    use_allocated = any(s > 0 for s in payment_allocated_sum.values())
+    use_allocated = any(abs(s) > 1e-9 for s in payment_allocated_sum.values())
 
     if use_allocated:
         # Use allocated amounts
@@ -102,7 +111,8 @@ def allocate_payment_to_charges(
 
     Returns dict of charge_id -> allocated_amount.
     """
-    if not charge_ids or payment_amount <= 0:
+    # Allow negative payment_amounts (refunds). Only a zero amount is a no-op.
+    if not charge_ids or payment_amount == 0:
         return {cid: 0.0 for cid in charge_ids}
 
     try:
@@ -113,32 +123,40 @@ def allocate_payment_to_charges(
     # Get current paid for each charge
     current_paid = even_allocation_map(db, charge_ids)
 
-    # Get charges with owed amounts
+    # Get charges and compute the per-charge "remaining" capacity based on
+    # whether we're applying a positive payment (increase paid toward owed)
+    # or a negative payment (refund, decrease previously paid amount).
     charges = db.query(ChargeModel).filter(ChargeModel.id.in_(charge_ids)).all()
     charge_owed = {}
     for c in charges:
         cid = c.id
         owed = float(getattr(c, "owed_amount", 0.0) or 0.0)
         paid = current_paid.get(cid, 0.0)
-        remaining = max(owed - paid, 0.0)
+        if payment_amount >= 0:
+            # How much more this charge can be paid
+            remaining = max(owed - paid, 0.0)
+        else:
+            # For refunds, how much can we reduce (can't reduce below zero paid)
+            remaining = max(paid, 0.0)
         charge_owed[cid] = remaining
 
-    # Sort charges by owed descending
+    # Sort charges by remaining capacity descending
     sorted_charges = sorted(charge_owed.items(), key=lambda x: x[1], reverse=True)
 
     allocation = {cid: 0.0 for cid in charge_ids}
-    remaining_payment = payment_amount
+    remaining_payment = abs(payment_amount)
+    sign = 1.0 if payment_amount > 0 else -1.0
 
-    for i, (cid, owed) in enumerate(sorted_charges):
+    for i, (cid, rem) in enumerate(sorted_charges):
         if remaining_payment <= 0:
             break
         if i == len(sorted_charges) - 1:
-            # Last charge gets all remaining
-            allocation[cid] = remaining_payment
+            # Last charge gets all remaining (preserve sign)
+            allocation[cid] = sign * remaining_payment
         else:
-            # Apply as much as possible to this charge
-            alloc = min(remaining_payment, owed)
-            allocation[cid] = alloc
+            # Apply as much as possible to this charge (cap to its remaining capacity)
+            alloc = min(remaining_payment, rem)
+            allocation[cid] = sign * alloc
             remaining_payment -= alloc
 
     return allocation

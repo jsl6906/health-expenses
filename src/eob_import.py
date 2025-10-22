@@ -137,6 +137,22 @@ def create_session(
                 en = parsed_meta.get("eob_claim_num") or parsed_meta.get("eob_number")
                 if en:
                     session.eob_number = en
+                # Diagnosis codes may be returned as a list or comma-separated string
+                diag = parsed_meta.get("diagnosis_codes") or parsed_meta.get(
+                    "diagnosis_code"
+                )
+                if diag:
+                    try:
+                        # If list, join; if string, normalize whitespace
+                        if isinstance(diag, list):
+                            session.diagnosis_code = ",".join(
+                                [str(x).strip() for x in diag if str(x).strip()]
+                            )
+                        else:
+                            s = str(diag).strip()
+                            session.diagnosis_code = s if s else None
+                    except Exception:
+                        session.diagnosis_code = None
                 # provider_name can't be reliably mapped to provider_id here (no DB access), but store provider_name in debug_info
                 prov_name = parsed_meta.get("provider_name")
                 if prov_name:

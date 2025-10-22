@@ -180,7 +180,7 @@ window.addEventListener('DOMContentLoaded',()=>{
     dz.addEventListener('dragenter',e=>{ if(!isFileDrag(e)) return; e.preventDefault(); cardDragDepth++; dz.classList.add('drop-hover'); });
     dz.addEventListener('dragover',e=>{ if(!isFileDrag(e)) return; e.preventDefault(); });
     dz.addEventListener('dragleave',e=>{ if(!isFileDrag(e)) return; cardDragDepth=Math.max(0,cardDragDepth-1); if(cardDragDepth===0) dz.classList.remove('drop-hover'); });
-    dz.addEventListener('drop',e=>{ if(!isFileDrag(e)) return; e.preventDefault(); cardDragDepth=0; dz.classList.remove('drop-hover'); uploadFiles(e.dataTransfer.files); });
+    dz.addEventListener('drop',e=>{ if(!isFileDrag(e)) return; e.preventDefault(); e.stopPropagation(); cardDragDepth=0; dz.classList.remove('drop-hover'); uploadFiles(e.dataTransfer.files); });
   }
   // Global drag highlight
   let dragDepth=0; // track nested dragenter/leaves

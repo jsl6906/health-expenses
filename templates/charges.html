@@ -165,6 +165,7 @@
                             {% for charge in charges %}
                             <tr data-charge-id="{{ charge.id }}"
                                 data-family-member="{% if charge.family_member %}{{ (charge.family_member.emoji if charge.family_member.emoji else (charge.family_member.first_name ~ ((' ' ~ charge.family_member.last_name) if charge.family_member.last_name else ''))) }}{% else %}{% endif %}"
+                                data-doctor-name="{{ (charge.doctor_name or '') }}"
                                 data-medical-type="{{ charge.medical_type or '' }}"
                                 data-status="{{ 'paid' if (charge.owed_amount or 0) > 0 and (charge.paid_amount_agg or 0) >= (charge.owed_amount or 0) else 'outstanding' if (charge.owed_amount or 0) > 0 else 'na' }}"
                                 data-service-date="{{ charge.service_date.strftime('%Y-%m-%d') if charge.service_date else '' }}"
@@ -556,11 +557,13 @@ function filterTable() {
     rows.forEach(row => {
         let visible = true;
 
-        // Text search filter
+        // Text search filter (include doctor name which is not rendered as a visible column)
         if (searchTerm) {
             const rowText = row.textContent.toLowerCase();
-            if (!rowText.includes(searchTerm)) {
-                visible = false;
+            const doctorAttr = (row.getAttribute('data-doctor-name') || '').toLowerCase();
+            const combined = rowText + ' ' + doctorAttr;
+            if (!combined.includes(searchTerm)) {
+            visible = false;
             }
         }
 
@@ -1178,16 +1181,6 @@ function populateChargeMergeModal(charges) {
         });
     }
 
-    // Helper to normalize EOB/Claim numbers: collapse leading zeros after a dash
-    // e.g. '0-0001614' -> '0-1614', 'ABC-000123' -> 'ABC-123'
-    function normalizeEobString(s) {
-        if (s === null || s === undefined) return '';
-        let str = s.toString();
-        str = str.replace(/\u00A0/g, ' ').trim();
-        str = str.replace(/-0+(\d+)/g, '-$1');
-        str = str.replace(/-0+$/g, '-0');
-        return str;
-    }
 
     fields.forEach(field => {
         const valueKey = field.valueKey || field.key;
@@ -1281,21 +1274,7 @@ function populateChargeMergeModal(charges) {
     const diffHint1 = differ ? `Different from Charge #${charge2.id}` : '';
     const diffHint2 = differ ? `Different from Charge #${charge1.id}` : '';
 
-    if (field.key === 'eob_claim_num') {
-        try {
-            const raw1 = (actualVal1 === null || actualVal1 === undefined) ? '' : actualVal1.toString();
-            const raw2 = (actualVal2 === null || actualVal2 === undefined) ? '' : actualVal2.toString();
-            const norm1 = normalizeEobString(raw1);
-            const norm2 = normalizeEobString(raw2);
-            const codes1 = Array.from(norm1).map(c => c.charCodeAt(0));
-            const codes2 = Array.from(norm2).map(c => c.charCodeAt(0));
-            console.log('merge-compare field', field.key, 'differ=', differ, 'raw1=', raw1, 'raw2=', raw2, 'norm1=', norm1, 'norm2=', norm2, 'codes1=', codes1, 'codes2=', codes2);
-        } catch (dbgErr) {
-            console.log('merge-compare field', field.key, 'differ=', differ, 'val1=', val1, 'val2=', val2);
-        }
-    } else {
-        console.log('merge-compare field', field.key, 'differ=', differ, 'val1=', val1, 'val2=', val2);
-    }
+    // remove debug logging for merge-compare (kept comparisons but no console output)
 
         // For family_member we want to submit the id (or empty) as merged field under key 'family_member_id'
         const inputKey = (field.key === 'family_member') ? 'family_member_id' : field.key;
