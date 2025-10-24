@@ -76,6 +76,38 @@ def delete_payment(payment_id: int, db: Session = Depends(get_db)):
     return {"message": "Payment and related attachments deleted"}
 
 
+class MarkPaymentsPayload(BaseModel):
+    payment_ids: List[int] = []
+
+
+@router.post("/payments/mark-matched")
+def mark_payments_matched(payload: MarkPaymentsPayload, db: Session = Depends(get_db)):
+    try:
+        from src.models.database import Payment as PaymentModel  # type: ignore
+    except Exception:
+        from ..models.database import Payment as PaymentModel  # type: ignore
+
+    if not payload.payment_ids:
+        return {"updated": 0}
+
+    # Update selected payments
+    q = db.query(PaymentModel).filter(PaymentModel.id.in_(payload.payment_ids))
+    count = 0
+    for p in q.all():
+        p.transaction_match_flag = "matched"
+        try:
+            p.updated_at = func.now()
+        except Exception:
+            pass
+        try:
+            p.updated_by = "system"
+        except Exception:
+            pass
+        count += 1
+    db.commit()
+    return {"updated": count}
+
+
 class LinkChargesPayload(BaseModel):
     charge_ids: List[int] = []
 

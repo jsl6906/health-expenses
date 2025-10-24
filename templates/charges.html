@@ -379,6 +379,34 @@
         </div>
     </div>
 </div>
+
+<!-- Charges selection actions bottom bar (mirrors top actions for better UX on small screens) -->
+<div id="chargeActionsBottomBar" class="d-none fixed-bottom bg-white border-top p-2 shadow" style="z-index:1060; left:0; right:0;">
+    <div class="d-flex justify-content-between align-items-center">
+        <div><span id="selectedChargeCountBottom" class="fw-semibold"></span></div>
+        <div>
+            <button id="mergeChargesBtnBottom" class="btn btn-sm btn-outline-warning" disabled>
+                <i class="bi bi-arrow-left-right"></i> Merge Charges
+            </button>
+            <button id="bulkUpdateBtnBottom" class="btn btn-sm btn-outline-primary">
+                <i class="bi bi-pencil-square"></i> Bulk Update
+            </button>
+            <button id="markNoDupBtnBottom" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-tag"></i> Mark as NO DUP
+            </button>
+            <button id="deleteSelectedBtnBottom" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-trash"></i> Delete Selected
+            </button>
+            <button id="submitManualClaimBtnBottom" class="btn btn-sm btn-outline-success">
+                <i class="bi bi-file-earmark-text"></i> Submit Manual Claim
+            </button>
+            <button id="cancelChargeSelectionBtnBottom" class="btn btn-sm btn-outline-secondary">
+                Cancel
+            </button>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -906,12 +934,12 @@ function setupChargeSelection() {
 
         selectAll.checked = selected.length > 0 && selected.length === visibleTotal;
 
+        // Keep the top actions bar hidden by default; only update count and merge button state.
         if (selected.length > 0) {
-            actionsBar.classList.remove('d-none');
+            // don't reveal the top actions bar here; the bottom bar handles actions display
             countSpan.textContent = `${selected.length} selected`;
             mergeBtn.disabled = selected.length !== 2;
         } else {
-            actionsBar.classList.add('d-none');
             countSpan.textContent = '';
             mergeBtn.disabled = true;
         }
@@ -944,14 +972,16 @@ function setupChargeSelection() {
         }
     });
 
-    mergeBtn.addEventListener('click', async () => {
-        const selectedIds = getSelectedChargeIds();
-        if (selectedIds.length !== 2) {
-            alert('Please select exactly 2 charges to merge.');
-            return;
-        }
-        await showChargeMergeModal(selectedIds);
-    });
+    if (mergeBtn) {
+        mergeBtn.addEventListener('click', async () => {
+            const selectedIds = getSelectedChargeIds();
+            if (selectedIds.length !== 2) {
+                alert('Please select exactly 2 charges to merge.');
+                return;
+            }
+            await showChargeMergeModal(selectedIds);
+        });
+    }
 
     // Mark as NO DUP button handler
     const markNoDupBtn = document.getElementById('markNoDupBtn');
@@ -1046,14 +1076,77 @@ function setupChargeSelection() {
             }
         });
     }
-    cancelBtn.addEventListener('click', () => {
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => {
         const cbs = table.querySelectorAll('tbody .charge-select');
         cbs.forEach(cb => cb.checked = false);
         // remove selected highlight from all rows
         const rows = table.querySelectorAll('tbody tr');
         rows.forEach(r => r.classList.remove('row-selected'));
         updateChargeSelectionState();
-    });
+        });
+    }
+
+    // Bottom bar elements - mirror top actions and keep in sync
+    const bottomBar = document.getElementById('chargeActionsBottomBar');
+    const selectedCountBottom = document.getElementById('selectedChargeCountBottom');
+    const mergeBtnBottom = document.getElementById('mergeChargesBtnBottom');
+    const bulkUpdateBtnBottom = document.getElementById('bulkUpdateBtnBottom');
+    const markNoDupBtnBottom = document.getElementById('markNoDupBtnBottom');
+    const deleteBtnBottom = document.getElementById('deleteSelectedBtnBottom');
+    const submitManualClaimBtnBottom = document.getElementById('submitManualClaimBtnBottom');
+    const cancelBtnBottom = document.getElementById('cancelChargeSelectionBtnBottom');
+
+    // Implement a selection state updater that mirrors the payments page behavior:
+    // - show the bottom actions bar when selections exist
+    // - keep the top actions hidden
+    // - sync button enabled/disabled state
+    updateChargeSelectionState = function() {
+        const cbs = table.querySelectorAll('tbody .charge-select');
+        const selected = Array.from(cbs).filter(cb => cb.checked);
+        const visibleTotal = Array.from(cbs).filter(cb => cb.closest('tr').style.display !== 'none').length;
+
+        // Keep select-all checkbox in sync
+        if (selectAll) selectAll.checked = selected.length > 0 && selected.length === visibleTotal;
+
+        // Always hide the top actions bar (bottom bar is the single UI surface)
+        try { if (actionsBar) actionsBar.classList.add('d-none'); } catch (e) {}
+
+        if (selected.length > 0) {
+            // Show bottom bar and update count
+            if (bottomBar) bottomBar.classList.remove('d-none');
+            if (selectedCountBottom) selectedCountBottom.textContent = `${selected.length} selected`;
+
+            // Enable/disable merge buttons (only enabled when exactly 2 selected)
+            const canMerge = selected.length === 2;
+            if (mergeBtn) mergeBtn.disabled = !canMerge;
+            if (mergeBtnBottom) mergeBtnBottom.disabled = !canMerge;
+
+            // Enable other bottom actions when selections exist
+            if (deleteBtnBottom) deleteBtnBottom.disabled = false;
+            if (submitManualClaimBtnBottom) submitManualClaimBtnBottom.disabled = false;
+        } else {
+            // No selection: hide bottom bar and clear count
+            if (bottomBar) bottomBar.classList.add('d-none');
+            if (selectedCountBottom) selectedCountBottom.textContent = '';
+
+            if (mergeBtn) mergeBtn.disabled = true;
+            if (mergeBtnBottom) mergeBtnBottom.disabled = true;
+            if (deleteBtnBottom) deleteBtnBottom.disabled = true;
+            if (submitManualClaimBtnBottom) submitManualClaimBtnBottom.disabled = true;
+        }
+    };
+
+    // Delegate bottom button clicks to top handlers where appropriate
+    if (mergeBtnBottom) mergeBtnBottom.addEventListener('click', () => { if (mergeBtn) mergeBtn.click(); });
+    if (bulkUpdateBtnBottom) bulkUpdateBtnBottom.addEventListener('click', () => { const tb = document.getElementById('bulkUpdateBtn'); if (tb) tb.click(); });
+    if (markNoDupBtnBottom) markNoDupBtnBottom.addEventListener('click', () => { const tb = document.getElementById('markNoDupBtn'); if (tb) tb.click(); });
+    if (deleteBtnBottom) deleteBtnBottom.addEventListener('click', () => { const tb = document.getElementById('deleteSelectedBtn'); if (tb) tb.click(); });
+    if (submitManualClaimBtnBottom) submitManualClaimBtnBottom.addEventListener('click', () => { const topBtn = document.getElementById('submitManualClaimBtn'); if (topBtn) topBtn.click(); });
+    if (cancelBtnBottom) cancelBtnBottom.addEventListener('click', () => { const tb = document.getElementById('cancelChargeSelectionBtn'); if (tb) tb.click(); });
+
+    // Initial sync so the bottom bar reflects any pre-existing selections
+    try { updateChargeSelectionState(); } catch (e) { /* ignore init errors */ }
 }
 
 // Apply row-selected class for any checkboxes that are already checked on page load

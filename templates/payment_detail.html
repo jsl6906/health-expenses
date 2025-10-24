@@ -25,6 +25,15 @@
           <dt class="col-5">Reimbursed (HSA/FSA)</dt><dd class="col-7">{{ payment.reimbursement_amount | currency }}</dd>
           <dt class="col-5">Has Receipt</dt><dd class="col-7">{% if payment.has_receipt_indicator %}{{ payment.has_receipt_indicator }}{% else %}-{% endif %}</dd>
           <dt class="col-5">Notes</dt><dd class="col-7">{{ payment.notes or '-' }}</dd>
+          <dt class="col-5">Transaction Match</dt>
+          <dd class="col-7">
+            {% if payment.transaction_match_flag %}
+              <span title="{{ payment.transaction_match_flag }}" class="text-success">✅</span>
+              <small class="text-muted ms-2">{{ payment.transaction_match_flag }}</small>
+            {% else %}
+              <span class="text-muted">-</span>
+            {% endif %}
+          </dd>
           <dt class="col-5">Created</dt><dd class="col-7">{{ payment.created_at | format_datetime_est }} {% if payment.created_by %}by {{ payment.created_by }}{% endif %}</dd>
           <dt class="col-5">Updated</dt><dd class="col-7">{{ payment.updated_at | format_datetime_est }} {% if payment.updated_by %}by {{ payment.updated_by }}{% endif %}</dd>
         </dl>
@@ -294,6 +303,15 @@ document.addEventListener('DOMContentLoaded',()=>{
             </select>
           </div>
           <div class="mb-2"><label class="form-label">Notes</label><textarea name="notes" rows="2" class="form-control">{{ payment.notes or '' }}</textarea></div>
+          <div class="mb-2"><label class="form-label">Transaction Match Flag</label>
+            <select name="transaction_match_flag" class="form-select">
+              <option value="" {% if not payment.transaction_match_flag %}selected{% endif %}>-- None --</option>
+              <option value="matched" {% if payment.transaction_match_flag=='matched' %}selected{% endif %}>matched</option>
+              <option value="unmatched" {% if payment.transaction_match_flag=='unmatched' %}selected{% endif %}>unmatched</option>
+              <option value="other" {% if payment.transaction_match_flag and payment.transaction_match_flag not in ['matched','unmatched'] %}selected{% endif %}>other</option>
+            </select>
+            <div class="form-text">Optional flag used for matching transactions (bulk actions and filters).</div>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>

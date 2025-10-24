@@ -40,12 +40,13 @@
                 </select>
             </div>
             <div class="col-md-2">
-                <label for="dateFrom" class="form-label">Date From</label>
-                <input type="date" class="form-control" id="dateFrom">
-            </div>
-            <div class="col-md-2">
-                <label for="dateTo" class="form-label">Date To</label>
-                <input type="date" class="form-control" id="dateTo">
+                <label for="txMatchFilter" class="form-label">Transaction Match</label>
+                <select class="form-control" id="txMatchFilter">
+                    <option value="">All</option>
+                    <option value="true">Matched (truthy)</option>
+                    <option value="false">Not matched (falsy)</option>
+                    <option value="null">Unknown / Null</option>
+                </select>
             </div>
             <div class="col-md-1 d-flex align-items-end">
                 <button type="button" class="btn btn-outline-secondary" onclick="clearFilters()">
@@ -54,13 +55,21 @@
             </div>
         </div>
         <div class="row">
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label for="paymentAmountFrom" class="form-label">Payment Amount From</label>
                 <input type="number" step="0.01" class="form-control" id="paymentAmountFrom">
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
                 <label for="paymentAmountTo" class="form-label">Payment Amount To</label>
                 <input type="number" step="0.01" class="form-control" id="paymentAmountTo">
+            </div>
+            <div class="col-md-2">
+                <label for="dateFrom" class="form-label">Date From</label>
+                <input type="date" class="form-control" id="dateFrom">
+            </div>
+            <div class="col-md-2">
+                <label for="dateTo" class="form-label">Date To</label>
+                <input type="date" class="form-control" id="dateTo">
             </div>
         </div>
     </div>
@@ -74,18 +83,26 @@
                     <table class="table manual-striped" id="paymentsTable">
                         <thead>
                             <tr>
+                                <th style="width:32px;">
+                                    <input type="checkbox" id="selectAllPayments" aria-label="Select all payments">
+                                </th>
                                 <th class="sortable" data-column="0">Date <i class="bi bi-arrow-down-up"></i></th>
                                 <th class="sortable" data-column="1">Amount <i class="bi bi-arrow-down-up"></i></th>
                                 <th class="sortable" data-column="2">Type <i class="bi bi-arrow-down-up"></i></th>
                                 <th class="sortable" data-column="3">Provider <i class="bi bi-arrow-down-up"></i></th>
                                 <th class="sortable" data-column="4">Receipt <i class="bi bi-arrow-down-up"></i></th>
-                                <th class="sortable" data-column="5"># Charges <i class="bi bi-arrow-down-up"></i></th>
-                                <th>Attchs</th>
+                                <th class="sortable" data-column="5">Match <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="6"># Charges <i class="bi bi-arrow-down-up"></i></th>
+                                <th class="sortable" data-column="7">Attchs <i class="bi bi-arrow-down-up"></i></th>
                             </tr>
                         </thead>
                         <tbody>
                             {% for payment in payments %}
-                            <tr>
+                            <tr data-payment-id="{{ payment.id }}"
+                                data-tx-match="{{ (payment.transaction_match_flag or '') }}">
+                                <td>
+                                    <input type="checkbox" class="payment-select" value="{{ payment.id }}" aria-label="Select payment {{ payment.id }}">
+                                </td>
                                 <td data-date="{% if payment.payment_date %}{{ payment.payment_date.isoformat() }}{% endif %}">{% if payment.payment_date %}<a href="/payments/{{ payment.id }}" class="text-decoration-none">{{ payment.payment_date.strftime('%#m/%#d/%y') }}</a>{% else %}-{% endif %}</td>
                                 <td><a href="/payments/{{ payment.id }}" class="text-decoration-none">{{ payment.payment_amount | currency }}</a></td>
                                                                 <td>
@@ -119,6 +136,13 @@
                                         <span class="badge bg-secondary">-</span>
                                     {% endif %}
                                 </td>
+                                <td class="text-center tx-match-indicator">
+                                    {% if payment.transaction_match_flag %}
+                                        <span title="Matched" class="text-success">✅</span>
+                                    {% else %}
+                                        <span class="text-muted">-</span>
+                                    {% endif %}
+                                </td>
                                                                 <td>
                                     {% if payment.charge_link_count and payment.charge_link_count > 0 %}
                                       <span class="badge bg-info text-dark" title="Linked charges">{{ payment.charge_link_count }}</span>
@@ -137,6 +161,17 @@
                     </table>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payments selection actions bar -->
+<div id="paymentActionsBar" class="d-none fixed-bottom bg-white border-top p-2" style="z-index:1050;">
+    <div class="d-flex justify-content-between align-items-center">
+        <div><span id="selectedPaymentCount" class="fw-semibold"></span></div>
+        <div>
+            <button id="markMatchedBtn" class="btn btn-sm btn-outline-success">✅ Mark Matched</button>
+            <button id="cancelPaymentSelectionBtn" class="btn btn-sm btn-outline-secondary">Cancel</button>
         </div>
     </div>
 </div>
@@ -192,6 +227,15 @@
                         </select>
                     </div>
                     <div class="mb-3">
+                        <label for="transaction_match_flag" class="form-label">Transaction Match Flag</label>
+                        <select class="form-control" id="transaction_match_flag" name="transaction_match_flag">
+                            <option value="">-- None --</option>
+                            <option value="matched">matched</option>
+                            <option value="unmatched">unmatched</option>
+                        </select>
+                        <div class="form-text">Optional flag to mark transaction matching status.</div>
+                    </div>
+                    <div class="mb-3">
                         <label for="notes" class="form-label">Notes</label>
                         <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
                     </div>
@@ -228,6 +272,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeTableEnhancements();
     setupFormSubmission();
     applyStriping('paymentsTable');
+    setupPaymentSelection();
     // Removed inline row attachment upload; use detail page instead
     // Perform default sort: most recent date first (column 0 desc)
     // Force state so first call sorts descending
@@ -274,6 +319,7 @@ function initializeTableEnhancements() {
     // Setup filters
     const expenseTypeFilter = document.getElementById('expenseTypeFilter');
     const providerFilter = document.getElementById('providerFilter');
+    const txMatchFilter = document.getElementById('txMatchFilter');
     const dateFrom = document.getElementById('dateFrom');
     const dateTo = document.getElementById('dateTo');
     const paymentAmountFrom = document.getElementById('paymentAmountFrom');
@@ -281,6 +327,7 @@ function initializeTableEnhancements() {
 
     if (expenseTypeFilter) expenseTypeFilter.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
     if (providerFilter) providerFilter.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
+    if (txMatchFilter) txMatchFilter.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
     if (dateFrom) dateFrom.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
     if (dateTo) dateTo.addEventListener('change', ()=>{updateQueryFromFilters(); filterTable();});
     if (paymentAmountFrom) paymentAmountFrom.addEventListener('input', ()=>{updateQueryFromFilters(); filterTable();});
@@ -300,6 +347,10 @@ function sortTable(column) {
     const table = document.getElementById('paymentsTable');
     const tbody = table.querySelector('tbody');
     const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    // If we have a leading selection column, offset user-facing column indexes
+    const hasSelectCol = !!table.querySelector('#selectAllPayments');
+    const colOffset = hasSelectCol ? 1 : 0;
 
     // Determine sort direction
     let direction = 'asc';
@@ -323,21 +374,32 @@ function sortTable(column) {
 
     // Sort rows
     rows.sort((a, b) => {
-        const cellA = a.cells[column].textContent.trim();
-        const cellB = b.cells[column].textContent.trim();
+        const cellA = a.cells[column + colOffset].textContent.trim();
+        const cellB = b.cells[column + colOffset].textContent.trim();
 
         // Handle different data types
         let valueA, valueB;
 
         if (column === 0) { // Date column
-            const rawA = a.cells[column].getAttribute('data-date');
-            const rawB = b.cells[column].getAttribute('data-date');
+            const rawA = a.cells[column + colOffset].getAttribute('data-date');
+            const rawB = b.cells[column + colOffset].getAttribute('data-date');
             valueA = rawA ? parseDateOnly(rawA) : new Date('1900-01-01');
             valueB = rawB ? parseDateOnly(rawB) : new Date('1900-01-01');
         } else if (column === 1) { // Amount column
             valueA = parseFloat(cellA.replace(/[$,]/g, '')) || 0;
             valueB = parseFloat(cellB.replace(/[$,]/g, '')) || 0;
-        } else if (column === 5) { // # Charges numeric
+        } else if (column === 5) { // Match column - sort by presence and then text
+            // Use data attribute for robust matching
+            const aMatch = (a.getAttribute('data-tx-match') || '').toLowerCase();
+            const bMatch = (b.getAttribute('data-tx-match') || '').toLowerCase();
+            const aBool = aMatch && !['false','0','none','null',''].includes(aMatch) ? 1 : 0;
+            const bBool = bMatch && !['false','0','none','null',''].includes(bMatch) ? 1 : 0;
+            valueA = aBool;
+            valueB = bBool;
+        } else if (column === 6) { // # Charges numeric
+            valueA = parseInt(cellA.replace(/[^0-9]/g,'')) || 0;
+            valueB = parseInt(cellB.replace(/[^0-9]/g,'')) || 0;
+        } else if (column === 7) { // Attchs numeric
             valueA = parseInt(cellA.replace(/[^0-9]/g,'')) || 0;
             valueB = parseInt(cellB.replace(/[^0-9]/g,'')) || 0;
         } else { // Text columns
@@ -363,9 +425,12 @@ function filterTable() {
     const dateTo = document.getElementById('dateTo').value;
     const paymentAmountFrom = document.getElementById('paymentAmountFrom').value;
     const paymentAmountTo = document.getElementById('paymentAmountTo').value;
+    const txMatchFilter = document.getElementById('txMatchFilter').value;
 
     const table = document.getElementById('paymentsTable');
     const rows = table.querySelectorAll('tbody tr');
+    const hasSelectCol = !!table.querySelector('#selectAllPayments');
+    const colOffset = hasSelectCol ? 1 : 0;
 
     rows.forEach(row => {
         let visible = true;
@@ -380,7 +445,7 @@ function filterTable() {
 
         // Expense type filter
         if (visible && expenseType) {
-            const expenseTypeCell = row.cells[2].textContent.toLowerCase().trim();
+            const expenseTypeCell = row.cells[2 + colOffset].textContent.toLowerCase().trim();
             if (!expenseTypeCell.includes(expenseType)) {
                 visible = false;
             }
@@ -388,7 +453,7 @@ function filterTable() {
 
         // Provider filter
         if (visible && provider) {
-            const providerCell = row.cells[3].textContent.toLowerCase().trim();
+            const providerCell = row.cells[3 + colOffset].textContent.toLowerCase().trim();
             if (!providerCell.includes(provider)) {
                 visible = false;
             }
@@ -396,7 +461,7 @@ function filterTable() {
 
         // Date range filter
         if (visible && (dateFrom || dateTo)) {
-            const paymentDateCell = row.cells[0].textContent.trim();
+            const paymentDateCell = row.cells[0 + colOffset].textContent.trim();
             if (paymentDateCell && paymentDateCell !== '-') {
                 const paymentDate = parseDateOnly(paymentDateCell) || new Date(paymentDateCell);
 
@@ -414,13 +479,26 @@ function filterTable() {
 
         // Payment amount range filter
         if (visible && (paymentAmountFrom || paymentAmountTo)) {
-            const amountCell = row.cells[1].textContent.trim();
+            const amountCell = row.cells[1 + colOffset].textContent.trim();
             const amount = parseFloat(amountCell.replace(/[$,]/g, '')) || 0;
             if (paymentAmountFrom && amount < parseFloat(paymentAmountFrom)) {
                 visible = false;
             }
             if (paymentAmountTo && amount > parseFloat(paymentAmountTo)) {
                 visible = false;
+            }
+        }
+
+        // Transaction match filter
+        if (visible && txMatchFilter) {
+            const txAttr = (row.getAttribute('data-tx-match') || '').toLowerCase().trim();
+            if (txMatchFilter === 'true') {
+                // truthy values: any non-empty 'trueish' string
+                if (!txAttr || ['false','0','none','null',''].includes(txAttr)) visible = false;
+            } else if (txMatchFilter === 'false') {
+                if (txAttr && !['false','0','none','null',''].includes(txAttr)) visible = false;
+            } else if (txMatchFilter === 'null') {
+                if (txAttr) visible = false;
             }
         }
 
@@ -492,6 +570,7 @@ function setupFormSubmission() {
             payment_amount: parseFloat(formData.get('payment_amount')),
             expense_type: formData.get('expense_type'),
             provider_id: parseInt(formData.get('provider_id')),
+            transaction_match_flag: formData.get('transaction_match_flag') || null,
             reimbursement_amount: formData.get('reimbursement_amount') ? parseFloat(formData.get('reimbursement_amount')) : null,
             has_receipt_indicator: formData.get('has_receipt_indicator'),
             notes: formData.get('notes') || null
@@ -563,6 +642,8 @@ function updateQueryFromFilters() {
     dt ? params.set('to', dt) : params.delete('to');
     af ? params.set('amount_from', af) : params.delete('amount_from');
     at ? params.set('amount_to', at) : params.delete('amount_to');
+    const tx = document.getElementById('txMatchFilter').value.trim();
+    tx ? params.set('tx_match', tx) : params.delete('tx_match');
     const newUrl = window.location.pathname + (params.toString() ? ('?' + params.toString()) : '');
     window.history.replaceState({}, '', newUrl);
 }
@@ -584,6 +665,12 @@ function restoreFiltersFromQuery() {
             const el = document.getElementById(id);
             if (el) el.value = val;
         }
+    }
+    // tx_match is optional
+    const txVal = params.get('tx_match');
+    if (txVal !== null) {
+        const el = document.getElementById('txMatchFilter');
+        if (el) el.value = txVal;
     }
 }
 
@@ -639,6 +726,100 @@ async function deletePayment(id) {
 
 // Inline attachment upload for payments
 // Inline attachment upload removed: attachments now managed via detail page drag & drop
+
+// --- Payment selection UI (mirrors charges selection patterns) ---
+function setupPaymentSelection() {
+    const table = document.getElementById('paymentsTable');
+    const selectAll = document.getElementById('selectAllPayments');
+    const actionsBar = document.getElementById('paymentActionsBar');
+    const markMatchedBtn = document.getElementById('markMatchedBtn');
+    const cancelBtn = document.getElementById('cancelPaymentSelectionBtn');
+    const countSpan = document.getElementById('selectedPaymentCount');
+    if (!table || !selectAll) return;
+
+    // Click anywhere on row toggles checkbox (ignore interactive elements)
+    table.addEventListener('click', (e) => {
+        try {
+            const tr = e.target.closest('tr');
+            if (!tr) return;
+            if (e.target.closest('a,button,input,select,textarea,label')) return;
+            const cb = tr.querySelector('.payment-select');
+            if (!cb) return;
+            cb.checked = !cb.checked;
+            cb.dispatchEvent(new Event('change', { bubbles: true }));
+        } catch (err) {}
+    });
+
+    function updatePaymentSelectionState() {
+        const cbs = table.querySelectorAll('tbody .payment-select');
+        const selected = Array.from(cbs).filter(cb => cb.checked);
+        const visibleTotal = Array.from(cbs).filter(cb => cb.closest('tr').style.display !== 'none').length;
+        selectAll.checked = selected.length > 0 && selected.length === visibleTotal;
+        if (selected.length > 0) {
+            actionsBar.classList.remove('d-none');
+            countSpan.textContent = `${selected.length} selected`;
+        } else {
+            actionsBar.classList.add('d-none');
+            countSpan.textContent = '';
+        }
+    }
+
+    selectAll.addEventListener('change', () => {
+        const rows = table.querySelectorAll('tbody tr');
+        rows.forEach(r => {
+            if (r.style.display === 'none') return;
+            const cb = r.querySelector('.payment-select');
+            if (cb) cb.checked = selectAll.checked;
+            if (cb && selectAll.checked) r.classList.add('row-selected'); else if (cb) r.classList.remove('row-selected');
+        });
+        updatePaymentSelectionState();
+    });
+
+    table.addEventListener('change', (e) => {
+        if (e.target.classList && e.target.classList.contains('payment-select')) {
+            const cb = e.target;
+            const row = cb.closest('tr');
+            if (row) { if (cb.checked) row.classList.add('row-selected'); else row.classList.remove('row-selected'); }
+            updatePaymentSelectionState();
+        }
+    });
+
+    markMatchedBtn.addEventListener('click', async () => {
+        const ids = getSelectedPaymentIds();
+        if (!ids.length) { alert('Select at least one payment to mark matched.'); return; }
+        const proceed = confirm(`Mark ${ids.length} selected payment(s) as matched?`);
+        if (!proceed) return;
+        try {
+            const resp = await fetch('/api/payments/mark-matched', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ payment_ids: ids })
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                alert('Failed to mark payments: ' + (err.detail || resp.status));
+                return;
+            }
+            // Success - reload to show updates
+            location.reload();
+        } catch (e) {
+            alert('Error marking payments: ' + e.message);
+        }
+    });
+
+    cancelBtn.addEventListener('click', () => {
+        const cbs = table.querySelectorAll('tbody .payment-select');
+        cbs.forEach(cb => cb.checked = false);
+        const rows = table.querySelectorAll('tbody tr');
+        rows.forEach(r => r.classList.remove('row-selected'));
+        updatePaymentSelectionState();
+    });
+}
+
+function getSelectedPaymentIds() {
+    const table = document.getElementById('paymentsTable');
+    return Array.from(table.querySelectorAll('tbody .payment-select:checked')).map(cb => parseInt(cb.value));
+}
 </script>
 
 {% endblock %}
