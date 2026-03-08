@@ -659,11 +659,13 @@ function restoreFiltersFromQuery() {
         amount_from: 'paymentAmountFrom',
         amount_to: 'paymentAmountTo'
     };
+    let hadFrom = false;
     for (const [key, id] of Object.entries(map)) {
         const val = params.get(key);
         if (val !== null) {
             const el = document.getElementById(id);
             if (el) el.value = val;
+            if (key === 'from') hadFrom = true;
         }
     }
     // tx_match is optional
@@ -671,6 +673,16 @@ function restoreFiltersFromQuery() {
     if (txVal !== null) {
         const el = document.getElementById('txMatchFilter');
         if (el) el.value = txVal;
+    }
+
+    // Apply smart default for 'from' date when not explicitly provided via URL.
+    // Jan–Apr: default to Jan 1 of previous year; otherwise Jan 1 of current year.
+    if (!hadFrom) {
+        const now = new Date();
+        const year = (now.getMonth() < 4) ? now.getFullYear() - 1 : now.getFullYear();
+        const defaultFrom = `${year}-01-01`;
+        const el = document.getElementById('dateFrom');
+        if (el) el.value = defaultFrom;
     }
 }
 

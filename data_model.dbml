@@ -19,6 +19,7 @@ Table charges {
   insurance_discount_amount money
   insurance_paid_amount money
   ignore_for_issue_spotting boolean
+  not_covered_by_insurance boolean [note: "Self-pay: charge is not subject to insurance"]
   notes bpchar
   created_at timestamp [default: now()]
   updated_at timestamp [default: now()]

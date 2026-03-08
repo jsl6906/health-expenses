@@ -1143,3 +1143,44 @@ async def insurance_page(request: Request, db: Session = Depends(get_db)):
         "insurance.html",
         {"request": request, "insurances": ins, "family_members": family_members},
     )
+
+
+@router.get("/reports/missing_reimbursement", response_class=HTMLResponse)
+async def missing_reimbursement_report(request: Request, db: Session = Depends(get_db)):
+    """Report: charges with Insurance Processed status but no reimbursement payment."""
+    try:
+        from models.database import Charge as ChargeModel  # type: ignore
+        from models.database import ChargePaymentXref  # type: ignore
+        from models.database import Payment as PaymentModel  # type: ignore
+    except ImportError:  # pragma: no cover
+        from ..models.database import Charge as ChargeModel  # type: ignore
+        from ..models.database import ChargePaymentXref  # type: ignore
+        from ..models.database import Payment as PaymentModel  # type: ignore
+
+    from sqlalchemy import desc
+    from sqlalchemy import func as _func
+    from sqlalchemy import nullslast, or_
+
+    charges = (
+        db.query(ChargeModel)
+        .filter(ChargeModel.insurance_submission_status == "Insurance Processed")
+        .order_by(nullslast(desc(ChargeModel.service_date)), desc(ChargeModel.id))
+        .all()
+    )
+    annotate_charges_with_paid(db, charges)
+
+    # Compute summary stats
+    total_count = len(charges)
+    total_insurance_paid = sum(float(c.insurance_paid_amount or 0) for c in charges)
+    total_owed = sum(float(c.owed_amount or 0) for c in charges)
+
+    return render_template(
+        "missing_reimbursement.html",
+        {
+            "request": request,
+            "charges": charges,
+            "total_count": total_count,
+            "total_insurance_paid": total_insurance_paid,
+            "total_owed": total_owed,
+        },
+    )

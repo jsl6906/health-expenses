@@ -90,6 +90,7 @@ class ChargeBase(BaseModel):
     insurance_discount_amount: Optional[Decimal] = None
     insurance_paid_amount: Optional[Decimal] = None
     ignore_for_issue_spotting: bool = False
+    not_covered_by_insurance: bool = False
     notes: Optional[str] = None
 
 
@@ -117,6 +118,7 @@ class ChargeUpdate(BaseModel):
     insurance_discount_amount: Optional[Decimal] = None
     insurance_paid_amount: Optional[Decimal] = None
     ignore_for_issue_spotting: Optional[bool] = None
+    not_covered_by_insurance: Optional[bool] = None
     notes: Optional[str] = None
 
 

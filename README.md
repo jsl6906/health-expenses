@@ -2,6 +2,11 @@
 
 A modular FastAPI application for managing personal medical, dental, and vision expenses backed by PostgreSQL.
 
+## TODO
+- Expand Bulk Update Selected Charges to include charged, owed, and insurance paid amounts + EOB#
+- Add Reimbursement Amount to Payments Table  (on Provider page)
+- Add text to manual claim report to signify sending reimbursement to INSURED / PATIENT
+
 ## Features
 
 - **Provider Management**: Track healthcare providers, doctors, and medical facilities

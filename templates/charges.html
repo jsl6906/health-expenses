@@ -63,9 +63,11 @@
                 <label for="insuranceStatusFilter" class="form-label">Insurance Status</label>
                 <select class="form-control" id="insuranceStatusFilter">
                     <option value="">All Status</option>
+                    <option value="Insurance Reimbursed">Insurance Reimbursed</option>
                     <option value="Insurance Processed">Insurance Processed</option>
                     <option value="Insurance Submitted">Insurance Submitted</option>
                     <option value="Not Submitted">Not Submitted</option>
+                    <option value="Self Pay">Self Pay</option>
                     <option value="N/A">N/A</option>
                 </select>
             </div>
@@ -364,6 +366,10 @@
                     <div class="mb-3">
                         <label for="notes" class="form-label">Notes</label>
                         <textarea class="form-control" id="notes" name="notes" rows="2" placeholder="Any additional context..."></textarea>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="not_covered_by_insurance" name="not_covered_by_insurance">
+                        <label class="form-check-label" for="not_covered_by_insurance">Self Pay <span class="text-muted">(not covered by insurance)</span></label>
                     </div>
                     <div class="mb-3">
                         <label for="charge_attachments" class="form-label">Attachments (optional)</label>
@@ -758,6 +764,8 @@ function setupFormSubmission() {
                     }
                 }
             }
+            // Self Pay checkbox
+            data.not_covered_by_insurance = !!formData.get('not_covered_by_insurance');
 
             try {
                 const response = await fetch('/api/charges/', {
@@ -849,8 +857,15 @@ function restoreFiltersFromQuery() {
         }
     }
 
-    // NOTE: Defaults for the charges page date range are provided by link generators.
-    // The page will only populate filters from explicit URL params and will not set its own defaults here.
+    // Apply smart default for 'from' date when not explicitly provided via URL.
+    // Jan–Apr: default to Jan 1 of previous year; otherwise Jan 1 of current year.
+    if (!hadFrom) {
+        const now = new Date();
+        const year = (now.getMonth() < 4) ? now.getFullYear() - 1 : now.getFullYear();
+        const defaultFrom = `${year}-01-01`;
+        const el = document.getElementById('dateFrom');
+        if (el) el.value = defaultFrom;
+    }
 }
 
 // Inline attachment upload per charge row
@@ -1555,6 +1570,9 @@ async function submitBulkUpdate(e) {
                 } else if (key === 'claim_submitted_date') {
                     // date input is already ISO YYYY-MM-DD from <input type="date">
                     updateData[key] = value;
+                } else if (key === 'not_covered_by_insurance') {
+                    // Coerce tri-state select to boolean
+                    updateData[key] = value === 'true';
                 } else {
                     updateData[key] = value;
                 }
@@ -1689,6 +1707,16 @@ async function submitBulkUpdate(e) {
                     <div class="mb-3">
                         <label for="bulk_notes" class="form-label">Notes</label>
                         <textarea class="form-control" id="bulk_notes" name="notes" rows="2" placeholder="Leave empty to not change. Any text entered will be appended to existing notes (separated with '; ')."></textarea>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label for="bulk_not_covered" class="form-label">Self Pay</label>
+                            <select class="form-select" id="bulk_not_covered" name="not_covered_by_insurance">
+                                <option value="">-- No Change --</option>
+                                <option value="true">Yes — Self Pay</option>
+                                <option value="false">No — Insurance Covered</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">

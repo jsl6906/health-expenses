@@ -143,6 +143,9 @@ class Charge(Base):
     insurance_discount_amount = Column(Numeric(10, 2))
     insurance_paid_amount = Column(Numeric(10, 2))
     ignore_for_issue_spotting = Column(Boolean, default=False)
+    not_covered_by_insurance = Column(
+        Boolean, default=False, comment="Self-pay: charge is not subject to insurance"
+    )
     notes = Column(Text)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
@@ -158,31 +161,131 @@ class Charge(Base):
     @hybrid_property  # type: ignore
     def insurance_submission_status(self):  # type: ignore
         """Determine insurance submission status based on charge fields."""
+        # Self-pay charges are never subject to insurance
+        if self.not_covered_by_insurance:  # type: ignore
+            return "Self Pay"
+        # $0 owed is always N/A regardless of other fields
+        if not self.owed_amount or self.owed_amount <= 0:  # type: ignore
+            return "N/A"
         if self.insurance_paid_amount or self.eob_claim_num:  # type: ignore
+            # Check if any linked payment is a reimbursement-type payment
+            has_reimb_payment = any(
+                xref.payment
+                and (
+                    (
+                        xref.payment.payment_amount is not None
+                        and xref.payment.payment_amount < 0
+                    )
+                    or (
+                        xref.payment.reimbursement_amount is not None
+                        and xref.payment.reimbursement_amount != 0
+                    )
+                )
+                for xref in (self.charge_payments or [])  # type: ignore
+            )
+            # Compute total applied from non-reimbursement payments only
+            # (exclude negative/refund payments and payments with reimbursement_amount)
+            non_reimb_applied = sum(
+                float(xref.allocated_amount or 0)
+                for xref in (self.charge_payments or [])  # type: ignore
+                if xref.payment
+                and (
+                    (
+                        xref.payment.payment_amount is None
+                        or xref.payment.payment_amount >= 0
+                    )
+                    and not (
+                        xref.payment.reimbursement_amount
+                        and xref.payment.reimbursement_amount != 0
+                    )
+                )
+            )
+            owed = float(self.owed_amount or 0)  # type: ignore
+            # If non-reimbursement payments exceed owed AND no reimbursement
+            # payment is linked, the reimbursement check hasn't been cashed
+            # yet — classify as Insurance Processed
+            if non_reimb_applied > owed and not has_reimb_payment:
+                return "Insurance Processed"
+            # Charge with an insurance_paid_amount is reimbursed
+            if self.insurance_paid_amount:  # type: ignore
+                return "Insurance Reimbursed"
+            # Otherwise check if a corresponding reimbursement payment exists
+            if self.charge_payments:  # type: ignore
+                for xref in self.charge_payments:  # type: ignore
+                    pmt = xref.payment
+                    if pmt and (
+                        (pmt.payment_amount is not None and pmt.payment_amount < 0)
+                        or (
+                            pmt.reimbursement_amount is not None
+                            and pmt.reimbursement_amount != 0
+                        )
+                    ):
+                        return "Insurance Reimbursed"
             return "Insurance Processed"
         elif self.claim_submitted_date:  # type: ignore
             return "Insurance Submitted"
-        elif self.owed_amount and self.owed_amount > 0:  # type: ignore
-            return "Not Submitted"
         else:
-            return "N/A"
+            return "Not Submitted"
 
     @insurance_submission_status.expression
     def insurance_submission_status(cls):
         """SQL expression for insurance submission status."""
-        from sqlalchemy import case, func, or_
+        from sqlalchemy import and_, case, exists, func, or_, select
+
+        has_reimbursement = exists(
+            select(ChargePaymentXref.id)
+            .join(Payment, ChargePaymentXref.payment_id == Payment.id)
+            .where(
+                ChargePaymentXref.charge_id == cls.id,
+                or_(
+                    Payment.payment_amount < 0,
+                    func.coalesce(Payment.reimbursement_amount, 0) != 0,
+                ),
+            )
+        )
+
+        insurance_processed = or_(
+            func.coalesce(cls.insurance_paid_amount, 0) > 0,
+            cls.eob_claim_num.isnot(None),
+        )
+
+        has_insurance_paid = func.coalesce(cls.insurance_paid_amount, 0) > 0
+
+        has_owed = func.coalesce(cls.owed_amount, 0) > 0
+
+        # Sum of non-reimbursement applied payments for this charge
+        # (exclude negative/refund payments and payments with reimbursement_amount)
+        non_reimb_applied = (
+            select(func.coalesce(func.sum(ChargePaymentXref.allocated_amount), 0))
+            .join(Payment, ChargePaymentXref.payment_id == Payment.id)
+            .where(
+                ChargePaymentXref.charge_id == cls.id,
+                Payment.payment_amount >= 0,
+                func.coalesce(Payment.reimbursement_amount, 0) == 0,
+            )
+            .correlate(cls)
+            .scalar_subquery()
+        )
+        overpaid = non_reimb_applied > func.coalesce(cls.owed_amount, 0)
+
+        is_self_pay = func.coalesce(cls.not_covered_by_insurance, False) == True
 
         return case(
+            # Self-pay charges are never subject to insurance
+            (is_self_pay, "Self Pay"),
+            # $0 owed is always N/A
+            (~has_owed, "N/A"),
+            # Overpaid + insurance processed but NO reimbursement payment
+            # → check not cashed yet
             (
-                or_(
-                    func.coalesce(cls.insurance_paid_amount, 0) > 0,
-                    cls.eob_claim_num.isnot(None),
-                ),
+                and_(insurance_processed, overpaid, ~has_reimbursement),
                 "Insurance Processed",
             ),
+            (has_insurance_paid, "Insurance Reimbursed"),
+            (and_(insurance_processed, has_reimbursement), "Insurance Reimbursed"),
+            (insurance_processed, "Insurance Processed"),
             (cls.claim_submitted_date.isnot(None), "Insurance Submitted"),
-            (func.coalesce(cls.owed_amount, 0) > 0, "Not Submitted"),
-            else_="N/A",
+            else_="Not Submitted",
         )
 
 

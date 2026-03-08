@@ -959,5 +959,13 @@ def bulk_update_charges(payload: BulkUpdateRequest, db: Session = Depends(get_db
                     detail="Invalid claim_submitted_date format; use YYYY-MM-DD",
                 )
 
+    # Self Pay flag: coerce to boolean
+    if "not_covered_by_insurance" in upd:
+        val = upd["not_covered_by_insurance"]
+        if isinstance(val, str):
+            upd["not_covered_by_insurance"] = val.lower() in ("true", "1", "yes")
+        else:
+            upd["not_covered_by_insurance"] = bool(val)
+
     updated = charge_crud.bulk_update(db, payload.charge_ids, upd)
     return {"updated_ids": updated, "requested": payload.charge_ids}

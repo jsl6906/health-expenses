@@ -56,6 +56,7 @@
           <dt class="col-5">Reimbursed HSA/FSA</dt><dd class="col-7">{{ charge.reimbursement_amount | currency }}</dd>
           <dt class="col-5">EOB / Claim #</dt><dd class="col-7">{{ charge.eob_claim_num or '-' }}</dd>
           <dt class="col-5">Ignore Flag</dt><dd class="col-7">{% if charge.ignore_for_issue_spotting %}<span class="badge bg-warning text-dark">Yes</span>{% else %}-{% endif %}</dd>
+          <dt class="col-5">Self Pay</dt><dd class="col-7">{% if charge.not_covered_by_insurance %}<span class="badge bg-info text-dark">Self Pay</span>{% else %}-{% endif %}</dd>
           <dt class="col-5">Notes</dt><dd class="col-7">{{ charge.notes or '-' }}</dd>
           <dt class="col-5">Created</dt><dd class="col-7">{{ charge.created_at | format_datetime_est }} {% if charge.created_by %}by {{ charge.created_by }}{% endif %}</dd>
           <dt class="col-5">Updated</dt><dd class="col-7">{{ charge.updated_at | format_datetime_est }} {% if charge.updated_by %}by {{ charge.updated_by }}{% endif %}</dd>
@@ -830,6 +831,10 @@ function highlightMergeDifferencesOnDetail() {
           </div>
           <div class="mb-2"><label class="form-label">Doctor Name</label><input type="text" name="doctor_name" class="form-control" value="{{ charge.doctor_name or '' }}"></div>
           <div class="mb-2"><label class="form-label">Notes</label><textarea name="notes" rows="2" class="form-control">{{ charge.notes or '' }}</textarea></div>
+          <div class="mb-2 form-check">
+            <input type="checkbox" class="form-check-input" name="not_covered_by_insurance" id="edit_not_covered_by_insurance" {% if charge.not_covered_by_insurance %}checked{% endif %}>
+            <label class="form-check-label" for="edit_not_covered_by_insurance">Self Pay <span class="text-muted">(not covered by insurance)</span></label>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -871,6 +876,8 @@ document.addEventListener('DOMContentLoaded',()=>{
       }
       // Numeric coercion
       ['charged_amount','owed_amount','insurance_paid_amount','base_fee_amount','reimbursement_amount','insurance_discount_amount'].forEach(k=>{if(payload[k]!==null && payload[k]!=='' ) payload[k]=parseFloat(payload[k]);});
+      // Self Pay checkbox
+      payload['not_covered_by_insurance'] = fd.has('not_covered_by_insurance');
       try{const resp=await fetch(`/api/charges/${chargeId}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
         if(resp.ok){location.reload();} else { const j=await resp.json().catch(()=>({})); alert('Update failed: '+(j.detail||resp.status));}}
       catch(ex){alert('Network error updating charge: '+ex.message);}

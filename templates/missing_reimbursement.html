@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+
+{% block title %}Missing Reimbursement Report{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="/">Home</a></li>
+                <li class="breadcrumb-item active">Missing Reimbursement Report</li>
+            </ol>
+        </nav>
+        <h2><i class="bi bi-exclamation-triangle text-warning"></i> Insurance Processed Without Reimbursement</h2>
+        <p class="text-muted">Charges where insurance has processed a payment but no corresponding reimbursement payment record exists (negative payment amount or non-zero reimbursement amount).</p>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-muted">Total Charges</h5>
+                <h2>{{ total_count }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-muted">Total Insurance Paid</h5>
+                <h2>{{ total_insurance_paid | currency }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h5 class="card-title text-muted">Total Owed</h5>
+                <h2>{{ total_owed | currency }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if charges %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-table"></i> Charges Missing Reimbursement</h5>
+                <span class="badge bg-warning text-dark">{{ charges | length }} record{{ 's' if charges | length != 1 else '' }}</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table manual-striped mb-0">
+                        <thead>
+                            <tr>
+                                <th>Service Date</th>
+                                <th>Member</th>
+                                <th>Type</th>
+                                <th>Provider</th>
+                                <th>Description</th>
+                                <th>EOB / Claim #</th>
+                                <th>Charged</th>
+                                <th>Owed</th>
+                                <th>Ins. Paid</th>
+                                <th>Paid</th>
+                                <th>Pay Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for charge in charges %}
+                            <tr>
+                                <td>{{ charge.service_date.strftime('%#m/%#d/%y') if charge.service_date else '-' }}</td>
+                                <td>
+                                    {% set fm_obj = charge.family_member %}
+                                    {% if fm_obj and fm_obj.emoji %}
+                                        <span title="{{ (fm_obj.first_name ~ ((' ' ~ fm_obj.last_name) if fm_obj.last_name else '')) }}">{{ fm_obj.emoji }}</span>
+                                    {% elif fm_obj %}
+                                        {% set fm_name = fm_obj.first_name ~ ((' ' ~ fm_obj.last_name) if fm_obj.last_name else '') %}
+                                        <span title="{{ fm_name }}">{{ fm_name | fam_avatar }}</span>
+                                    {% else %}
+                                        -
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% set mt = (charge.medical_type or '') %}
+                                    {% set mt_map = {
+                                        'Medical': '🩺',
+                                        'Dental': '🦷',
+                                        'Vision': '👁️',
+                                        'Mental Health': '🧠',
+                                        'Other': '🧾'
+                                    } %}
+                                    {% set icon = mt_map.get(mt, '❔') %}
+                                    <span class="medical-type-icon" title="{{ mt or 'Unknown' }}">{{ icon }}</span>
+                                </td>
+                                <td>
+                                    {% if charge.provider %}
+                                        <a href="/providers/{{ charge.provider.id }}" class="text-decoration-none">{{ charge.provider.provider_name }}</a>{% if charge.provider.provider_group %} <span class="text-muted">({{ charge.provider.provider_group }})</span>{% endif %}
+                                    {% else %}-{% endif %}
+                                </td>
+                                <td>
+                                    <a href="/charges/{{ charge.id }}" class="text-decoration-none">
+                                        {% if charge.cpt_code and charge.cpt_code.lower() not in ['???','na','n/a'] %}<span class="text-muted">({{ charge.cpt_code }})</span> {% endif %}{{ charge.charge_description or '-' }}
+                                    </a>
+                                </td>
+                                <td>{{ charge.eob_claim_num or '-' }}</td>
+                                <td>{{ charge.charged_amount | currency }}</td>
+                                <td>{{ charge.owed_amount | currency }}</td>
+                                <td>{{ charge.insurance_paid_amount | currency }}</td>
+                                <td>{{ charge.paid_amount_agg | currency }}</td>
+                                <td>
+                                    {% set owed = charge.owed_amount or 0 %}
+                                    {% set paid = charge.paid_amount_agg or 0 %}
+                                    {% if owed > 0 and paid >= owed %}
+                                        <span class="badge bg-success">Paid</span>
+                                    {% elif owed > 0 and paid > 0 and paid < owed %}
+                                        <span class="badge bg-info text-dark">Partial</span>
+                                    {% elif owed > 0 and paid == 0 %}
+                                        <span class="badge bg-warning">Outstanding</span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">N/A</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="row">
+    <div class="col-12">
+        <div class="alert alert-success">
+            <i class="bi bi-check-circle"></i> All insurance-processed charges have a corresponding reimbursement payment. Nothing to report!
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
