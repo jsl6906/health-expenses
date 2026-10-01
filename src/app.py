@@ -272,5 +272,3 @@ if __name__ == "__main__":
 
     port = int(os.getenv("APP_PORT", "8080"))
     uvicorn.run(app, host="0.0.0.0", port=port)
-
-# Successfully configured pre-commit Docker builds! Now running on port 8080.

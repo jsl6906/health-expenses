@@ -45,20 +45,9 @@ cp .env.docker.example .env
 docker-compose up -d
 ```
 
-### 3. Automatic Building with Pre-commit Hooks
+### 3. Deploying to the Home Server
 
-Set up automatic Docker image building on every commit:
-
-```bash
-# Install and setup pre-commit hooks
-./scripts/setup-pre-commit.sh
-# or on Windows:
-.\scripts\setup-pre-commit.ps1
-
-# Now Docker images will be built automatically when you commit changes
-git add .
-git commit -m "Your changes"  # This will trigger the Docker build
-```
+To package and deploy to myserver, follow [deploy/deploy-instructions.md](deploy/deploy-instructions.md).
 
 ## Configuration
 
@@ -232,46 +221,4 @@ docker-compose logs -f app
 psql -h your-database-host.com -U postgres -d personal_expenses
 
 # Or use your preferred database administration tool
-```
-
-## Pre-commit Integration
-
-The application is configured to automatically build Docker images when relevant files change during commits:
-
-### Setup
-
-```bash
-# Install pre-commit hooks (one-time setup)
-./scripts/setup-pre-commit.sh
-# or on Windows:
-.\scripts\setup-pre-commit.ps1
-```
-
-### How it Works
-
-- When you commit changes to Docker-relevant files, the image is automatically built
-- Images are saved to `dist/` with commit hash tags (e.g., `personal-expenses-pre-commit-abc1234.tar`)
-- A `personal-expenses-latest.tar` symlink/copy is maintained for convenience
-- Only builds when files actually change (uses hash-based change detection)
-- Keeps the last 3 built images, automatically cleaning up older ones
-
-### Docker-relevant Files
-
-The pre-commit hook triggers on changes to:
-- `Dockerfile`
-- `pyproject.toml`
-- `main.py`, `init_db.py`
-- Any files in `src/`, `templates/`, `static/`
-
-### Manual Build Control
-
-```bash
-# Skip pre-commit hooks for a specific commit
-git commit --no-verify -m "Skip Docker build"
-
-# Manually run all pre-commit hooks
-pre-commit run --all-files
-
-# Manually build Docker image
-./scripts/build-docker.sh
 ```

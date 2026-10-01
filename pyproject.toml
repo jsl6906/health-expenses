@@ -18,7 +18,6 @@ dependencies = [
     "pypdf>=4.0.0",
     "httpx>=0.28.1",
     "pytz>=2024.1",
-    "pre-commit>=4.3.0",
 ]
 
 [project.optional-dependencies]
@@ -46,6 +45,5 @@ include = [
 
 [dependency-groups]
 dev = [
-    "pre-commit>=4.3.0",
     "pytest>=8.4.1",
 ]
