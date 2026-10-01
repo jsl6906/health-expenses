@@ -1,7 +1,7 @@
 # Multi-stage Docker build for Personal Expenses Application
 
 # Build stage
-FROM python:3.13-slim as builder
+FROM python:3.13-slim AS builder
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
@@ -28,7 +28,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project --no-cache
 
 # Production stage
-FROM python:3.13-slim as production
+FROM python:3.13-slim AS production
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
