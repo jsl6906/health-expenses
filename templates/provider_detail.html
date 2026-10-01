@@ -91,7 +91,15 @@
       <div class="card-header d-flex justify-content-between align-items-center">
         <div class="d-flex align-items-center gap-2">
           <span class="fw-semibold">Charges</span>
-          <span class="badge bg-secondary">{{ provider.charge_count }}</span>
+          <span class="badge bg-secondary" id="chargesCountBadge">{{ provider.charge_count }}</span>
+          <div class="form-check form-check-inline small mb-0 ms-2">
+            <input class="form-check-input" type="checkbox" id="hideUnchargedChk">
+            <label class="form-check-label" for="hideUnchargedChk">Hide uncharged</label>
+          </div>
+          <div class="form-check form-check-inline small mb-0">
+            <input class="form-check-input" type="checkbox" id="hidePaidChk">
+            <label class="form-check-label" for="hidePaidChk">Hide paid</label>
+          </div>
         </div>
         <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#addProviderChargeModal"><i class="bi bi-plus-circle"></i> Add Charge</button>
       </div>
@@ -113,7 +121,7 @@
             </thead>
             <tbody>
               {% for c in charges %}
-              <tr data-charge-row="{{ c.id }}">
+              <tr data-charge-row="{{ c.id }}" data-owed="{{ c.owed_amount or 0 }}" data-paid="{{ c.paid_amount_agg or 0 }}">
                 <td>{{ c.service_date.strftime('%#m/%#d/%y') if c.service_date else '-' }}</td>
                 <td>
                   {% set fm_obj = c.family_member %}
@@ -232,6 +240,28 @@ function applyStriping(tableId) {
   rows.filter(r => r.style.display !== 'none').forEach((r,i)=>{ if(i%2===1) r.classList.add('table-alt'); });
 }
 ['chargesTable','paymentsTable'].forEach(applyStriping);
+
+(function setupChargeFilters() {
+  const hideUncharged = document.getElementById('hideUnchargedChk');
+  const hidePaid = document.getElementById('hidePaidChk');
+  const badge = document.getElementById('chargesCountBadge');
+  const rows = Array.from(document.querySelectorAll('#chargesTable tbody tr[data-charge-row]'));
+  function apply() {
+    let visible = 0;
+    rows.forEach(r => {
+      const owed = parseFloat(r.dataset.owed) || 0;
+      const paid = parseFloat(r.dataset.paid) || 0;
+      const hide = (hideUncharged.checked && owed <= 0)
+        || (hidePaid.checked && owed > 0 && Math.abs(paid - owed) < 0.005);
+      r.style.display = hide ? 'none' : '';
+      if (!hide) visible++;
+    });
+    badge.textContent = visible === rows.length ? rows.length : `${visible} / ${rows.length}`;
+    applyStriping('chargesTable');
+  }
+  hideUncharged.addEventListener('change', apply);
+  hidePaid.addEventListener('change', apply);
+})();
 
 // Helper: parse an ISO date-only string (YYYY-MM-DD) as a local Date at midnight
 function parseDateOnly(isoStr){
