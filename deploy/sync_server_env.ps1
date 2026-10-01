@@ -1,5 +1,5 @@
 # Copy the Gemini settings from the local .env into the server's shared compose .env without printing secrets.
-param([string]$ServerEnv = "\\myserver\Docker\.env", [string[]]$Keys = @("GEMINI_API_KEY", "GEMINI_MODEL_NAME"))
+param([string]$ServerEnv = "\\myserver\Docker\.env", [string[]]$Keys = @("GEMINI_API_KEY", "GEMINI_MODEL_NAME", "EOB_USE_FILE_UPLOAD"))
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 
