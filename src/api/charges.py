@@ -944,6 +944,13 @@ def bulk_update_charges(payload: BulkUpdateRequest, db: Session = Depends(get_db
         else:
             upd["diagnosis_code"] = str(d).strip()
 
+    if "eob_claim_num" in upd:
+        e = upd.get("eob_claim_num")
+        if e is None or str(e).strip() == "":
+            upd.pop("eob_claim_num", None)
+        else:
+            upd["eob_claim_num"] = str(e).strip()
+
     # Claim submitted date: accept YYYY-MM-DD strings and coerce to ISO date string
     if "claim_submitted_date" in upd:
         cs = upd.get("claim_submitted_date")
