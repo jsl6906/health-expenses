@@ -484,65 +484,45 @@ async def provider_detail_page(
 async def charges_page(request: Request, db: Session = Depends(get_db)):
     try:
         from models.database import Charge as ChargeModel  # type: ignore
+        from models.database import ChargePaymentXref as XrefModel  # type: ignore
     except ImportError:  # pragma: no cover
         from ..models.database import Charge as ChargeModel  # type: ignore
-    from sqlalchemy import desc
-    from sqlalchemy import func as _func
-    from sqlalchemy import nullslast
+        from ..models.database import ChargePaymentXref as XrefModel  # type: ignore
+    from sqlalchemy import desc, nullslast
+    from sqlalchemy.orm import joinedload, selectinload
 
+    # Eager-load everything the template touches (incl. insurance_submission_status,
+    # which walks charge_payments -> payment) to avoid per-row lazy-load queries.
     charges = (
         db.query(ChargeModel)
+        .options(
+            joinedload(ChargeModel.provider),
+            joinedload(ChargeModel.family_member),
+            selectinload(ChargeModel.charge_payments).joinedload(XrefModel.payment),
+        )
         .order_by(nullslast(desc(ChargeModel.service_date)), desc(ChargeModel.id))
         .all()
     )
     annotate_charges_with_paid(db, charges)
 
-    # Identify potential duplicates
-    # Group by service_date, family_member_id, medical_type, base_fee_amount, charged_amount
-    # so both the base fee and charged amount are considered when detecting duplicates
-    duplicate_groups = (
-        db.query(
-            ChargeModel.service_date,
-            ChargeModel.family_member_id,
-            ChargeModel.medical_type,
-            ChargeModel.base_fee_amount,
-            ChargeModel.charged_amount,
-            _func.array_agg(ChargeModel.id).label("charge_ids"),
+    # Potential duplicates: same service_date, family member, medical type, base fee
+    # and charged amount. A group is excluded only when ALL its charges have 'NO DUP'.
+    dup_groups: dict = {}
+    for ch in charges:
+        key = (
+            ch.service_date,
+            ch.family_member_id,
+            ch.medical_type,
+            ch.base_fee_amount,
+            ch.charged_amount,
         )
-        .group_by(
-            ChargeModel.service_date,
-            ChargeModel.family_member_id,
-            ChargeModel.medical_type,
-            ChargeModel.base_fee_amount,
-            ChargeModel.charged_amount,
-        )
-        .having(_func.count(ChargeModel.id) > 1)
-        .all()
-    )
-
-    # Build set of potential duplicate charge IDs.
-    # Note: Historically we excluded any group if any charge had 'NO DUP' in notes.
-    # Per requested behavior, only exclude a duplicate group when ALL charges in
-    # the group include the 'NO DUP' marker in their notes. If at least one
-    # charge lacks the marker, the group remains a potential duplicate.
+        dup_groups.setdefault(key, []).append(ch)
     potential_duplicate_ids = set()
-    for group in duplicate_groups:
-        group_charge_ids = group.charge_ids
-        # Load charges in this group and determine NO DUP markers
-        charges_in_group = (
-            db.query(ChargeModel).filter(ChargeModel.id.in_(group_charge_ids)).all()
-        )
-
-        # Only exclude the group if ALL charges explicitly contain 'NO DUP' in their notes.
-        # If any charge does NOT have the marker, the group should still be considered
-        # potential duplicates (per the requested behavior).
-        all_have_no_dup = all(
-            (charge.notes is not None) and ("NO DUP" in charge.notes.upper())
-            for charge in charges_in_group
-        )
-
-        if not all_have_no_dup:
-            potential_duplicate_ids.update(group_charge_ids)
+    for group in dup_groups.values():
+        if len(group) > 1 and not all(
+            c.notes is not None and "NO DUP" in c.notes.upper() for c in group
+        ):
+            potential_duplicate_ids.update(c.id for c in group)
 
     # Annotate charges with duplicate status
     for charge in charges:
