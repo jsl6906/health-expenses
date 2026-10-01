@@ -633,7 +633,9 @@ function setupProviderNameValidation() {
                 if (resp.ok) {
                     const data = await resp.json();
                     if (data.exists) {
-                        feedback.textContent = 'A provider with this name already exists.';
+                        feedback.textContent = data.alias_of
+                            ? `This name is an alias of existing provider "${data.alias_of}".`
+                            : 'A provider with this name already exists.';
                         input.classList.add('is-invalid');
                         form.querySelector('button[type="submit"]').disabled = true;
                     } else {

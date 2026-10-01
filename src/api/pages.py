@@ -455,6 +455,10 @@ async def provider_detail_page(
         "updated_at": provider.updated_at,
         "created_by": provider.created_by,
         "updated_by": provider.updated_by,
+        "aliases": [
+            {"id": a.id, "alias_name": a.alias_name, "alias_address": a.alias_address}
+            for a in provider.aliases
+        ],
         "charge_count": int(charge_count or 0),
         "payment_count": int(payment_count or 0),
         "total_charged": float(total_charged or 0),

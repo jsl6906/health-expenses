@@ -28,6 +28,23 @@
           <dt class="col-5">Last Charge</dt><dd class="col-7">{{ provider.last_charge_date.strftime('%m/%d/%Y') if provider.last_charge_date else '-' }}</dd>
           <dt class="col-5">Last Payment</dt><dd class="col-7">{{ provider.last_payment_date.strftime('%m/%d/%Y') if provider.last_payment_date else '-' }}</dd>
           <dt class="col-5">Active</dt><dd class="col-7">{% if provider.active_provider_flag %}<span class="badge bg-success">Yes</span>{% else %}<span class="badge bg-secondary">No</span>{% endif %}</dd>
+          <dt class="col-5">Also Known As</dt>
+          <dd class="col-7">
+            <ul class="list-unstyled mb-1" id="providerAliasList">
+              {% for a in provider.aliases %}
+              <li class="d-flex align-items-start gap-1">
+                <span>{{ a.alias_name }}{% if a.alias_address %} <span class="text-muted">@ {{ a.alias_address }}</span>{% endif %}</span>
+                <button type="button" class="btn btn-link btn-sm p-0 text-danger alias-remove" data-alias-id="{{ a.id }}" title="Remove alias"><i class="bi bi-x-circle"></i></button>
+              </li>
+              {% else %}
+              <li class="text-muted">-</li>
+              {% endfor %}
+            </ul>
+            <form id="addAliasForm" class="input-group input-group-sm">
+              <input type="text" class="form-control" name="alias_name" placeholder="Add alias name" required>
+              <button class="btn btn-outline-secondary" type="submit"><i class="bi bi-plus"></i></button>
+            </form>
+          </dd>
           <dt class="col-5">Created</dt><dd class="col-7">{{ provider.created_at | format_datetime_est }} {% if provider.created_by %}by {{ provider.created_by }}{% endif %}</dd>
           <dt class="col-5">Updated</dt><dd class="col-7">{{ provider.updated_at | format_datetime_est }} {% if provider.updated_by %}by {{ provider.updated_by }}{% endif %}</dd>
         </dl>
@@ -593,6 +610,36 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 console.log('Merge provider functionality setup complete');
+
+(function setupProviderAliases() {
+  const pid = document.getElementById('providerDetailMeta').dataset.providerId;
+  document.querySelectorAll('.alias-remove').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Remove this alias?')) return;
+      const resp = await fetch(`/api/providers/${pid}/aliases/${btn.dataset.aliasId}`, { method: 'DELETE' });
+      if (resp.ok) { window.location.reload(); } else { alert('Failed to remove alias'); }
+    });
+  });
+  const form = document.getElementById('addAliasForm');
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = form.alias_name.value.trim();
+      if (!name) return;
+      const resp = await fetch(`/api/providers/${pid}/aliases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alias_name: name })
+      });
+      if (resp.ok) {
+        window.location.reload();
+      } else {
+        const err = await resp.json().catch(() => ({}));
+        alert(`Failed to add alias: ${err.detail || resp.status}`);
+      }
+    });
+  }
+})();
 </script>
 
 <!-- Edit Provider Modal -->

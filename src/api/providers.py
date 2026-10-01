@@ -5,8 +5,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from ..crud.provider import provider_crud
+from ..crud.provider import add_alias, find_alias, merge_providers, provider_crud
 from ..database_config import get_db
+from ..models.database import ProviderAlias
 from ..schemas.schemas import Provider, ProviderCreate, ProviderUpdate
 
 
@@ -63,6 +64,12 @@ def create_provider(provider: ProviderCreate, db: Session = Depends(get_db)):
     )
     if existing:
         raise HTTPException(status_code=400, detail="Provider name already exists")
+    alias = find_alias(db, provider.provider_name, any_address=True)
+    if alias is not None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Name is an alias of existing provider '{alias.provider.provider_name}'",
+        )
     return provider_crud.create(db, provider.model_dump(), user="system")
 
 
@@ -79,7 +86,12 @@ def provider_exists(
         .first()
         is not None
     )
-    return {"exists": exists}
+    if exists:
+        return {"exists": True}
+    alias = find_alias(db, normalized, any_address=True)
+    if alias is not None:
+        return {"exists": True, "alias_of": alias.provider.provider_name}
+    return {"exists": False}
 
 
 @router.get("/providers/", response_model=List[Provider])
@@ -207,52 +219,78 @@ def merge_provider(provider_id: int, request: dict, db: Session = Depends(get_db
         )
 
     try:
-        from models.database import Charge as CModel
-        from models.database import Payment as PayModel
-        from models.database import Provider as PModel  # type: ignore
-    except ImportError:  # pragma: no cover
-        from .models.database import Charge as CModel
-        from .models.database import Payment as PayModel
-        from .models.database import Provider as PModel  # type: ignore
-
-    # Verify both providers exist
-    source_provider = db.query(PModel).filter(PModel.id == provider_id).first()
-    if not source_provider:
-        raise HTTPException(status_code=404, detail="Source provider not found")
-
-    target_provider = db.query(PModel).filter(PModel.id == target_provider_id).first()
-    if not target_provider:
-        raise HTTPException(status_code=404, detail="Target provider not found")
-
-    # Count affected records for reporting
-    charge_count = db.query(CModel).filter(CModel.provider_id == provider_id).count()
-    payment_count = (
-        db.query(PayModel).filter(PayModel.provider_id == provider_id).count()
-    )
-
-    # Move all charges to target provider
-    db.query(CModel).filter(CModel.provider_id == provider_id).update(
-        {CModel.provider_id: target_provider_id}, synchronize_session=False
-    )
-
-    # Move all payments to target provider
-    db.query(PayModel).filter(PayModel.provider_id == provider_id).update(
-        {PayModel.provider_id: target_provider_id}, synchronize_session=False
-    )
-
-    # Delete the source provider
-    db.delete(source_provider)
-
-    # Commit all changes
+        result = merge_providers(db, provider_id, int(target_provider_id))
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     db.commit()
 
     return {
-        "message": f"Successfully merged {source_provider.provider_name} into {target_provider.provider_name}",
-        "charges_moved": charge_count,
-        "payments_moved": payment_count,
+        "message": f"Successfully merged {result['source_name']} into {result['target_name']}",
+        "charges_moved": result["charges_moved"],
+        "payments_moved": result["payments_moved"],
         "source_provider_id": provider_id,
         "target_provider_id": target_provider_id,
     }
+
+
+class ProviderAliasCreate(BaseModel):
+    alias_name: str = Field(..., min_length=1)
+    alias_address: Optional[str] = Field(
+        None, description="Restrict the alias to this address (null matches any)"
+    )
+
+
+def _alias_dict(alias) -> dict:
+    return {
+        "id": alias.id,
+        "provider_id": alias.provider_id,
+        "alias_name": alias.alias_name,
+        "alias_address": alias.alias_address,
+        "created_at": alias.created_at,
+        "created_by": alias.created_by,
+    }
+
+
+@router.get("/providers/{provider_id}/aliases")
+def list_provider_aliases(provider_id: int, db: Session = Depends(get_db)):
+    provider = provider_crud.get(db, provider_id)
+    if provider is None:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    return {"aliases": [_alias_dict(a) for a in provider.aliases]}
+
+
+@router.post("/providers/{provider_id}/aliases")
+def create_provider_alias(
+    provider_id: int, payload: ProviderAliasCreate, db: Session = Depends(get_db)
+):
+    try:
+        alias = add_alias(
+            db, provider_id, payload.alias_name, payload.alias_address, user="system"
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    if alias is None:
+        raise HTTPException(
+            status_code=400, detail="Alias matches the provider's own name"
+        )
+    db.commit()
+    db.refresh(alias)
+    return _alias_dict(alias)
+
+
+@router.delete("/providers/{provider_id}/aliases/{alias_id}")
+def delete_provider_alias(provider_id: int, alias_id: int, db: Session = Depends(get_db)):
+    deleted = (
+        db.query(ProviderAlias)
+        .filter(ProviderAlias.id == alias_id, ProviderAlias.provider_id == provider_id)
+        .delete(synchronize_session=False)
+    )
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Alias not found")
+    db.commit()
+    return {"deleted": alias_id}
 
 
 @router.get("/providers/active/", response_model=List[Provider])

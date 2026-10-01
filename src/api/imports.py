@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from ..crud.attachment import create_attachment
 from ..crud.charge import charge_crud
-from ..crud.provider import provider_crud
+from ..crud.provider import ProviderMatcher, provider_crud
 from ..database_config import get_db
 from ..schemas.schemas import AttachmentCreate
 from ..services.import_parsing import heuristic_extract_rows, parse_fhir_bundle
@@ -539,27 +539,13 @@ async def analyze_json_providers(request: Request, db: Session = Depends(get_db)
     if rows and isinstance(rows[0], dict) and rows[0].get("_provider_candidates"):
         provider_candidates = rows[0].get("_provider_candidates") or []
         rows = rows[1:]
-    try:
-        from models.database import Provider as ProviderModel  # type: ignore
-    except ImportError:  # pragma: no cover
-        from .models.database import Provider as ProviderModel  # type: ignore
-    existing_providers = db.query(ProviderModel).all()
-    existing_provider_keys = set()
-    for p in existing_providers:
-        key = (
-            (getattr(p, "provider_name", "") or "").strip().lower(),
-            (getattr(p, "provider_address", "") or "").strip().lower(),
-        )
-        existing_provider_keys.add(key)
+    matcher = ProviderMatcher(db)
 
     provider_preview: list[dict] = []
     existing_count = 0
     for pc in provider_candidates:
-        key = (
-            (pc.get("provider_name") or "").strip().lower(),
-            (pc.get("provider_address") or "").strip().lower(),
-        )
-        is_dup = key in existing_provider_keys
+        matched_id = matcher.match(pc.get("provider_name"), pc.get("provider_address"))
+        is_dup = matched_id is not None
         if is_dup:
             existing_count += 1
         provider_preview.append({**pc, "duplicate": is_dup})
@@ -629,23 +615,9 @@ def analyze_json_charges(
         sess.get("inserted_provider_ids_by_location") or {}
     )
 
-    # Also build a mapping of all existing providers by facility location for charges
+    # Also match existing providers (and aliases) by facility name for charges
     # that might reference providers not added in this session
-    try:
-        from models.database import Provider as ProviderModel  # type: ignore
-    except ImportError:  # pragma: no cover
-        from .models.database import Provider as ProviderModel  # type: ignore
-
-    existing_providers = db.query(ProviderModel).all()
-    existing_provider_key_map: dict[tuple[str, str], int] = {}
-    for p in existing_providers:
-        key = (
-            (getattr(p, "provider_name", "") or "").strip().lower(),
-            (getattr(p, "provider_address", "") or "").strip().lower(),
-        )
-        pid = getattr(p, "id", None)
-        if isinstance(pid, int):
-            existing_provider_key_map[key] = pid
+    matcher = ProviderMatcher(db)
 
     # Debug: log session contents and available provider mappings
     logger.debug("=== CHARGE ANALYSIS SESSION DEBUG ===")
@@ -724,18 +696,13 @@ def analyze_json_charges(
             if not final_provider_id:
                 facility_name = r.get("facility_location_name") or ""
 
-                # Try to find existing provider by name (exact match first)
+                # Try to find existing provider by name or alias
                 if facility_name:
-                    for (
-                        existing_name,
-                        existing_addr,
-                    ), provider_id in existing_provider_key_map.items():
-                        if existing_name == facility_name.strip().lower():
-                            final_provider_id = provider_id
-                            logger.debug(
-                                f"  -> Name match found: {final_provider_id} for '{facility_name}'"
-                            )
-                            break
+                    final_provider_id = matcher.match_name(facility_name)
+                    if final_provider_id:
+                        logger.debug(
+                            f"  -> Name match found: {final_provider_id} for '{facility_name}'"
+                        )
 
                 if not final_provider_id:
                     logger.debug(
@@ -853,20 +820,7 @@ def add_analyzed_providers(payload: ProviderAddRequest, db: Session = Depends(ge
     if not sess:
         raise HTTPException(status_code=404, detail="Session not found")
     provider_preview: list[dict] = sess.get("providers") or []
-    try:
-        from models.database import Provider as ProviderModel  # type: ignore
-    except ImportError:  # pragma: no cover
-        from .models.database import Provider as ProviderModel  # type: ignore
-    existing_providers = db.query(ProviderModel).all()
-    provider_key_map: dict[tuple[str, str], int] = {}
-    for p in existing_providers:
-        key = (
-            (getattr(p, "provider_name", "") or "").strip().lower(),
-            (getattr(p, "provider_address", "") or "").strip().lower(),
-        )
-        pid = getattr(p, "id", None)
-        if isinstance(pid, int):
-            provider_key_map[key] = pid
+    matcher = ProviderMatcher(db)
     inserted_provider_ids_by_location: dict[str, int] = {}
     inserted = 0
     skipped_existing = 0
@@ -874,11 +828,7 @@ def add_analyzed_providers(payload: ProviderAddRequest, db: Session = Depends(ge
         loc_id = pc.get("location_id")
         if not loc_id or loc_id not in payload.selected_provider_location_ids:
             continue
-        key = (
-            (pc.get("provider_name") or "").strip().lower(),
-            (pc.get("provider_address") or "").strip().lower(),
-        )
-        existing_id = provider_key_map.get(key)
+        existing_id = matcher.match(pc.get("provider_name"), pc.get("provider_address"))
         if existing_id is not None:
             inserted_provider_ids_by_location[loc_id] = existing_id
             skipped_existing += 1
@@ -905,7 +855,7 @@ def add_analyzed_providers(payload: ProviderAddRequest, db: Session = Depends(ge
             pid = getattr(created_p, "id", None)
             if pid:
                 inserted_provider_ids_by_location[loc_id] = int(pid)
-                provider_key_map[key] = int(pid)
+                matcher.add(int(pid), pc.get("provider_name"), raw_addr)
                 inserted += 1
         except Exception:  # pragma: no cover
             continue
@@ -998,30 +948,15 @@ def commit_json_import(
         existing_keys.add(key)
     inserted_provider_ids_by_location: dict[str, int] = {}
     if payload.selected_provider_location_ids:
-        try:
-            from models.database import Provider as ProviderModel  # type: ignore
-        except ImportError:
-            from .models.database import Provider as ProviderModel  # type: ignore
-        existing_providers = db.query(ProviderModel).all()
-        provider_key_map: dict[tuple[str, str], int] = {}
-        for p in existing_providers:
-            key = (
-                (getattr(p, "provider_name", "") or "").strip().lower(),
-                (getattr(p, "provider_address", "") or "").strip().lower(),
-            )
-            raw_id = getattr(p, "id", None)
-            if isinstance(raw_id, int):
-                provider_key_map[key] = raw_id
+        matcher = ProviderMatcher(db)
         for prov in provider_preview:
             loc_id = prov.get("location_id")
             if not loc_id or loc_id not in payload.selected_provider_location_ids:
                 continue
-            key = (
-                (prov.get("provider_name") or "").strip().lower(),
-                (prov.get("provider_address") or "").strip().lower(),
+            existing_id = matcher.match(
+                prov.get("provider_name"), prov.get("provider_address")
             )
-            existing_id = provider_key_map.get(key)
-            if existing_id is not None and isinstance(existing_id, int):
+            if existing_id is not None:
                 inserted_provider_ids_by_location[loc_id] = existing_id
                 continue
             raw_name = (prov.get("provider_name") or "").strip()
@@ -1050,7 +985,7 @@ def commit_json_import(
                 pid = getattr(created_p, "id", None)
                 if pid:
                     inserted_provider_ids_by_location[loc_id] = int(pid)
-                    provider_key_map[key] = int(pid)
+                    matcher.add(int(pid), prov.get("provider_name"), raw_addr)
             except Exception:
                 continue
     # Determine family_member_id to store (prefer payload, then session)
@@ -1674,21 +1609,7 @@ def eob_import(
             # try facility_location_name or provider_name keys
             prov_name = ov.get("provider_name") or ov.get("facility_location_name")
             if prov_name:
-                try:
-                    from models.database import (
-                        Provider as ProviderModel,  # type: ignore
-                    )
-                except Exception:
-                    from .models.database import (
-                        Provider as ProviderModel,  # type: ignore
-                    )
-                found = (
-                    db.query(ProviderModel)
-                    .filter(ProviderModel.provider_name.ilike(prov_name))
-                    .first()
-                )
-                if found:
-                    batch_provider_override = getattr(found, "id", None)
+                batch_provider_override = ProviderMatcher(db).match_name(prov_name)
         if batch_eob_num and batch_doctor and batch_provider_override:
             break
 

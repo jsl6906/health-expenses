@@ -75,6 +75,13 @@ class Provider(Base):
     # Relationships
     charges = relationship("Charge", back_populates="provider")
     payments = relationship("Payment", back_populates="provider")
+    aliases = relationship(
+        "ProviderAlias",
+        back_populates="provider",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="ProviderAlias.alias_name",
+    )
 
     @hybrid_property  # type: ignore
     def last_charge_date(self):  # type: ignore
@@ -117,6 +124,24 @@ class Provider(Base):
             .where(Payment.provider_id == cls.id)
             .scalar_subquery()
         )
+
+
+class ProviderAlias(Base):
+    """Alternate name (optionally scoped to an address) that resolves to a provider during imports."""
+
+    __tablename__ = "provider_aliases"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    provider_id = Column(
+        Integer, ForeignKey("providers.id", ondelete="CASCADE"), nullable=False
+    )
+    alias_name = Column(String, nullable=False)
+    # NULL matches any address
+    alias_address = Column(String)
+    created_at = Column(DateTime, default=func.now())
+    created_by = Column(String)
+
+    provider = relationship("Provider", back_populates="aliases")
 
 
 class Charge(Base):
