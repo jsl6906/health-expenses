@@ -388,6 +388,59 @@ def provider_open_charges(provider_id: int, db: Session = Depends(get_db)):
         )
 
 
+class LinkAllocation(BaseModel):
+    charge_id: int
+    amount: float = Field(..., allow_inf_nan=False)
+
+
+class LinkChange(BaseModel):
+    payment_id: int
+    allocations: List[LinkAllocation] = Field(
+        default_factory=list, description="Full set of links for the payment; empty unlinks it"
+    )
+
+
+class ApplyLinkReviewRequest(BaseModel):
+    changes: List[LinkChange] = Field(..., min_length=1)
+
+
+@router.post("/providers/{provider_id}/link-review")
+def ai_link_review(provider_id: int, db: Session = Depends(get_db)):
+    """Ask the LLM to review payment-to-charge links and propose corrections (read-only)."""
+    from ..services.payment_matching import (
+        LinkReviewError,
+        LinkReviewUnavailable,
+        run_link_review,
+    )
+
+    if provider_crud.get(db, provider_id) is None:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    try:
+        return run_link_review(db, provider_id)
+    except LinkReviewUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except LinkReviewError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+@router.post("/providers/{provider_id}/link-review/apply")
+def apply_ai_link_review(
+    provider_id: int, payload: ApplyLinkReviewRequest, db: Session = Depends(get_db)
+):
+    """Commit user-confirmed link changes from an AI link review."""
+    from ..services.payment_matching import apply_link_changes
+
+    if provider_crud.get(db, provider_id) is None:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    try:
+        return apply_link_changes(
+            db, provider_id, [c.model_dump() for c in payload.changes]
+        )
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/providers/bulk/set-group")
 def bulk_set_group(payload: BulkSetGroupRequest, db: Session = Depends(get_db)):
     """Set or clear provider_group for multiple providers.

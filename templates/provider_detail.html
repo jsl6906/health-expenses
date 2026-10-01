@@ -8,6 +8,7 @@
     <a href="/providers" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
     <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editProviderModal"><i class="bi bi-pencil"></i> Edit</button>
     <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#mergeProviderModal"><i class="bi bi-arrow-left-right"></i> Merge</button>
+    <button class="btn btn-sm btn-outline-info" id="aiLinkReviewBtn" title="AI review of payment-to-charge links"><i class="bi bi-stars"></i> AI Review Links</button>
     <button class="btn btn-sm btn-outline-danger" id="deleteProviderBtn"><i class="bi bi-trash"></i> Delete</button>
   </div>
 </div>
@@ -951,4 +952,189 @@ document.addEventListener('DOMContentLoaded',()=>{
     </div>
   </div>
 </div>
+
+<!-- AI Link Review Modal -->
+<div class="modal fade" id="aiLinkReviewModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-stars"></i> AI Review: Payment &harr; Charge Links</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body small">
+        <div id="aiReviewStatus"></div>
+        <div id="aiReviewResult" hidden>
+          <p id="aiReviewSummary" class="mb-2"></p>
+          <div id="aiReviewStats" class="text-muted mb-2"></div>
+          <div id="aiReviewMethodsWrap" class="mb-2">
+            <strong>Matching patterns observed</strong>
+            <ul id="aiReviewMethods" class="mb-0"></ul>
+          </div>
+          <div id="aiReviewIssuesWrap" class="alert alert-warning py-2 mb-2">
+            <strong>Needs attention</strong>
+            <ul id="aiReviewIssues" class="mb-0"></ul>
+          </div>
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <strong>Recommended link changes</strong>
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="aiReviewSelectAll">
+              <label class="form-check-label" for="aiReviewSelectAll">Select all</label>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th></th>
+                  <th>Payment</th>
+                  <th>Current links</th>
+                  <th>Proposed links</th>
+                  <th>Confidence</th>
+                  <th>Rationale</th>
+                </tr>
+              </thead>
+              <tbody id="aiReviewRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span id="aiReviewModel" class="text-muted small me-auto"></span>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-outline-info" id="aiReviewRerun"><i class="bi bi-arrow-repeat"></i> Re-run</button>
+        <button type="button" class="btn btn-primary" id="aiReviewApply" disabled><i class="bi bi-check2-circle"></i> Apply Selected</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function setupAiLinkReview() {
+  const pid = document.getElementById('providerDetailMeta').dataset.providerId;
+  const modalEl = document.getElementById('aiLinkReviewModal');
+  const statusEl = document.getElementById('aiReviewStatus');
+  const resultEl = document.getElementById('aiReviewResult');
+  const rowsEl = document.getElementById('aiReviewRows');
+  const applyBtn = document.getElementById('aiReviewApply');
+  const rerunBtn = document.getElementById('aiReviewRerun');
+  const selectAll = document.getElementById('aiReviewSelectAll');
+  let recs = [];
+
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const money = n => Number(n || 0).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  const shortDate = iso => { if (!iso) return '-'; const [y, m, d] = iso.split('-'); return `${+m}/${+d}/${y.slice(2)}`; };
+  const linkList = items => items.length
+    ? items.map(a => `<div><a href="/charges/${a.charge_id}" target="_blank" class="text-decoration-none">${shortDate(a.service_date)}</a>`
+        + ` ${esc(a.member || '')} <span class="text-muted">${esc(a.description)}</span>`
+        + ` <span class="text-nowrap">${money(a.amount)} <span class="text-muted">/ owed ${money(a.owed)}</span></span></div>`).join('')
+    : '<span class="text-muted fst-italic">none</span>';
+  const badge = c => `<span class="badge ${c === 'high' ? 'bg-success' : c === 'medium' ? 'bg-info text-dark' : 'bg-secondary'}">${esc(c)}</span>`;
+
+  function selected() {
+    return Array.from(rowsEl.querySelectorAll('input.ai-rec-chk:checked')).map(chk => recs[+chk.dataset.idx]);
+  }
+  function updateApply() {
+    const n = selected().length;
+    applyBtn.disabled = n === 0;
+    applyBtn.innerHTML = `<i class="bi bi-check2-circle"></i> Apply Selected (${n})`;
+  }
+
+  function render(data) {
+    recs = data.recommendations || [];
+    document.getElementById('aiReviewSummary').textContent = data.summary || '';
+    const s = data.stats || {};
+    document.getElementById('aiReviewStats').textContent =
+      `${s.charges ?? 0} charges, ${s.payments ?? 0} payments, ${s.links ?? 0} existing links, ${s.unlinked_payments ?? 0} unlinked payments`;
+    document.getElementById('aiReviewModel').textContent = data.model ? `Model: ${data.model}` : '';
+
+    const methods = data.matching_methods || [];
+    document.getElementById('aiReviewMethodsWrap').hidden = methods.length === 0;
+    document.getElementById('aiReviewMethods').innerHTML = methods.map(m => `<li>${esc(m)}</li>`).join('');
+
+    const issues = data.issues || [];
+    document.getElementById('aiReviewIssuesWrap').hidden = issues.length === 0;
+    document.getElementById('aiReviewIssues').innerHTML = issues.map(i => {
+      const refs = [
+        ...(i.charge_ids || []).map(id => `<a href="/charges/${id}" target="_blank">charge #${id}</a>`),
+        ...(i.payment_ids || []).map(id => `<a href="/payments/${id}" target="_blank">payment #${id}</a>`)
+      ].join(', ');
+      return `<li>${esc(i.description)}${refs ? ` <span class="text-muted">(${refs})</span>` : ''}</li>`;
+    }).join('');
+
+    rowsEl.innerHTML = recs.length ? recs.map((r, idx) => {
+      const p = r.payment;
+      const notes = [
+        ...(r.warnings || []),
+        ...(r.other_provider_links ? ['Payment also has links to another provider (left unchanged)'] : [])
+      ].map(w => `<div class="text-warning"><i class="bi bi-exclamation-triangle"></i> ${esc(w)}</div>`).join('');
+      return `<tr>
+        <td><input type="checkbox" class="form-check-input ai-rec-chk" data-idx="${idx}" ${r.confidence === 'high' ? 'checked' : ''}></td>
+        <td class="text-nowrap"><a href="/payments/${p.id}" target="_blank" class="text-decoration-none">${shortDate(p.payment_date)}</a><br><strong>${money(p.amount)}</strong></td>
+        <td>${linkList(r.current)}</td>
+        <td>${r.proposed.length ? linkList(r.proposed) : '<span class="badge bg-danger">Unlink all</span>'}</td>
+        <td>${badge(r.confidence)}</td>
+        <td>${esc(r.rationale)}${notes}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="6" class="text-muted fst-italic">No link changes recommended.</td></tr>';
+
+    rowsEl.querySelectorAll('input.ai-rec-chk').forEach(chk => chk.addEventListener('change', updateApply));
+    selectAll.checked = false;
+    resultEl.hidden = false;
+    updateApply();
+  }
+
+  async function runReview() {
+    resultEl.hidden = true;
+    applyBtn.disabled = true;
+    rerunBtn.disabled = true;
+    statusEl.innerHTML = '<div class="d-flex align-items-center gap-2 text-muted"><span class="spinner-border spinner-border-sm"></span> Reviewing charges and payments with AI. This can take a minute...</div>';
+    try {
+      const resp = await fetch(`/api/providers/${pid}/link-review`, { method: 'POST' });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+      statusEl.innerHTML = '';
+      render(data);
+    } catch (ex) {
+      statusEl.innerHTML = `<div class="alert alert-danger py-2">AI review failed: ${esc(ex.message)}</div>`;
+    } finally {
+      rerunBtn.disabled = false;
+    }
+  }
+
+  document.getElementById('aiLinkReviewBtn').addEventListener('click', () => {
+    bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    if (!recs.length && resultEl.hidden) runReview();
+  });
+  rerunBtn.addEventListener('click', runReview);
+  selectAll.addEventListener('change', () => {
+    rowsEl.querySelectorAll('input.ai-rec-chk').forEach(chk => { chk.checked = selectAll.checked; });
+    updateApply();
+  });
+
+  applyBtn.addEventListener('click', async () => {
+    const chosen = selected();
+    if (!chosen.length) return;
+    if (!confirm(`Apply ${chosen.length} link change(s)? This replaces the selected payments' links to this provider's charges.`)) return;
+    const changes = chosen.map(r => ({
+      payment_id: r.payment.id,
+      allocations: r.proposed.map(a => ({ charge_id: a.charge_id, amount: a.amount }))
+    }));
+    applyBtn.disabled = true;
+    applyBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Applying...';
+    try {
+      const resp = await fetch(`/api/providers/${pid}/link-review/apply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ changes })
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.detail || `HTTP ${resp.status}`);
+      window.location.reload();
+    } catch (ex) {
+      alert(`Failed to apply changes: ${ex.message}`);
+      updateApply();
+    }
+  });
+})();
+</script>
 {% endblock %}

@@ -48,5 +48,5 @@ def get_eob_debug_preview_enabled() -> bool:
 
 @lru_cache(maxsize=1)
 def get_eob_use_file_upload() -> bool:
-    val = os.getenv(EOB_USE_FILE_UPLOAD_KEY, "false").strip().lower()
+    val = os.getenv(EOB_USE_FILE_UPLOAD_KEY, "true").strip().lower()
     return val in {"1", "true", "yes", "on"}

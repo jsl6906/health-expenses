@@ -41,7 +41,7 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       GEMINI_MODEL_NAME: ${GEMINI_MODEL_NAME:-gemini-2.5-flash}
       EOB_DEBUG_PREVIEW: ${EOB_DEBUG_PREVIEW:-false}
-      EOB_USE_FILE_UPLOAD: ${EOB_USE_FILE_UPLOAD:-false}
+      EOB_USE_FILE_UPLOAD: ${EOB_USE_FILE_UPLOAD:-true}
 
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/"]

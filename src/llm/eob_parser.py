@@ -89,7 +89,8 @@ def _extract_text(content_type: str | None, file_bytes: bytes) -> str:
                 joined = "\n".join(texts).strip()
                 if joined:
                     return joined
-        # fallback basic decode subset for PDF if pypdf absent
+        # Scanned/image-only PDF: decoding the raw binary would just feed the model garbage
+        return ""
     # Generic heuristic decoding
     for enc in ("utf-8", "latin-1"):  # minimal attempts
         try:
@@ -322,26 +323,22 @@ def parse_eob_bytes(
     # Attempt file upload path if enabled
     upload_enabled = get_eob_use_file_upload()
     meta["upload_enabled"] = upload_enabled
-    if (
-        upload_enabled
-        and genai is not None
-        and content_type
-        and "pdf" in content_type.lower()
-    ):
+    is_pdf = (content_type and "pdf" in content_type.lower()) or file_bytes[:5] == b"%PDF-"
+    if upload_enabled and genai is not None and is_pdf:
         meta["upload_used"] = True
         try:
-            # Upload file (Gemini API: may vary by version; using generic method name)
-            file_obj = genai.upload_file({"file_name": filename, "data": file_bytes})  # type: ignore[attr-defined]
-            meta["upload_file_id"] = getattr(file_obj, "name", None) or getattr(
-                file_obj, "id", None
-            )
+            model = _init_model()
+            if model is None:
+                raise RuntimeError("model_init_failed_or_missing_key")
+            # Inline PDF part so Gemini reads the document natively (works for scanned PDFs)
+            file_obj = {"mime_type": "application/pdf", "data": file_bytes}
             prompt = (
                 "You are an expert at reading medical Explanation of Benefits (EOB) PDFs. "
                 "Return ONLY a single JSON OBJECT with two keys: 'metadata' and 'rows'. 'metadata' should be an object with possible keys: family_member (patient name string or null), provider_name (string or null), eob_claim_num (string or null), doctor_name (string or null). 'rows' should be an array where each element is an object with keys: service_date, cpt_code, description, charged_amount, owed_amount, provider_name, family_member, insurance_paid_amount, insurance_discount_amount, base_fee_amount, reimbursement_amount. "
                 "Use null where unknown. Map any fields labeled 'Discount', 'Discounts', 'Disallowed', or 'Disallowed Amount' to insurance_discount_amount. Map 'Billed' or 'Billed Charges' to base_fee_amount and 'Allowed'/'Covered'/'Allowed Amount' to charged_amount. No commentary outside JSON."
             )
             try:
-                resp = genai.GenerativeModel(model_name).generate_content([file_obj, prompt])  # type: ignore[attr-defined]
+                resp = model.generate_content([file_obj, prompt])
                 raw_text = getattr(resp, "text", "") or ""
                 meta["upload_raw_text_chars"] = len(raw_text)
                 if get_eob_debug_preview_enabled():
