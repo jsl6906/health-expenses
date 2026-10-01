@@ -17,7 +17,8 @@ TRY=0
 while ! python -c "from src.database_config import test_connection; import sys; sys.exit(0 if test_connection() else 1)" >/dev/null 2>&1; do
   TRY=$((TRY+1))
   if [ "$TRY" -ge "$MAX_TRIES" ]; then
-    echo "Timed out waiting for DB after $MAX_TRIES attempts"
+    echo "Timed out waiting for DB after $MAX_TRIES attempts. Last error:"
+    python -c "from src.database_config import test_connection; test_connection()" 2>&1 | grep -v '^DEBUG: Database URL' | tail -n 5
     exit 1
   fi
   echo "DB not ready yet (attempt $TRY/$MAX_TRIES). Sleeping ${SLEEP_SECONDS}s..."

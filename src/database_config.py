@@ -85,8 +85,9 @@ class DatabaseConfig:
 
         # Build connection string with URL-encoded password
         encoded_password = urllib.parse.quote_plus(self.db_password or "")
+        # SQLAlchemy 2.1 defaults bare postgresql:// to psycopg 3, which is not installed
         self.database_url = (
-            f"postgresql://{self.db_user}:{encoded_password}@"
+            f"postgresql+psycopg2://{self.db_user}:{encoded_password}@"
             f"{self.db_host}:{self.db_port}/{self.db_name}"
         )
         print(
