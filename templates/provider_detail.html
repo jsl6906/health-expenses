@@ -89,6 +89,7 @@
                 <th class="text-end">Charged</th>
                 <th class="text-end">Owed</th>
                 <th class="text-end">Paid</th>
+                <th class="text-end">Reimbursed</th>
                 <th>Status</th>
                 <th>Attchs</th>
               </tr>
@@ -116,14 +117,13 @@
                 <td class="text-end">{{ c.charged_amount | currency }}</td>
                 <td class="text-end">{{ c.owed_amount | currency }}</td>
                 <td class="text-end">{{ c.paid_amount_agg | currency }}</td>
+                <td class="text-end">{{ c.reimbursement_amount | currency }}</td>
                 <td>
-                  {% set owed = c.owed_amount or 0 %}
-                  {% set paid = c.paid_amount_agg or 0 %}
-                  {% if owed > 0 and paid >= owed %}
+                  {% if c.payment_status == 'paid' %}
                     <span class="badge bg-success">Paid</span>
-                  {% elif owed > 0 and paid > 0 and paid < owed %}
+                  {% elif c.payment_status == 'partial' %}
                     <span class="badge bg-info text-dark">Partial</span>
-                  {% elif owed > 0 and paid == 0 %}
+                  {% elif c.payment_status == 'outstanding' %}
                     <span class="badge bg-warning">Outstanding</span>
                   {% else %}
                     <span class="badge bg-secondary">N/A</span>
@@ -159,6 +159,7 @@
               <tr>
                 <th>Date</th>
                 <th>Amount</th>
+                <th class="text-end">Reimbursed</th>
                 <th>Receipt</th>
                 <th>Charges</th>
                 <th>Attchs</th>
@@ -169,6 +170,7 @@
               <tr data-payment-row="{{ p.id }}">
                 <td>{% if p.payment_date %}<a href="/payments/{{ p.id }}" class="text-decoration-none">{{ p.payment_date.strftime('%#m/%#d/%y') }}</a>{% else %}-{% endif %}</td>
                 <td><a href="/payments/{{ p.id }}" class="text-decoration-none">{{ p.payment_amount | currency }}</a></td>
+                <td class="text-end">{{ p.reimbursement_amount | currency }}</td>
                 <td>{% if p.has_receipt_indicator %}{{ p.has_receipt_indicator }}{% else %}-{% endif %}</td>
                 <td>
                   {% if p.linked_charge_links and p.linked_charge_links|length > 0 %}

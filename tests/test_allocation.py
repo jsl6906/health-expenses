@@ -9,7 +9,12 @@ from sqlalchemy.orm import sessionmaker
 from src.models import database as models
 
 # Import the functions under test
-from src.services.allocation import allocate_payment_to_charges, even_allocation_map
+from src.services.allocation import (
+    allocate_payment_to_charges,
+    annotate_charges_with_paid,
+    even_allocation_map,
+    get_open_charges_for_provider,
+)
 
 
 @pytest.fixture(scope="module")
@@ -109,3 +114,59 @@ def test_even_allocation_map_respects_negative_allocs(db_session):
     alloc = even_allocation_map(db_session, [cid1, cid2])
     assert math.isclose(alloc[cid1], -10.0, rel_tol=1e-9, abs_tol=1e-9)
     assert math.isclose(alloc[cid2], -30.0, rel_tol=1e-9, abs_tol=1e-9)
+
+
+def test_charge_payment_status_uses_cents(db_session):
+    db_session.query(models.ChargePaymentXref).delete()
+    db_session.query(models.Payment).delete()
+    db_session.query(models.Charge).delete()
+    db_session.commit()
+
+    charge = models.Charge(owed_amount=0.80)
+    db_session.add(charge)
+    db_session.flush()
+    for amount in (0.10, 0.70):
+        payment = models.Payment(payment_amount=amount)
+        db_session.add(payment)
+        db_session.flush()
+        db_session.add(
+            models.ChargePaymentXref(
+                charge_id=charge.id, payment_id=payment.id, allocated_amount=amount
+            )
+        )
+    db_session.commit()
+
+    annotate_charges_with_paid(db_session, [charge])
+    assert charge.paid_amount_agg < float(charge.owed_amount)
+    assert charge.payment_status == "paid"
+
+    charge.owed_amount = 0.90
+    annotate_charges_with_paid(db_session, [charge])
+    assert charge.payment_status == "partial"
+
+    charge.owed_amount = 0
+    annotate_charges_with_paid(db_session, [charge])
+    assert charge.payment_status == "na"
+
+
+def test_fully_paid_charge_is_not_open_for_provider(db_session):
+    db_session.query(models.ChargePaymentXref).delete()
+    db_session.query(models.Payment).delete()
+    db_session.query(models.Charge).delete()
+    db_session.commit()
+
+    charge = models.Charge(provider_id=42, owed_amount=0.80)
+    db_session.add(charge)
+    db_session.flush()
+    for amount in (0.10, 0.70):
+        payment = models.Payment(payment_amount=amount)
+        db_session.add(payment)
+        db_session.flush()
+        db_session.add(
+            models.ChargePaymentXref(
+                charge_id=charge.id, payment_id=payment.id, allocated_amount=amount
+            )
+        )
+    db_session.commit()
+
+    assert get_open_charges_for_provider(db_session, 42) == []

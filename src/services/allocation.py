@@ -163,7 +163,7 @@ def allocate_payment_to_charges(
 
 
 def annotate_charges_with_paid(db: Session, charges: List[Any]) -> None:
-    """Attach paid_amount_agg attribute to each charge object in-place.
+    """Attach paid_amount_agg and payment_status to each charge object in-place.
 
     Uses even_allocation_map for the set of charges.
     """
@@ -173,6 +173,18 @@ def annotate_charges_with_paid(db: Session, charges: List[Any]) -> None:
         cid = getattr(ch, "id", None)
         paid = allocation.get(cid, 0.0) if cid is not None else 0.0
         setattr(ch, "paid_amount_agg", paid)
+        owed_cents = round(float(getattr(ch, "owed_amount", 0) or 0) * 100)
+        paid_cents = round(paid * 100)
+        status = (
+            "na"
+            if owed_cents <= 0
+            else "paid"
+            if paid_cents >= owed_cents
+            else "partial"
+            if paid_cents > 0
+            else "outstanding"
+        )
+        setattr(ch, "payment_status", status)
 
 
 def get_open_charges_for_provider(db: Session, provider_id: int) -> List[dict]:
@@ -200,7 +212,7 @@ def get_open_charges_for_provider(db: Session, provider_id: int) -> List[dict]:
             owed = 0.0
         paid = getattr(c, "paid_amount_agg", 0.0) or 0.0
         remaining = max(owed - paid, 0.0)
-        if remaining > 0.0001:  # treat tiny fractional remainder as zero
+        if getattr(c, "payment_status") != "paid" and round(remaining * 100) > 0:
             open_result.append(
                 {
                     "id": getattr(c, "id", None),

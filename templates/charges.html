@@ -169,7 +169,7 @@
                                 data-family-member="{% if charge.family_member %}{{ (charge.family_member.emoji if charge.family_member.emoji else (charge.family_member.first_name ~ ((' ' ~ charge.family_member.last_name) if charge.family_member.last_name else ''))) }}{% else %}{% endif %}"
                                 data-doctor-name="{{ (charge.doctor_name or '') }}"
                                 data-medical-type="{{ charge.medical_type or '' }}"
-                                data-status="{{ 'paid' if (charge.owed_amount or 0) > 0 and (charge.paid_amount_agg or 0) >= (charge.owed_amount or 0) else 'outstanding' if (charge.owed_amount or 0) > 0 else 'na' }}"
+                                data-status="{{ 'paid' if charge.payment_status == 'paid' else 'outstanding' if charge.payment_status in ['partial', 'outstanding'] else 'na' }}"
                                 data-service-date="{{ charge.service_date.strftime('%Y-%m-%d') if charge.service_date else '' }}"
                                 data-insurance-status="{{ charge.insurance_submission_status or '' }}"
                                 data-potential-duplicate="{{ 'true' if charge.is_potential_duplicate else 'false' }}">
@@ -218,13 +218,11 @@
                                 <td>{{ charge.owed_amount | currency }}</td>
                                 <td>{{ charge.paid_amount_agg | currency }}</td>
                                 <td>
-                                    {% set owed = charge.owed_amount or 0 %}
-                                    {% set paid = charge.paid_amount_agg or 0 %}
-                                    {% if owed > 0 and paid >= owed %}
+                                    {% if charge.payment_status == 'paid' %}
                                         <span class="badge bg-success">Paid</span>
-                                    {% elif owed > 0 and paid > 0 and paid < owed %}
+                                    {% elif charge.payment_status == 'partial' %}
                                         <span class="badge bg-info text-dark">Partial</span>
-                                    {% elif owed > 0 and paid == 0 %}
+                                    {% elif charge.payment_status == 'outstanding' %}
                                         <span class="badge bg-warning">Outstanding</span>
                                     {% else %}
                                         <span class="badge bg-secondary">N/A</span>

@@ -134,6 +134,10 @@ Navigate to <http://localhost:8000> to access the web interface:
 
 The REST API provides full CRUD operations for all entities:
 
+- Agent/tool integrations should use the OpenAPI document at `/api/schema.json` (or `/openapi.json`).
+- If `APP_API_KEY` or `APP_API_KEYS` is configured, send `X-API-Key: <key>` on all `/api/*` requests.
+- Optional but recommended for tracing: include `X-Agent-Id` and `X-Request-Id` headers on API calls.
+
 #### Providers
 
 - `GET /api/providers/` - List all providers
@@ -181,6 +185,9 @@ The REST API provides full CRUD operations for all entities:
 - `DB_MAX_OVERFLOW`: Max connection overflow (default: 10)
 - `DB_ECHO`: Enable SQL logging (default: false)
 - `ENV_MODE`: Runtime environment mode (`PROD` or `TEST`, default `PROD`).
+- `APP_API_KEY`: Optional single API key for `/api/*` endpoints. If unset, API-key auth is disabled.
+- `APP_API_KEYS`: Optional comma-separated API keys for `/api/*` endpoints.
+- `APP_CORS_ORIGINS`: Optional comma-separated CORS origin allowlist. Default: `http://localhost:3000,http://127.0.0.1:3000`
 
 When `ENV_MODE=TEST`, the application attempts to use the following prefixed variables first:
 
@@ -203,6 +210,33 @@ If any of the prefixed variables are missing, it falls back to the generic `DB_*
 UI Indicator: In `TEST` mode a yellow banner appears at the top of every page: "TEST ENVIRONMENT - DATA IS NON-PRODUCTION".
 
 Safety: If `ENV_MODE=TEST` but the resolved host is not `localhost` or `127.0.0.1`, a warning is printed to stdout to help prevent accidental use of production hosts.
+
+### Agent / MCP Readiness
+
+This project now supports a minimal machine-to-machine security posture for agent use:
+
+- Centralized API-key enforcement on `/api/*` routes when keys are configured.
+- Stable schema endpoint at `/api/schema.json` for OpenAPI-based tool generation.
+- CORS allowlist configured through `APP_CORS_ORIGINS` for local and hosted agent callers.
+
+Example:
+
+```bash
+APP_API_KEY=replace_me
+APP_CORS_ORIGINS=http://localhost:3000,https://your-agent-host.example
+```
+
+Build a starter tool catalog from OpenAPI:
+
+```bash
+uv run python scripts/build_openapi_tool_catalog.py --base-url http://localhost:8080 --output .agent/tool-catalog.json
+```
+
+If API-key auth is enabled, include the key:
+
+```bash
+uv run python scripts/build_openapi_tool_catalog.py --base-url http://localhost:8080 --api-key "$APP_API_KEY"
+```
 
 ### Data Model
 

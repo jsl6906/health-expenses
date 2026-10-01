@@ -11,8 +11,10 @@ All CRUD JSON endpoints now reside in dedicated routers under api/.
 
 import os
 from pathlib import Path
+from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup
@@ -20,6 +22,12 @@ from sqlalchemy.orm import Session  # retained for diagnostic endpoint dependenc
 
 from .api.attachments import router as attachments_router
 from .api.charges import router as charges_router
+from .api.dependencies import (
+    AGENT_ID_HEADER_NAME,
+    REQUEST_ID_HEADER_NAME,
+    api_key_auth,
+    get_cors_origins,
+)
 from .api.family_members import router as family_members_router
 from .api.imports import router as imports_router
 from .api.insurance import router as insurance_router
@@ -34,6 +42,15 @@ except ImportError:  # pragma: no cover - fallback to relative when executed dif
     from .database_config import db_config, get_db  # type: ignore
 
 app = FastAPI(title="Personal Health Expenses Management System", version="1.0.0")
+
+cors_origins = get_cors_origins()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 project_root = Path(__file__).parent.parent
 templates = Jinja2Templates(directory=str(project_root / "templates"))
@@ -88,15 +105,15 @@ def fam_avatar(name: str) -> Markup:
 
 templates.env.filters["fam_avatar"] = fam_avatar
 
-app.include_router(attachments_router)
-app.include_router(providers_router)
-app.include_router(charges_router)
-app.include_router(payments_router)
-app.include_router(premiums_router)
-app.include_router(imports_router)
+app.include_router(attachments_router, dependencies=[Depends(api_key_auth)])
+app.include_router(providers_router, dependencies=[Depends(api_key_auth)])
+app.include_router(charges_router, dependencies=[Depends(api_key_auth)])
+app.include_router(payments_router, dependencies=[Depends(api_key_auth)])
+app.include_router(premiums_router, dependencies=[Depends(api_key_auth)])
+app.include_router(imports_router, dependencies=[Depends(api_key_auth)])
 app.include_router(pages_router)
-app.include_router(family_members_router)
-app.include_router(insurance_router)
+app.include_router(family_members_router, dependencies=[Depends(api_key_auth)])
+app.include_router(insurance_router, dependencies=[Depends(api_key_auth)])
 
 
 # Configure basic logging for startup diagnostics
@@ -115,6 +132,40 @@ if str(os.getenv("APP_DEBUG", "False")).lower() in ("1", "true", "yes"):
     logger.setLevel(logging.DEBUG)
 else:
     logger.setLevel(logging.INFO)
+
+MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+@app.middleware("http")
+async def request_attribution_middleware(request: Request, call_next):
+    """Attach request correlation metadata and log API mutations.
+
+    This middleware keeps endpoint code unchanged while ensuring agent-driven
+    writes are auditable.
+    """
+    request_id = (request.headers.get(REQUEST_ID_HEADER_NAME) or "").strip() or str(
+        uuid4()
+    )
+    agent_id = (request.headers.get(AGENT_ID_HEADER_NAME) or "").strip() or "anonymous"
+
+    request.state.request_id = request_id
+    request.state.agent_id = agent_id
+
+    response = await call_next(request)
+    response.headers[REQUEST_ID_HEADER_NAME] = request_id
+
+    path = request.url.path
+    if path.startswith("/api") and request.method in MUTATING_METHODS:
+        logger.info(
+            "API mutation request_id=%s agent_id=%s method=%s path=%s status=%s",
+            request_id,
+            agent_id,
+            request.method,
+            path,
+            response.status_code,
+        )
+
+    return response
 
 
 # Startup event: test DB connectivity and log result so container logs are helpful
@@ -148,13 +199,26 @@ def startup_check_db():
         getattr(db_config, "db_name", "<unknown>"),
         getattr(db_config, "db_user", "<unknown>"),
     )
+    if os.getenv("APP_API_KEY") or os.getenv("APP_API_KEYS"):
+        logger.info("API key auth is enabled for /api routes")
+    else:
+        logger.warning(
+            "API key auth is disabled (set APP_API_KEY or APP_API_KEYS to enable)"
+        )
+    logger.info("CORS allowlist: %s", ", ".join(cors_origins))
+
+
+@app.get("/api/schema.json", include_in_schema=False)
+def api_schema():
+    """Expose OpenAPI schema at a stable API path for agent tool discovery."""
+    return app.openapi()
 
 
 ## HTML page routes moved to pages router (api/pages.py)
 
 
 # --------------------------- Diagnostics: Money Columns ---------------------------
-@app.get("/admin/db/money-columns")
+@app.get("/admin/db/money-columns", dependencies=[Depends(api_key_auth)])
 def list_money_columns(db: Session = Depends(get_db)):
     """Diagnostic endpoint: list columns still using PostgreSQL 'money' type (OID 790) or domains wrapping it.
 

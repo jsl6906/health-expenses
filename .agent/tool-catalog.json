@@ -1,0 +1,676 @@
+{
+  "source": "http://localhost:8080/api/schema.json",
+  "api_prefix": "/api",
+  "tools": [
+    {
+      "name": "list_attachments_endpoint_api_attachments_list_get",
+      "method": "GET",
+      "path": "/api/attachments/list",
+      "summary": "List Attachments Endpoint",
+      "description": "",
+      "tags": [
+        "attachments"
+      ]
+    },
+    {
+      "name": "upload_attachment_api_attachments_upload_post",
+      "method": "POST",
+      "path": "/api/attachments/upload",
+      "summary": "Upload Attachment",
+      "description": "",
+      "tags": [
+        "attachments"
+      ]
+    },
+    {
+      "name": "remove_attachment_api_attachments__attachment_id__delete",
+      "method": "DELETE",
+      "path": "/api/attachments/{attachment_id}",
+      "summary": "Remove Attachment",
+      "description": "",
+      "tags": [
+        "attachments"
+      ]
+    },
+    {
+      "name": "download_attachment_api_attachments__attachment_id__download_get",
+      "method": "GET",
+      "path": "/api/attachments/{attachment_id}/download",
+      "summary": "Download Attachment",
+      "description": "",
+      "tags": [
+        "attachments"
+      ]
+    },
+    {
+      "name": "read_charges_api_charges__get",
+      "method": "GET",
+      "path": "/api/charges/",
+      "summary": "Read Charges",
+      "description": "",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "create_charge_api_charges__post",
+      "method": "POST",
+      "path": "/api/charges/",
+      "summary": "Create Charge",
+      "description": "",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "analyze_json_charges_api_charges_analyze_json_charges_post",
+      "method": "POST",
+      "path": "/api/charges/analyze-json/charges",
+      "summary": "Analyze Json Charges",
+      "description": "Stage 2: With family member & medical type, build charge candidate rows + duplicate flags.",
+      "tags": [
+        "imports"
+      ]
+    },
+    {
+      "name": "analyze_json_providers_api_charges_analyze_json_providers_post",
+      "method": "POST",
+      "path": "/api/charges/analyze-json/providers",
+      "summary": "Analyze Json Providers",
+      "description": "Stage 1: Accept an upload/pasted JSON and return provider candidates.\n\nStores raw parsed rows + provider candidates in the session. Does NOT do duplicate\ncheck for charges yet (requires family/medical inputs in stage 2).",
+      "tags": [
+        "imports"
+      ]
+    },
+    {
+      "name": "add_analyzed_providers_api_charges_analyze_json_providers_add_post",
+      "method": "POST",
+      "path": "/api/charges/analyze-json/providers/add",
+      "summary": "Add Analyzed Providers",
+      "description": "",
+      "tags": [
+        "imports"
+      ]
+    },
+    {
+      "name": "bulk_create_charges_api_charges_bulk_create_post",
+      "method": "POST",
+      "path": "/api/charges/bulk-create",
+      "summary": "Bulk Create Charges",
+      "description": "",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "bulk_update_charges_api_charges_bulk_update_post",
+      "method": "POST",
+      "path": "/api/charges/bulk-update",
+      "summary": "Bulk Update Charges",
+      "description": "Update multiple charges with the provided data.\n\nOnly updates fields that are present in update_data.\nReturns the list of charge IDs that were updated.",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "read_charges_by_family_member_api_charges_family__family_member__get",
+      "method": "GET",
+      "path": "/api/charges/family/{family_member}",
+      "summary": "Read Charges By Family Member",
+      "description": "",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "import_charges_from_json_preview_api_charges_import_json_post",
+      "method": "POST",
+      "path": "/api/charges/import-json",
+      "summary": "Import Charges From Json Preview",
+      "description": "",
+      "tags": [
+        "imports"
+      ]
+    },
+    {
+      "name": "commit_json_import_api_charges_import_json__session_id__commit_post",
+      "method": "POST",
+      "path": "/api/charges/import-json/{session_id}/commit",
+      "summary": "Commit Json Import",
+      "description": "",
+      "tags": [
+        "imports"
+      ]
+    },
+    {
+      "name": "mark_charges_no_dup_api_charges_mark_no_dup_post",
+      "method": "POST",
+      "path": "/api/charges/mark-no-dup",
+      "summary": "Mark Charges No Dup",
+      "description": "Append ' NO DUP' to notes for the provided charge IDs.\n\nReturns the list of IDs that were updated.",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "get_merge_comparison_api_charges_merge_compare_post",
+      "method": "POST",
+      "path": "/api/charges/merge-compare",
+      "summary": "Get Merge Comparison",
+      "description": "Get detailed comparison data for charges to be merged.",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "merge_charges_with_fields_api_charges_merge_with_fields_post",
+      "method": "POST",
+      "path": "/api/charges/merge-with-fields",
+      "summary": "Merge Charges With Fields",
+      "description": "Merge charges using selected field values and move all payments/attachments.",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "read_unpaid_charges_api_charges_unpaid__get",
+      "method": "GET",
+      "path": "/api/charges/unpaid/",
+      "summary": "Read Unpaid Charges",
+      "description": "",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "delete_charge_api_charges__charge_id__delete",
+      "method": "DELETE",
+      "path": "/api/charges/{charge_id}",
+      "summary": "Delete Charge",
+      "description": "",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "read_charge_api_charges__charge_id__get",
+      "method": "GET",
+      "path": "/api/charges/{charge_id}",
+      "summary": "Read Charge",
+      "description": "",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "update_charge_api_charges__charge_id__put",
+      "method": "PUT",
+      "path": "/api/charges/{charge_id}",
+      "summary": "Update Charge",
+      "description": "",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "apply_payment_to_charge_api_charges__charge_id__apply_payment_post",
+      "method": "POST",
+      "path": "/api/charges/{charge_id}/apply-payment",
+      "summary": "Apply Payment To Charge",
+      "description": "",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "list_charge_attachments_api_charges__charge_id__attachments_get",
+      "method": "GET",
+      "path": "/api/charges/{charge_id}/attachments",
+      "summary": "List Charge Attachments",
+      "description": "",
+      "tags": [
+        "attachments"
+      ]
+    },
+    {
+      "name": "merge_charge_api_charges__charge_id__merge_post",
+      "method": "POST",
+      "path": "/api/charges/{charge_id}/merge",
+      "summary": "Merge Charge",
+      "description": "Merge this charge into another charge by moving all payments to the target charge\nand then deleting this charge.",
+      "tags": [
+        "charges"
+      ]
+    },
+    {
+      "name": "list_cpt_codes_api_cpt_codes_get",
+      "method": "GET",
+      "path": "/api/cpt-codes",
+      "summary": "List Cpt Codes",
+      "description": "",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "eob_get_api_eob_session__session_id__get",
+      "method": "GET",
+      "path": "/api/eob/session/{session_id}",
+      "summary": "Eob Get",
+      "description": "",
+      "tags": [
+        "imports"
+      ]
+    },
+    {
+      "name": "eob_import_api_eob_session__session_id__import_post",
+      "method": "POST",
+      "path": "/api/eob/session/{session_id}/import",
+      "summary": "Eob Import",
+      "description": "",
+      "tags": [
+        "imports"
+      ]
+    },
+    {
+      "name": "eob_upload_api_eob_upload_post",
+      "method": "POST",
+      "path": "/api/eob/upload",
+      "summary": "Eob Upload",
+      "description": "",
+      "tags": [
+        "imports"
+      ]
+    },
+    {
+      "name": "read_family_members_api_family_members__get",
+      "method": "GET",
+      "path": "/api/family_members/",
+      "summary": "Read Family Members",
+      "description": "",
+      "tags": [
+        "family_members"
+      ]
+    },
+    {
+      "name": "create_family_member_api_family_members__post",
+      "method": "POST",
+      "path": "/api/family_members/",
+      "summary": "Create Family Member",
+      "description": "",
+      "tags": [
+        "family_members"
+      ]
+    },
+    {
+      "name": "read_family_member_api_family_members__family_member_id__get",
+      "method": "GET",
+      "path": "/api/family_members/{family_member_id}",
+      "summary": "Read Family Member",
+      "description": "",
+      "tags": [
+        "family_members"
+      ]
+    },
+    {
+      "name": "update_family_member_api_family_members__family_member_id__put",
+      "method": "PUT",
+      "path": "/api/family_members/{family_member_id}",
+      "summary": "Update Family Member",
+      "description": "",
+      "tags": [
+        "family_members"
+      ]
+    },
+    {
+      "name": "read_insurance_api_insurance__get",
+      "method": "GET",
+      "path": "/api/insurance/",
+      "summary": "Read Insurance",
+      "description": "",
+      "tags": [
+        "insurance"
+      ]
+    },
+    {
+      "name": "create_insurance_api_insurance__post",
+      "method": "POST",
+      "path": "/api/insurance/",
+      "summary": "Create Insurance",
+      "description": "",
+      "tags": [
+        "insurance"
+      ]
+    },
+    {
+      "name": "delete_insurance_api_insurance__insurance_id__delete",
+      "method": "DELETE",
+      "path": "/api/insurance/{insurance_id}",
+      "summary": "Delete Insurance",
+      "description": "",
+      "tags": [
+        "insurance"
+      ]
+    },
+    {
+      "name": "read_insurance_item_api_insurance__insurance_id__get",
+      "method": "GET",
+      "path": "/api/insurance/{insurance_id}",
+      "summary": "Read Insurance Item",
+      "description": "",
+      "tags": [
+        "insurance"
+      ]
+    },
+    {
+      "name": "update_insurance_api_insurance__insurance_id__put",
+      "method": "PUT",
+      "path": "/api/insurance/{insurance_id}",
+      "summary": "Update Insurance",
+      "description": "",
+      "tags": [
+        "insurance"
+      ]
+    },
+    {
+      "name": "read_payments_api_payments__get",
+      "method": "GET",
+      "path": "/api/payments/",
+      "summary": "Read Payments",
+      "description": "",
+      "tags": [
+        "payments"
+      ]
+    },
+    {
+      "name": "create_payment_api_payments__post",
+      "method": "POST",
+      "path": "/api/payments/",
+      "summary": "Create Payment",
+      "description": "",
+      "tags": [
+        "payments"
+      ]
+    },
+    {
+      "name": "mark_payments_matched_api_payments_mark_matched_post",
+      "method": "POST",
+      "path": "/api/payments/mark-matched",
+      "summary": "Mark Payments Matched",
+      "description": "",
+      "tags": [
+        "payments"
+      ]
+    },
+    {
+      "name": "create_payment_with_charges_api_payments_with_charges_post",
+      "method": "POST",
+      "path": "/api/payments/with-charges",
+      "summary": "Create Payment With Charges",
+      "description": "Create a payment and immediately link it to the provided charge ids.\n\nThe client sends payment fields at the top level with an additional `charge_ids` list.\nThis endpoint creates the payment, validates the provided charges, computes\nallocations and inserts ChargePaymentXref rows.",
+      "tags": [
+        "payments"
+      ]
+    },
+    {
+      "name": "delete_payment_api_payments__payment_id__delete",
+      "method": "DELETE",
+      "path": "/api/payments/{payment_id}",
+      "summary": "Delete Payment",
+      "description": "",
+      "tags": [
+        "payments"
+      ]
+    },
+    {
+      "name": "read_payment_api_payments__payment_id__get",
+      "method": "GET",
+      "path": "/api/payments/{payment_id}",
+      "summary": "Read Payment",
+      "description": "",
+      "tags": [
+        "payments"
+      ]
+    },
+    {
+      "name": "update_payment_api_payments__payment_id__put",
+      "method": "PUT",
+      "path": "/api/payments/{payment_id}",
+      "summary": "Update Payment",
+      "description": "",
+      "tags": [
+        "payments"
+      ]
+    },
+    {
+      "name": "list_payment_attachments_api_payments__payment_id__attachments_get",
+      "method": "GET",
+      "path": "/api/payments/{payment_id}/attachments",
+      "summary": "List Payment Attachments",
+      "description": "",
+      "tags": [
+        "attachments"
+      ]
+    },
+    {
+      "name": "unlink_charge_from_payment_api_payments__payment_id__charges__charge_id__delete",
+      "method": "DELETE",
+      "path": "/api/payments/{payment_id}/charges/{charge_id}",
+      "summary": "Unlink Charge From Payment",
+      "description": "",
+      "tags": [
+        "payments"
+      ]
+    },
+    {
+      "name": "link_charges_to_payment_api_payments__payment_id__link_charges_post",
+      "method": "POST",
+      "path": "/api/payments/{payment_id}/link-charges",
+      "summary": "Link Charges To Payment",
+      "description": "",
+      "tags": [
+        "payments"
+      ]
+    },
+    {
+      "name": "read_premiums_api_premiums__get",
+      "method": "GET",
+      "path": "/api/premiums/",
+      "summary": "Read Premiums",
+      "description": "",
+      "tags": [
+        "premiums"
+      ]
+    },
+    {
+      "name": "create_premium_api_premiums__post",
+      "method": "POST",
+      "path": "/api/premiums/",
+      "summary": "Create Premium",
+      "description": "",
+      "tags": [
+        "premiums"
+      ]
+    },
+    {
+      "name": "read_premium_by_year_api_premiums_year__year__get",
+      "method": "GET",
+      "path": "/api/premiums/year/{year}",
+      "summary": "Read Premium By Year",
+      "description": "",
+      "tags": [
+        "premiums"
+      ]
+    },
+    {
+      "name": "delete_premium_api_premiums__premium_id__delete",
+      "method": "DELETE",
+      "path": "/api/premiums/{premium_id}",
+      "summary": "Delete Premium",
+      "description": "",
+      "tags": [
+        "premiums"
+      ]
+    },
+    {
+      "name": "read_premium_api_premiums__premium_id__get",
+      "method": "GET",
+      "path": "/api/premiums/{premium_id}",
+      "summary": "Read Premium",
+      "description": "",
+      "tags": [
+        "premiums"
+      ]
+    },
+    {
+      "name": "update_premium_api_premiums__premium_id__put",
+      "method": "PUT",
+      "path": "/api/premiums/{premium_id}",
+      "summary": "Update Premium",
+      "description": "",
+      "tags": [
+        "premiums"
+      ]
+    },
+    {
+      "name": "list_provider_groups_api_provider_groups_get",
+      "method": "GET",
+      "path": "/api/provider-groups",
+      "summary": "List Provider Groups",
+      "description": "",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "read_providers_api_providers__get",
+      "method": "GET",
+      "path": "/api/providers/",
+      "summary": "Read Providers",
+      "description": "",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "create_provider_api_providers__post",
+      "method": "POST",
+      "path": "/api/providers/",
+      "summary": "Create Provider",
+      "description": "",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "read_active_providers_api_providers_active__get",
+      "method": "GET",
+      "path": "/api/providers/active/",
+      "summary": "Read Active Providers",
+      "description": "",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "bulk_set_active_api_providers_bulk_set_active_post",
+      "method": "POST",
+      "path": "/api/providers/bulk/set-active",
+      "summary": "Bulk Set Active",
+      "description": "Set active_provider_flag for multiple providers.",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "bulk_set_group_api_providers_bulk_set_group_post",
+      "method": "POST",
+      "path": "/api/providers/bulk/set-group",
+      "summary": "Bulk Set Group",
+      "description": "Set or clear provider_group for multiple providers.\n\nIf group_name is blank or only whitespace, the group will be cleared (set to None).\nReturns count of updated providers.",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "bulk_set_location_api_providers_bulk_set_location_post",
+      "method": "POST",
+      "path": "/api/providers/bulk/set-location",
+      "summary": "Bulk Set Location",
+      "description": "Set provider_address and/or one_way_miles for multiple providers.\n\nPassing null for a field will clear it. Returns count of updated providers.",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "provider_exists_api_providers_exists_get",
+      "method": "GET",
+      "path": "/api/providers/exists",
+      "summary": "Provider Exists",
+      "description": "",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "search_providers_api_providers_search_get",
+      "method": "GET",
+      "path": "/api/providers/search",
+      "summary": "Search Providers",
+      "description": "Return a compact list of providers matching the query for typeahead usage.\n\nReads query params defensively to avoid Pydantic validation errors (which\nproduced 422 responses when clients sent unexpected values).\n\nExpected query params:\n- q: optional substring to match provider_name\n- limit: optional integer limit",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "delete_provider_api_providers__provider_id__delete",
+      "method": "DELETE",
+      "path": "/api/providers/{provider_id}",
+      "summary": "Delete Provider",
+      "description": "",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "read_provider_api_providers__provider_id__get",
+      "method": "GET",
+      "path": "/api/providers/{provider_id}",
+      "summary": "Read Provider",
+      "description": "",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "update_provider_api_providers__provider_id__put",
+      "method": "PUT",
+      "path": "/api/providers/{provider_id}",
+      "summary": "Update Provider",
+      "description": "",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "merge_provider_api_providers__provider_id__merge_post",
+      "method": "POST",
+      "path": "/api/providers/{provider_id}/merge",
+      "summary": "Merge Provider",
+      "description": "Merge a provider into another provider.\n\nAll charges and payments from the source provider will be moved to the target provider.\nThe source provider will be deleted after the merge.",
+      "tags": [
+        "providers"
+      ]
+    },
+    {
+      "name": "provider_open_charges_api_providers__provider_id__open_charges_get",
+      "method": "GET",
+      "path": "/api/providers/{provider_id}/open-charges",
+      "summary": "Provider Open Charges",
+      "description": "Return open charges (remaining > 0) for a given provider in a compact JSON shape.\n\nUsed by client-side modals to let users select charges when creating a payment.",
+      "tags": [
+        "providers"
+      ]
+    }
+  ]
+}

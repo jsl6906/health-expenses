@@ -113,13 +113,11 @@
                                 <td>{{ charge.insurance_paid_amount | currency }}</td>
                                 <td>{{ charge.paid_amount_agg | currency }}</td>
                                 <td>
-                                    {% set owed = charge.owed_amount or 0 %}
-                                    {% set paid = charge.paid_amount_agg or 0 %}
-                                    {% if owed > 0 and paid >= owed %}
+                                    {% if charge.payment_status == 'paid' %}
                                         <span class="badge bg-success">Paid</span>
-                                    {% elif owed > 0 and paid > 0 and paid < owed %}
+                                    {% elif charge.payment_status == 'partial' %}
                                         <span class="badge bg-info text-dark">Partial</span>
-                                    {% elif owed > 0 and paid == 0 %}
+                                    {% elif charge.payment_status == 'outstanding' %}
                                         <span class="badge bg-warning">Outstanding</span>
                                     {% else %}
                                         <span class="badge bg-secondary">N/A</span>

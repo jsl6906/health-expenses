@@ -48,34 +48,6 @@ def update_payment(
     return payment_crud.update(db, db_payment, data, user="system")
 
 
-@router.delete("/payments/{payment_id}")
-def delete_payment(payment_id: int, db: Session = Depends(get_db)):
-    try:
-        from models.database import Attachment as _AttachmentModel  # type: ignore
-        from models.database import ChargePaymentXref as _Xref
-    except ImportError:
-        from .models.database import Attachment as _AttachmentModel  # type: ignore
-        from .models.database import ChargePaymentXref as _Xref
-    pay_obj = payment_crud.get(db, payment_id)
-    if pay_obj is None:
-        raise HTTPException(status_code=404, detail="Payment not found")
-    try:
-        db.query(_AttachmentModel).filter(
-            _AttachmentModel.payment_id == payment_id
-        ).delete(synchronize_session=False)
-    except Exception:
-        pass
-    try:
-        db.query(_Xref).filter(_Xref.payment_id == payment_id).delete(
-            synchronize_session=False
-        )
-    except Exception:
-        pass
-    db.delete(pay_obj)
-    db.commit()
-    return {"message": "Payment and related attachments deleted"}
-
-
 class MarkPaymentsPayload(BaseModel):
     payment_ids: List[int] = []
 
