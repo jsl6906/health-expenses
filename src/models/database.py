@@ -39,10 +39,17 @@ class FamilyMember(Base):
     # Use updated_at for modification timestamps; remove duplicate modified_at field
     # Single-character emoji for condensed display (may be multi-codepoint but stored as short text)
     emoji = Column(String(4), nullable=True)
+    # Signature image used on generated insurance claim forms
+    signature_image = Column(LargeBinary, nullable=True)
+    signature_content_type = Column(String, nullable=True)
     created_by = Column(String)
     updated_by = Column(String)
 
     charges = relationship("Charge", back_populates="family_member")
+
+    @property
+    def has_signature(self) -> bool:
+        return self.signature_image is not None
 
     @hybrid_property
     def full_name(self):
@@ -414,6 +421,21 @@ class Insurance(Base):
     policy_number = Column(String)
     group_number = Column(String)
     insured_member_id = Column(Integer, ForeignKey("family_members.id"))
+    # Claim-form defaults (MHBP/Aetna style paper claim)
+    claim_email = Column(String)
+    claim_mailing_address = Column(String)
+    no_other_coverage = Column(Boolean, default=True)
+    other_policyholder_name = Column(String)
+    other_policy_number = Column(String)
+    other_insurance_company = Column(String)
+    other_insurance_phone = Column(String)
+    other_insurance_address = Column(String)
+    other_insurance_city = Column(String)
+    other_insurance_state = Column(String)
+    other_insurance_zip = Column(String)
+    medicare_number = Column(String)
+    medicare_part_a_date = Column(Date)
+    medicare_part_b_date = Column(Date)
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     created_by = Column(String)

@@ -162,13 +162,12 @@ class FamilyMemberUpdate(BaseModel):
 
 class FamilyMember(FamilyMemberBase):
     id: int
+    has_signature: bool = False
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     created_by: Optional[str] = None
     updated_by: Optional[str] = None
     # 'modified_at' removed in favor of 'updated_at'
-
-    model_config = ConfigDict(from_attributes=True)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -260,7 +259,24 @@ class Attachment(AttachmentBase):
 
 
 # Insurance Schemas
-class InsuranceBase(BaseModel):
+class InsuranceClaimDefaults(BaseModel):
+    claim_email: Optional[str] = None
+    claim_mailing_address: Optional[str] = None
+    no_other_coverage: Optional[bool] = True
+    other_policyholder_name: Optional[str] = None
+    other_policy_number: Optional[str] = None
+    other_insurance_company: Optional[str] = None
+    other_insurance_phone: Optional[str] = None
+    other_insurance_address: Optional[str] = None
+    other_insurance_city: Optional[str] = None
+    other_insurance_state: Optional[str] = None
+    other_insurance_zip: Optional[str] = None
+    medicare_number: Optional[str] = None
+    medicare_part_a_date: Optional[date] = None
+    medicare_part_b_date: Optional[date] = None
+
+
+class InsuranceBase(InsuranceClaimDefaults):
     medical_type: Optional[MedicalTypeEnum] = None
     plan_name: Optional[str] = None
     policy_number: Optional[str] = None
@@ -272,7 +288,8 @@ class InsuranceCreate(InsuranceBase):
     pass
 
 
-class InsuranceUpdate(BaseModel):
+class InsuranceUpdate(InsuranceClaimDefaults):
+    no_other_coverage: Optional[bool] = None
     medical_type: Optional[MedicalTypeEnum] = None
     plan_name: Optional[str] = None
     policy_number: Optional[str] = None

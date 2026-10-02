@@ -23,6 +23,7 @@
                 <th>Policy #</th>
                 <th>Group #</th>
                 <th>Insured</th>
+                <th>Claim Email</th>
                 <th>Created</th>
                 <th>Updated</th>
                 <th>Actions</th>
@@ -42,6 +43,7 @@
                     -
                   {% endif %}
                 </td>
+                <td class="small">{{ i.claim_email or '-' }}</td>
                 <td>{{ i.created_at | format_datetime_est }}</td>
                 <td>{{ i.updated_at | format_datetime_est }}</td>
                                 <td>
@@ -101,7 +103,7 @@
 
 <!-- Edit Insurance Modal -->
 <div class="modal fade" id="editInsuranceModal" tabindex="-1">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title">Edit Insurance</h5>
@@ -132,6 +134,32 @@
             </select>
           </div>
           <div class="mb-2"><label class="form-label">Notes</label><textarea name="notes" id="edit_notes" rows="3" class="form-control"></textarea></div>
+
+          <hr>
+          <h6 class="mb-2">Claim Form Defaults</h6>
+          <div class="row g-2">
+            <div class="col-md-6"><label class="form-label">Claim Submission Email</label><input type="email" name="claim_email" id="edit_claim_email" class="form-control" placeholder="MHBPeligibility@aetna.com"></div>
+            <div class="col-md-6"><label class="form-label">Claim Mailing Address</label><input type="text" name="claim_mailing_address" id="edit_claim_mailing_address" class="form-control" placeholder="PO Box 981106, El Paso, TX 79998"></div>
+          </div>
+          <div class="form-check mt-2 mb-1">
+            <input class="form-check-input" type="checkbox" name="no_other_coverage" id="edit_no_other_coverage" checked>
+            <label class="form-check-label" for="edit_no_other_coverage">No other health coverage</label>
+          </div>
+          <div class="row g-2" id="edit_other_coverage_fields">
+            <div class="col-md-6"><label class="form-label">Other Policyholder Name</label><input type="text" name="other_policyholder_name" id="edit_other_policyholder_name" class="form-control"></div>
+            <div class="col-md-6"><label class="form-label">Other Policy Number</label><input type="text" name="other_policy_number" id="edit_other_policy_number" class="form-control"></div>
+            <div class="col-md-6"><label class="form-label">Other Insurance Company</label><input type="text" name="other_insurance_company" id="edit_other_insurance_company" class="form-control"></div>
+            <div class="col-md-6"><label class="form-label">Other Insurance Phone</label><input type="text" name="other_insurance_phone" id="edit_other_insurance_phone" class="form-control"></div>
+            <div class="col-md-6"><label class="form-label">Street Address</label><input type="text" name="other_insurance_address" id="edit_other_insurance_address" class="form-control"></div>
+            <div class="col-md-3"><label class="form-label">City</label><input type="text" name="other_insurance_city" id="edit_other_insurance_city" class="form-control"></div>
+            <div class="col-md-1"><label class="form-label">State</label><input type="text" name="other_insurance_state" id="edit_other_insurance_state" class="form-control" maxlength="2"></div>
+            <div class="col-md-2"><label class="form-label">ZIP</label><input type="text" name="other_insurance_zip" id="edit_other_insurance_zip" class="form-control"></div>
+          </div>
+          <div class="row g-2 mt-1">
+            <div class="col-md-6"><label class="form-label">Medicare Number <small class="text-muted">(leave blank if not eligible)</small></label><input type="text" name="medicare_number" id="edit_medicare_number" class="form-control"></div>
+            <div class="col-md-3"><label class="form-label">Part A Effective</label><input type="date" name="medicare_part_a_date" id="edit_medicare_part_a_date" class="form-control"></div>
+            <div class="col-md-3"><label class="form-label">Part B Effective</label><input type="date" name="medicare_part_b_date" id="edit_medicare_part_b_date" class="form-control"></div>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -179,8 +207,18 @@ document.addEventListener('DOMContentLoaded', ()=>{
     document.getElementById('edit_group_number').value = data.group_number || '';
     try{ document.getElementById('edit_insured_member_id').value = data.insured_member_id || ''; }catch(e){}
     document.getElementById('edit_notes').value = data.notes || '';
+    ['claim_email','claim_mailing_address','other_policyholder_name','other_policy_number','other_insurance_company','other_insurance_phone','other_insurance_address','other_insurance_city','other_insurance_state','other_insurance_zip','medicare_number','medicare_part_a_date','medicare_part_b_date'].forEach(k=>{
+      const el = document.getElementById('edit_'+k); if(el) el.value = data[k] || '';
+    });
+    const noc = document.getElementById('edit_no_other_coverage');
+    noc.checked = data.no_other_coverage !== false;
+    toggleOtherCoverage();
       }catch(ex){ alert('Error loading insurance: '+ex.message); }
     });
+
+    const noc = document.getElementById('edit_no_other_coverage');
+    function toggleOtherCoverage(){ document.getElementById('edit_other_coverage_fields').classList.toggle('d-none', noc.checked); }
+    noc.addEventListener('change', toggleOtherCoverage);
 
     const editForm = document.getElementById('editInsuranceForm');
     editForm.addEventListener('submit', async (e)=>{
@@ -188,7 +226,8 @@ document.addEventListener('DOMContentLoaded', ()=>{
       const fd = new FormData(editForm);
       const id = fd.get('id');
       const payload = {};
-      fd.forEach((v,k)=>{ if(k!=='id') payload[k]=v||null; });
+      fd.forEach((v,k)=>{ if(k!=='id' && k!=='no_other_coverage') payload[k]=v||null; });
+      payload.no_other_coverage = noc.checked;
       try{
         const resp = await fetch('/api/insurance/'+id, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
         if(resp.ok){ location.reload(); } else { const j=await resp.json().catch(()=>({})); alert('Error: '+(j.detail||resp.status)); }

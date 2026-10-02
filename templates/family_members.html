@@ -25,6 +25,7 @@
                 <th>Relationship</th>
                 <th>Phone</th>
                 <th>Address</th>
+                <th>Signature</th>
                 <th>Created</th>
                 <th>Updated</th>
                 <th>Actions</th>
@@ -40,6 +41,7 @@
                                 <td>{{ m.relationship_to_primary or '-' }}</td>
                                 <td>{{ m.phone_number or '-' }}</td>
                                 <td class="text-truncate" style="max-width:300px;">{{ m.address or '-' }}</td>
+                                <td>{% if m.signature_image %}<img src="/api/family_members/{{ m.id }}/signature" alt="signature" style="max-height:28px;max-width:120px;" class="border rounded bg-white">{% else %}<span class="text-muted small">none</span>{% endif %}</td>
                 <td>{{ m.created_at | format_datetime_est }}</td>
                 <td>{{ m.updated_at | format_datetime_est }}</td>
                                 <td>
@@ -170,6 +172,17 @@
             </div>
             <div class="form-text">Choose an emoji or paste your own; the selected/pasted emoji will be used.</div>
           </div>
+          <hr>
+          <div class="mb-2">
+            <label class="form-label">Signature Image <small class="text-muted">(used on insurance claim forms; PNG/JPEG, under 2 MB)</small></label>
+            <div id="edit_signature_preview" class="mb-2"></div>
+            <div class="d-flex gap-2 align-items-center">
+              <input type="file" id="edit_signature_file" class="form-control form-control-sm" accept="image/png,image/jpeg,image/gif,image/webp">
+              <button type="button" class="btn btn-sm btn-outline-primary" id="edit_signature_upload">Upload</button>
+              <button type="button" class="btn btn-sm btn-outline-danger" id="edit_signature_remove">Remove</button>
+            </div>
+            <div class="form-text">Tip: sign on white paper, photograph or scan it, and crop tightly around the signature.</div>
+          </div>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -233,7 +246,40 @@ document.addEventListener('DOMContentLoaded', ()=>{
         if(pick) pick.value = data.emoji || '';
         if(custom) custom.value = data.emoji || '';
         if(hidden) hidden.value = data.emoji || '';
+        renderSignaturePreview(data.id, data.has_signature);
       }catch(ex){ alert('Error loading member: '+ex.message); }
+    });
+
+    function renderSignaturePreview(id, has){
+      const box = document.getElementById('edit_signature_preview');
+      box.innerHTML = has
+        ? `<img src="/api/family_members/${id}/signature?t=${Date.now()}" alt="signature" class="border rounded bg-white" style="max-height:70px;max-width:100%;">`
+        : '<span class="text-muted small">No signature on file.</span>';
+      document.getElementById('edit_signature_remove').disabled = !has;
+    }
+
+    document.getElementById('edit_signature_upload').addEventListener('click', async ()=>{
+      const id = document.getElementById('editFamilyMemberId').value;
+      const fileEl = document.getElementById('edit_signature_file');
+      if(!fileEl.files.length){ alert('Choose an image file first.'); return; }
+      const fd = new FormData(); fd.append('file', fileEl.files[0]);
+      try{
+        const resp = await fetch(`/api/family_members/${id}/signature`, { method:'POST', body: fd });
+        const j = await resp.json().catch(()=>({}));
+        if(!resp.ok){ alert('Error: '+(j.detail||resp.status)); return; }
+        fileEl.value = '';
+        renderSignaturePreview(id, true);
+      }catch(ex){ alert('Network error: '+ex.message); }
+    });
+
+    document.getElementById('edit_signature_remove').addEventListener('click', async ()=>{
+      const id = document.getElementById('editFamilyMemberId').value;
+      if(!confirm('Remove the stored signature image?')) return;
+      try{
+        const resp = await fetch(`/api/family_members/${id}/signature`, { method:'DELETE' });
+        if(!resp.ok){ const j=await resp.json().catch(()=>({})); alert('Error: '+(j.detail||resp.status)); return; }
+        renderSignaturePreview(id, false);
+      }catch(ex){ alert('Network error: '+ex.message); }
     });
 
     // Submit edit

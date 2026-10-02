@@ -136,6 +136,9 @@
                             <button id="submitManualClaimBtn" class="btn btn-sm btn-outline-success">
                                 <i class="bi bi-file-earmark-text"></i> Submit Manual Claim
                             </button>
+                            <button id="claimFormBtn" class="btn btn-sm btn-success">
+                                <i class="bi bi-envelope-paper"></i> Insurance Claim Form
+                            </button>
                             <button id="cancelChargeSelectionBtn" class="btn btn-sm btn-outline-secondary">
                                 Cancel
                             </button>
@@ -404,6 +407,9 @@
             <button id="submitManualClaimBtnBottom" class="btn btn-sm btn-outline-success">
                 <i class="bi bi-file-earmark-text"></i> Submit Manual Claim
             </button>
+            <button id="claimFormBtnBottom" class="btn btn-sm btn-success">
+                <i class="bi bi-envelope-paper"></i> Insurance Claim Form
+            </button>
             <button id="cancelChargeSelectionBtnBottom" class="btn btn-sm btn-outline-secondary">
                 Cancel
             </button>
@@ -459,6 +465,17 @@ function setupManualClaimButton() {
         // Open manual claim in same tab so printing/back navigation is simple
         window.location.href = '/charges/manual-claim?charge_ids=' + encodeURIComponent(qs);
     });
+    const claimBtn = document.getElementById('claimFormBtn');
+    if (claimBtn) {
+        claimBtn.addEventListener('click', function() {
+            const selected = Array.from(document.querySelectorAll('.charge-select:checked')).map(cb => cb.value);
+            if (!selected.length) {
+                alert('Select at least one charge to build a claim form.');
+                return;
+            }
+            window.location.href = '/charges/claim-form?charge_ids=' + encodeURIComponent(selected.join(','));
+        });
+    }
 }
 
 function initializeTableEnhancements() {
@@ -1156,6 +1173,8 @@ function setupChargeSelection() {
     if (markNoDupBtnBottom) markNoDupBtnBottom.addEventListener('click', () => { const tb = document.getElementById('markNoDupBtn'); if (tb) tb.click(); });
     if (deleteBtnBottom) deleteBtnBottom.addEventListener('click', () => { const tb = document.getElementById('deleteSelectedBtn'); if (tb) tb.click(); });
     if (submitManualClaimBtnBottom) submitManualClaimBtnBottom.addEventListener('click', () => { const topBtn = document.getElementById('submitManualClaimBtn'); if (topBtn) topBtn.click(); });
+    const claimFormBtnBottom = document.getElementById('claimFormBtnBottom');
+    if (claimFormBtnBottom) claimFormBtnBottom.addEventListener('click', () => { const tb = document.getElementById('claimFormBtn'); if (tb) tb.click(); });
     if (cancelBtnBottom) cancelBtnBottom.addEventListener('click', () => { const tb = document.getElementById('cancelChargeSelectionBtn'); if (tb) tb.click(); });
 
     // Initial sync so the bottom bar reflects any pre-existing selections

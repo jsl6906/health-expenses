@@ -23,11 +23,14 @@ from sqlalchemy.orm import Session  # retained for diagnostic endpoint dependenc
 
 from .api.attachments import router as attachments_router
 from .api.charges import router as charges_router
+from .api.claims import router as claims_router
 from .api.dependencies import (
     AGENT_ID_HEADER_NAME,
     REQUEST_ID_HEADER_NAME,
+    UI_SESSION_COOKIE,
     api_key_auth,
     get_cors_origins,
+    get_ui_session_token,
 )
 from .api.family_members import router as family_members_router
 from .api.imports import router as imports_router
@@ -116,6 +119,7 @@ app.include_router(imports_router, dependencies=[Depends(api_key_auth)])
 app.include_router(pages_router)
 app.include_router(family_members_router, dependencies=[Depends(api_key_auth)])
 app.include_router(insurance_router, dependencies=[Depends(api_key_auth)])
+app.include_router(claims_router, dependencies=[Depends(api_key_auth)])
 
 
 # Configure basic logging for startup diagnostics
@@ -157,6 +161,20 @@ async def request_attribution_middleware(request: Request, call_next):
     response.headers[REQUEST_ID_HEADER_NAME] = request_id
 
     path = request.url.path
+    # Issue the UI session cookie on server-rendered pages (not API/static)
+    if (
+        request.method == "GET"
+        and not path.startswith(("/api", "/static", "/admin"))
+        and response.status_code == 200
+        and request.cookies.get(UI_SESSION_COOKIE) != get_ui_session_token()
+    ):
+        response.set_cookie(
+            UI_SESSION_COOKIE,
+            get_ui_session_token(),
+            httponly=True,
+            samesite="strict",
+            path="/",
+        )
     if path.startswith("/api") and request.method in MUTATING_METHODS:
         logger.info(
             "API mutation request_id=%s agent_id=%s method=%s path=%s status=%s",

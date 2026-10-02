@@ -800,6 +800,96 @@ async def manual_claim_page(
     )
 
 
+@router.get("/charges/claim-form", response_class=HTMLResponse)
+async def claim_form_page(
+    request: Request, charge_ids: str = "", db: Session = Depends(get_db)
+):
+    """Editable insurance claim form(s) for the selected charges, with PDF preview and email submission."""
+    if not charge_ids:
+        raise HTTPException(
+            status_code=400, detail="charge_ids query parameter required"
+        )
+    try:
+        ids = [int(x) for x in charge_ids.split(",") if x.strip()]
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid charge_ids parameter")
+
+    try:
+        from models.database import Attachment as AttachmentModel  # type: ignore
+        from models.database import FamilyMember as FamilyMemberModel  # type: ignore
+        from services.claim_form import build_claim_forms, claim_warnings  # type: ignore
+        from services.mailer import default_claim_cc, mail_config_ok  # type: ignore
+    except ImportError:  # pragma: no cover
+        from ..models.database import Attachment as AttachmentModel  # type: ignore
+        from ..models.database import FamilyMember as FamilyMemberModel  # type: ignore
+        from ..services.claim_form import build_claim_forms, claim_warnings  # type: ignore
+        from ..services.mailer import default_claim_cc, mail_config_ok  # type: ignore
+
+    forms = build_claim_forms(db, ids)
+    if not forms:
+        raise HTTPException(status_code=404, detail="No charges found for provided ids")
+
+    attachment_rows = (
+        db.query(
+            AttachmentModel.id,
+            AttachmentModel.charge_id,
+            AttachmentModel.original_filename,
+            AttachmentModel.content_type,
+            AttachmentModel.file_size,
+        )
+        .filter(AttachmentModel.charge_id.in_(ids))
+        .order_by(AttachmentModel.charge_id, AttachmentModel.id)
+        .all()
+    )
+    attachments_by_charge: dict[int, list[dict]] = {}
+    for aid, cid, name, ctype, size in attachment_rows:
+        attachments_by_charge.setdefault(int(cid), []).append(
+            {
+                "id": aid,
+                "charge_id": cid,
+                "filename": name or f"attachment_{aid}",
+                "content_type": ctype,
+                "size_kb": round((size or 0) / 1024, 1),
+            }
+        )
+
+    signature_ids = {
+        int(r[0])
+        for r in db.query(FamilyMemberModel.id)
+        .filter(FamilyMemberModel.signature_image.isnot(None))
+        .all()
+    }
+    claims = []
+    for f in forms:
+        signer = f.authorization.signer_family_member_id
+        claims.append(
+            {
+                "form": f.model_dump(mode="json"),
+                "warnings": claim_warnings(f, signer in signature_ids),
+                "attachments": [
+                    a for cid in f.charge_ids for a in attachments_by_charge.get(cid, [])
+                ],
+            }
+        )
+    family_members = (
+        db.query(FamilyMemberModel)
+        .order_by(FamilyMemberModel.first_name, FamilyMemberModel.last_name)
+        .all()
+    )
+    return render_template(
+        "claim_form.html",
+        {
+            "request": request,
+            "claims": claims,
+            "charge_ids": ids,
+            "family_members": family_members,
+            "signature_ids": sorted(signature_ids),
+            "mail_configured": mail_config_ok(),
+            "default_cc": default_claim_cc(),
+        },
+    )
+
+
 @router.get("/charges/import/json", response_class=HTMLResponse)
 async def charges_import_json_page(request: Request, db: Session = Depends(get_db)):
     """UI for importing charges via JSON/FHIR preview workflow."""

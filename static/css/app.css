@@ -196,6 +196,11 @@ input.eob-amt, input.eob-amt::-webkit-outer-spin-button, input.eob-amt::-webkit-
 .fam-avatar--riley { background: linear-gradient(180deg,#fff0f9,#ffe6f5); color: #ad0f6f; border-color: rgba(173,15,111,0.08); }
 .fam-avatar--jordan { background: linear-gradient(180deg,#e6ffff,#dffbfb); color: #006d6d; border-color: rgba(0,109,109,0.12); }
 
+/* Insurance claim form editor (claim_form.html) */
+.claim-section-title { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; color: #495057; background: #f1f3f5; padding: 0.25rem 0.5rem; border-left: 3px solid #0d6efd; margin: 0.75rem 0 0.4rem; }
+.claim-form .form-label.small { color: #6c757d; }
+.claim-lines input.form-control-sm { padding: 0.15rem 0.3rem; }
+
 /* Compact, modern styles for manual_claim template */
 .claim-group { border-top: 1px solid rgba(0,0,0,0.06); padding: 0.75rem 0; }
 .claim-group:first-child { border-top: none; padding-top: 0; }

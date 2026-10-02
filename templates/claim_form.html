@@ -1,0 +1,559 @@
+{% extends "base.html" %}
+
+{% block title %}Insurance Claim Form{% endblock %}
+
+{% block content %}
+{% macro fld(label, path, value, type='text', col='col-md-3', extra='') %}
+<div class="{{ col }}">
+  <label class="form-label small mb-0">{{ label }}</label>
+  <input type="{{ type }}" class="form-control form-control-sm" data-path="{{ path }}" value="{{ value if value is not none else '' }}" {{ extra|safe }}>
+</div>
+{% endmacro %}
+
+<div class="d-flex justify-content-between align-items-start mb-3">
+  <div>
+    <h2 class="h5 mb-0"><i class="bi bi-envelope-paper"></i> Insurance Claim Form</h2>
+    <small class="text-muted">{{ claims|length }} claim form(s) generated from {{ charge_ids|length }} selected charge(s). One form per insurance / patient / provider.</small>
+  </div>
+  <div class="btn-group btn-group-sm" role="group">
+    {% if claims|length > 1 %}
+    <button type="button" class="btn btn-outline-primary" onclick="previewAll()"><i class="bi bi-files"></i> Preview All ({{ claims|length }} forms)</button>
+    <button type="button" class="btn btn-success" onclick="openEmailModal('all')" {% if not mail_configured %}disabled title="SMTP not configured"{% endif %}><i class="bi bi-send"></i> Email All in One Message</button>
+    {% endif %}
+    <a href="/charges/manual-claim?charge_ids={{ charge_ids|join(',') }}" class="btn btn-outline-secondary">Legacy Manual Claim</a>
+    <a href="/charges" class="btn btn-outline-secondary">Back</a>
+  </div>
+</div>
+
+{% if claims|length > 1 %}
+<div class="alert alert-info small py-2">
+  The selected charges span {{ claims|length }} provider/patient combinations, so {{ claims|length }} claim forms were generated below in sequence. Email them individually, or use <strong>Email All in One Message</strong> to send a single combined PDF (one form per page set) with all supporting documents.
+</div>
+{% endif %}
+
+{% if not mail_configured %}
+<div class="alert alert-warning small py-2">
+  <strong>Email is not configured.</strong> Set <code>SMTP_HOST</code>, <code>SMTP_USER</code>, <code>SMTP_PASSWORD</code> (and optionally <code>SMTP_FROM</code>, <code>SMTP_PORT</code>, <code>CLAIM_EMAIL_BCC</code>) in <code>.env</code>. You can still preview and download the PDF.
+</div>
+{% endif %}
+
+{% for c in claims %}
+{% set f = c.form %}
+{% set i = loop.index0 %}
+<form class="claim-form card mb-4 shadow-sm" data-index="{{ i }}" onsubmit="return false;">
+  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      <strong>Claim {{ loop.index }}:</strong>
+      {{ f.insurance.plan_name or 'No insurance record' }} &middot;
+      {{ f.patient.first_name or f.member.first_name or '-' }} {{ f.patient.last_name or f.member.last_name or '' }} &middot;
+      {{ f.provider_statement.provider_name or '-' }}
+      <span class="badge bg-secondary ms-1">{{ f.provider_statement.service_lines|length }} line(s)</span>
+    </div>
+    <div class="btn-group btn-group-sm">
+      <button type="button" class="btn btn-outline-primary" onclick="previewClaim({{ i }})"><i class="bi bi-file-earmark-pdf"></i> Preview PDF</button>
+      <button type="button" class="btn btn-outline-secondary" onclick="downloadClaim({{ i }})"><i class="bi bi-download"></i> Download</button>
+      <button type="button" class="btn btn-success" onclick="openEmailModal({{ i }})" {% if not mail_configured %}disabled title="SMTP not configured"{% endif %}><i class="bi bi-send"></i> Email Claim</button>
+    </div>
+  </div>
+  <div class="card-body">
+    {% if c.warnings %}
+    <div class="alert alert-warning small py-2">
+      <strong>Check before sending:</strong>
+      <ul class="mb-0 mt-1">{% for w in c.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+    </div>
+    {% endif %}
+
+    <div class="row g-2 mb-2">
+      {{ fld('Plan Name', 'insurance.plan_name', f.insurance.plan_name, col='col-md-4') }}
+      {{ fld('Group Number', 'insurance.group_number', f.insurance.group_number, col='col-md-2') }}
+      {{ fld('Claim Email (To)', 'insurance.claim_email', f.insurance.claim_email, type='email', col='col-md-3', extra='placeholder="MHBPeligibility@aetna.com"') }}
+      {{ fld('Claim Mailing Address', 'insurance.claim_mailing_address', f.insurance.claim_mailing_address, col='col-md-3', extra='placeholder="PO Box 981106, El Paso, TX 79998"') }}
+    </div>
+
+    <h6 class="claim-section-title">Member Information</h6>
+    <div class="row g-2 mb-3">
+      {{ fld('Last Name', 'member.last_name', f.member.last_name) }}
+      {{ fld('First', 'member.first_name', f.member.first_name) }}
+      {{ fld('MI', 'member.middle_initial', f.member.middle_initial, col='col-md-1', extra='maxlength="1"') }}
+      {{ fld('Member ID Number', 'member.member_id', f.member.member_id, col='col-md-2') }}
+      {{ fld('Phone', 'member.phone', f.member.phone, col='col-md-3') }}
+      {{ fld('Address', 'member.address', f.member.address, col='col-md-12') }}
+    </div>
+
+    <h6 class="claim-section-title">Patient Information <small class="text-muted fw-normal">(only if claim is for a dependent)</small></h6>
+    <div class="form-check mb-1">
+      <input class="form-check-input" type="checkbox" data-path="patient.is_dependent" data-type="bool" data-toggle-target="#patient_{{ i }}" id="dep_{{ i }}" {% if f.patient.is_dependent %}checked{% endif %}>
+      <label class="form-check-label small" for="dep_{{ i }}">Patient is a dependent (not the member)</label>
+    </div>
+    <div class="row g-2 mb-3 toggle-section" id="patient_{{ i }}">
+      {{ fld('Last Name', 'patient.last_name', f.patient.last_name) }}
+      {{ fld('First', 'patient.first_name', f.patient.first_name) }}
+      {{ fld('MI', 'patient.middle_initial', f.patient.middle_initial, col='col-md-1', extra='maxlength="1"') }}
+      {{ fld('Patient ID', 'patient.patient_id', f.patient.patient_id, col='col-md-2') }}
+      {{ fld('Date of Birth', 'patient.dob', f.patient.dob, type='date', col='col-md-2') }}
+      {{ fld('Relationship', 'patient.relationship', f.patient.relationship, col='col-md-2', extra='placeholder="Spouse / Child"') }}
+    </div>
+
+    <h6 class="claim-section-title">Accident Information <small class="text-muted fw-normal">(only if result of accident or work-related illness/injury)</small></h6>
+    <div class="form-check mb-1">
+      <input class="form-check-input" type="checkbox" data-path="accident.is_accident" data-type="bool" data-toggle-target="#accident_{{ i }}" id="acc_{{ i }}" {% if f.accident.is_accident %}checked{% endif %}>
+      <label class="form-check-label small" for="acc_{{ i }}">Claim is the result of an accident or work-related illness/injury</label>
+    </div>
+    <div class="row g-2 mb-3 toggle-section" id="accident_{{ i }}">
+      {{ fld('Date of accident / first symptoms', 'accident.accident_date', f.accident.accident_date, type='date') }}
+      {{ fld('Where did it occur? (City/State)', 'accident.location', f.accident.location) }}
+      <div class="col-md-3">
+        <label class="form-label small mb-0">Related to employment?</label>
+        <select class="form-select form-select-sm" data-path="accident.employment_related" data-type="tribool">
+          <option value="" {% if f.accident.employment_related is none %}selected{% endif %}>(unanswered)</option>
+          <option value="true" {% if f.accident.employment_related == true %}selected{% endif %}>Yes</option>
+          <option value="false" {% if f.accident.employment_related == false %}selected{% endif %}>No</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small mb-0">If no:</label>
+        <div class="d-flex gap-3 pt-1">
+          <div class="form-check"><input class="form-check-input" type="checkbox" data-path="accident.auto" data-type="bool" id="auto_{{ i }}" {% if f.accident.auto %}checked{% endif %}><label class="form-check-label small" for="auto_{{ i }}">Auto</label></div>
+          <div class="form-check"><input class="form-check-input" type="checkbox" data-path="accident.other" data-type="bool" id="oth_{{ i }}" {% if f.accident.other %}checked{% endif %}><label class="form-check-label small" for="oth_{{ i }}">Other</label></div>
+        </div>
+      </div>
+      {{ fld('Describe the accident or illness', 'accident.description', f.accident.description, col='col-md-6') }}
+      {{ fld('Date patient first consulted physician', 'accident.first_consulted_date', f.accident.first_consulted_date, type='date') }}
+      <div class="col-md-3">
+        <label class="form-label small mb-0">Same or similar symptoms before?</label>
+        <select class="form-select form-select-sm" data-path="accident.similar_symptoms" data-type="tribool">
+          <option value="" {% if f.accident.similar_symptoms is none %}selected{% endif %}>(unanswered)</option>
+          <option value="true" {% if f.accident.similar_symptoms == true %}selected{% endif %}>Yes</option>
+          <option value="false" {% if f.accident.similar_symptoms == false %}selected{% endif %}>No</option>
+        </select>
+      </div>
+    </div>
+
+    <h6 class="claim-section-title">Medicare Information <small class="text-muted fw-normal">(only if patient is eligible for Medicare)</small></h6>
+    <div class="form-check mb-1">
+      <input class="form-check-input" type="checkbox" data-path="medicare.eligible" data-type="bool" data-toggle-target="#medicare_{{ i }}" id="mc_{{ i }}" {% if f.medicare.eligible %}checked{% endif %}>
+      <label class="form-check-label small" for="mc_{{ i }}">Patient is eligible for Medicare (attach Medicare EOB)</label>
+    </div>
+    <div class="row g-2 mb-3 toggle-section" id="medicare_{{ i }}">
+      {{ fld('Medicare Number (include alpha characters)', 'medicare.medicare_number', f.medicare.medicare_number, col='col-md-4') }}
+      {{ fld('Effective Date (Part A)', 'medicare.part_a_date', f.medicare.part_a_date, type='date') }}
+      {{ fld('Effective Date (Part B)', 'medicare.part_b_date', f.medicare.part_b_date, type='date') }}
+    </div>
+
+    <h6 class="claim-section-title">Other Health Insurance</h6>
+    <div class="form-check mb-1">
+      <input class="form-check-input" type="checkbox" data-path="other_insurance.no_other_coverage" data-type="bool" data-toggle-target="#other_{{ i }}" data-toggle-invert="1" id="noc_{{ i }}" {% if f.other_insurance.no_other_coverage %}checked{% endif %}>
+      <label class="form-check-label small" for="noc_{{ i }}">No other coverage</label>
+    </div>
+    <div class="row g-2 mb-3 toggle-section" id="other_{{ i }}">
+      {{ fld('Name of Policyholder', 'other_insurance.policyholder_name', f.other_insurance.policyholder_name, col='col-md-4') }}
+      {{ fld('Policy Number', 'other_insurance.policy_number', f.other_insurance.policy_number, col='col-md-2') }}
+      {{ fld('Name of Insurance Company', 'other_insurance.company', f.other_insurance.company, col='col-md-4') }}
+      {{ fld('Company Phone', 'other_insurance.phone', f.other_insurance.phone, col='col-md-2') }}
+      {{ fld('Street Address', 'other_insurance.address', f.other_insurance.address, col='col-md-5') }}
+      {{ fld('City', 'other_insurance.city', f.other_insurance.city) }}
+      {{ fld('State', 'other_insurance.state', f.other_insurance.state, col='col-md-2') }}
+      {{ fld('ZIP', 'other_insurance.zip', f.other_insurance.zip, col='col-md-2') }}
+    </div>
+
+    <h6 class="claim-section-title">Authorization / Release of Information &amp; Assignment of Benefits</h6>
+    <div class="row g-2 mb-3 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label small mb-0">Signer (patient or authorized person)</label>
+        <select class="form-select form-select-sm signer-select" data-path="authorization.signer_family_member_id" data-type="int">
+          <option value="">(none)</option>
+          {% for m in family_members %}
+          <option value="{{ m.id }}" data-name="{{ m.full_name }}" data-has-sig="{{ 1 if m.id in signature_ids else 0 }}" {% if f.authorization.signer_family_member_id == m.id %}selected{% endif %}>{{ m.emoji or '' }} {{ m.full_name }}{% if m.id in signature_ids %} (signature on file){% else %} (no signature){% endif %}</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Upload signature images on the <a href="/family_members" target="_blank">Family Members</a> page.</div>
+      </div>
+      {{ fld('Signature Date', 'authorization.signature_date', f.authorization.signature_date, type='date', col='col-md-2') }}
+      <div class="col-md-3">
+        <div class="form-check"><input class="form-check-input" type="checkbox" data-path="authorization.include_signature" data-type="bool" id="asig_{{ i }}" {% if f.authorization.include_signature %}checked{% endif %}><label class="form-check-label small" for="asig_{{ i }}">Sign Authorization/Release</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" data-path="assignment_of_benefits.include_signature" data-type="bool" id="aob_{{ i }}" {% if f.assignment_of_benefits.include_signature %}checked{% endif %}><label class="form-check-label small" for="aob_{{ i }}">Sign Assignment of Benefits <span class="text-muted">(pays provider, not you)</span></label></div>
+      </div>
+      <div class="col-md-3 signature-preview">
+        {% if f.authorization.signer_family_member_id in signature_ids %}
+        <img src="/api/family_members/{{ f.authorization.signer_family_member_id }}/signature" alt="signature" class="border rounded bg-white" style="max-height:48px;max-width:100%;">
+        {% else %}
+        <span class="text-muted small">No signature image on file.</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <h6 class="claim-section-title">Provider Statement of Services Rendered</h6>
+    <div class="row g-2 mb-2">
+      {{ fld('Facility name & address where services were rendered (if other than home or office)', 'provider_statement.facility_name_address', f.provider_statement.facility_name_address, col='col-md-6') }}
+      {{ fld('Date Admitted', 'provider_statement.date_admitted', f.provider_statement.date_admitted, type='date', col='col-md-2') }}
+      {{ fld('Date Discharged', 'provider_statement.date_discharged', f.provider_statement.date_discharged, type='date', col='col-md-2') }}
+      {{ fld('Diagnosis codes (comma-separated)', 'provider_statement.diagnosis_codes', f.provider_statement.diagnosis_codes|join(', '), col='col-md-2', extra='data-type="list"') }}
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-sm table-bordered align-middle claim-lines mb-1">
+        <thead class="table-light">
+          <tr>
+            <th style="width:11%">Date From</th>
+            <th style="width:11%">Date To</th>
+            <th style="width:7%">POS</th>
+            <th style="width:9%">CPT-4</th>
+            <th>Description of Service</th>
+            <th style="width:10%">Charges</th>
+            <th style="width:7%">Units</th>
+            <th style="width:4%"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in f.provider_statement.service_lines %}
+          <tr data-charge-id="{{ l.charge_id or '' }}">
+            <td><input type="date" class="form-control form-control-sm" data-line="date_from" value="{{ l.date_from or '' }}"></td>
+            <td><input type="date" class="form-control form-control-sm" data-line="date_to" value="{{ l.date_to or '' }}"></td>
+            <td><input type="text" class="form-control form-control-sm" data-line="place_of_service" value="{{ l.place_of_service or '' }}" title="Place of Service code (11 = Office, 10/02 = Telehealth)"></td>
+            <td><input type="text" class="form-control form-control-sm" data-line="cpt_code" value="{{ l.cpt_code or '' }}"></td>
+            <td><input type="text" class="form-control form-control-sm" data-line="description" value="{{ l.description or '' }}"></td>
+            <td><input type="number" step="0.01" class="form-control form-control-sm text-end line-charge" data-line="charges" value="{{ l.charges if l.charges is not none else '' }}"></td>
+            <td><input type="number" step="1" min="0" class="form-control form-control-sm" data-line="units" value="{{ l.units|int if l.units is not none else 1 }}"></td>
+            <td class="text-center"><button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="removeLine(this)" title="Remove line"><i class="bi bi-x-lg"></i></button></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <button type="button" class="btn btn-sm btn-outline-secondary mb-3" onclick="addLine({{ i }})"><i class="bi bi-plus"></i> Add service line</button>
+
+    <div class="row g-2 mb-3">
+      <div class="col-md-2 offset-md-6">
+        <label class="form-label small mb-0">Total Charge</label>
+        <input type="text" class="form-control form-control-sm text-end total-charge" readonly value="{{ f.provider_statement.total_charge or '0.00' }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-0">Amount Paid</label>
+        <input type="number" step="0.01" class="form-control form-control-sm text-end amount-paid" data-path="provider_statement.amount_paid" value="{{ f.provider_statement.amount_paid or '0.00' }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small mb-0">Balance Due</label>
+        <input type="text" class="form-control form-control-sm text-end balance-due" readonly value="{{ f.provider_statement.balance_due or '0.00' }}">
+      </div>
+    </div>
+
+    <div class="row g-2 mb-2">
+      {{ fld('Provider Name', 'provider_statement.provider_name', f.provider_statement.provider_name, col='col-md-4') }}
+      {{ fld('Tax ID Number', 'provider_statement.tax_id', f.provider_statement.tax_id, col='col-md-2') }}
+      {{ fld('NPI', 'provider_statement.npi_number', f.provider_statement.npi_number, col='col-md-2') }}
+      {{ fld('Telephone Number', 'provider_statement.provider_phone', f.provider_statement.provider_phone, col='col-md-2') }}
+      {{ fld('Provider Address', 'provider_statement.provider_address', f.provider_statement.provider_address, col='col-md-12') }}
+      {{ fld('Notes (printed at bottom of form)', 'notes', f.notes, col='col-md-12') }}
+    </div>
+
+    <h6 class="claim-section-title">Supporting Documents <small class="text-muted fw-normal">(itemized bills / receipts attached to the selected charges; included as separate files in the email)</small></h6>
+    {% if c.attachments %}
+    <div class="row g-1 mb-2 claim-attachments">
+      {% for a in c.attachments %}
+      <div class="col-md-6">
+        <div class="form-check">
+          <input class="form-check-input claim-attachment" type="checkbox" value="{{ a.id }}" id="att_{{ i }}_{{ a.id }}" checked>
+          <label class="form-check-label small" for="att_{{ i }}_{{ a.id }}">
+            <a href="/api/attachments/{{ a.id }}/download" target="_blank">{{ a.filename }}</a>
+            <span class="text-muted">({{ a.size_kb }} KB, charge #{{ a.charge_id }})</span>
+          </label>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="small text-muted mb-2">No attachments on these charges. Add itemized bills on the charge detail pages if the plan requires them.</p>
+    {% endif %}
+  </div>
+</form>
+{% endfor %}
+
+<template id="lineRowTemplate">
+  <tr data-charge-id="">
+    <td><input type="date" class="form-control form-control-sm" data-line="date_from"></td>
+    <td><input type="date" class="form-control form-control-sm" data-line="date_to"></td>
+    <td><input type="text" class="form-control form-control-sm" data-line="place_of_service" value="11"></td>
+    <td><input type="text" class="form-control form-control-sm" data-line="cpt_code"></td>
+    <td><input type="text" class="form-control form-control-sm" data-line="description"></td>
+    <td><input type="number" step="0.01" class="form-control form-control-sm text-end line-charge" data-line="charges"></td>
+    <td><input type="number" step="1" min="0" class="form-control form-control-sm" data-line="units" value="1"></td>
+    <td class="text-center"><button type="button" class="btn btn-sm btn-link text-danger p-0" onclick="removeLine(this)" title="Remove line"><i class="bi bi-x-lg"></i></button></td>
+  </tr>
+</template>
+
+<!-- Email modal -->
+<div class="modal fade" id="emailModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Email Claim</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="emailClaimIndex">
+        <div class="row g-2">
+          <div class="col-md-7"><label class="form-label small mb-0">To</label><input type="text" id="emailTo" class="form-control form-control-sm" placeholder="MHBPeligibility@aetna.com"></div>
+          <div class="col-md-5"><label class="form-label small mb-0">CC (optional)</label><input type="text" id="emailCc" class="form-control form-control-sm"></div>
+          <div class="col-12"><label class="form-label small mb-0">Subject</label><input type="text" id="emailSubject" class="form-control form-control-sm"></div>
+          <div class="col-12"><label class="form-label small mb-0">Body</label><textarea id="emailBody" rows="7" class="form-control form-control-sm"></textarea></div>
+          <div class="col-md-6">
+            <div class="form-check mt-2"><input class="form-check-input" type="checkbox" id="emailMarkSubmitted" checked><label class="form-check-label small" for="emailMarkSubmitted">Mark charges as submitted</label></div>
+          </div>
+          <div class="col-md-3"><label class="form-label small mb-0">Submitted date</label><input type="date" id="emailSubmittedDate" class="form-control form-control-sm"></div>
+          <div class="col-12"><div id="emailAttachmentSummary" class="small text-muted"></div></div>
+        </div>
+        <div id="emailStatus" class="small mt-2"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success" id="emailSendBtn" onclick="sendEmail()"><i class="bi bi-send"></i> Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CLAIMS = {{ claims | tojson }};
+const SIGNATURE_IDS = new Set({{ signature_ids | tojson }});
+const DEFAULT_CC = {{ default_cc | tojson }};
+
+function setPath(obj, path, value) {
+  const parts = path.split('.');
+  let cur = obj;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (cur[parts[i]] == null || typeof cur[parts[i]] !== 'object') cur[parts[i]] = {};
+    cur = cur[parts[i]];
+  }
+  cur[parts[parts.length - 1]] = value;
+}
+
+function readInput(el) {
+  const type = el.dataset.type || (el.type === 'date' ? 'date' : 'text');
+  if (type === 'bool') return el.checked;
+  if (type === 'tribool') return el.value === '' ? null : el.value === 'true';
+  if (type === 'int') return el.value === '' ? null : parseInt(el.value, 10);
+  if (type === 'list') return el.value.split(',').map(s => s.trim()).filter(Boolean);
+  if (el.type === 'number') return el.value === '' ? null : parseFloat(el.value);
+  return el.value === '' ? null : el.value;
+}
+
+function formEl(index) { return document.querySelector(`.claim-form[data-index="${index}"]`); }
+
+function collectClaim(index) {
+  const form = formEl(index);
+  const data = JSON.parse(JSON.stringify(CLAIMS[index].form));
+  form.querySelectorAll('[data-path]').forEach(el => setPath(data, el.dataset.path, readInput(el)));
+  const lines = [];
+  form.querySelectorAll('tbody tr').forEach(tr => {
+    const line = { charge_id: tr.dataset.chargeId ? parseInt(tr.dataset.chargeId, 10) : null };
+    tr.querySelectorAll('[data-line]').forEach(el => { line[el.dataset.line] = readInput(el); });
+    if (line.date_from || line.cpt_code || line.charges != null || line.description) lines.push(line);
+  });
+  data.provider_statement.service_lines = lines;
+  data.charge_ids = lines.map(l => l.charge_id).filter(id => id != null);
+  const total = lines.reduce((s, l) => s + (l.charges || 0), 0);
+  data.provider_statement.total_charge = Math.round(total * 100) / 100;
+  const paid = data.provider_statement.amount_paid || 0;
+  data.provider_statement.balance_due = Math.max(0, Math.round((total - paid) * 100) / 100);
+  // signer name follows the selected family member
+  const signer = form.querySelector('.signer-select');
+  const opt = signer && signer.selectedOptions[0];
+  const signerName = opt && opt.value ? opt.dataset.name : null;
+  data.authorization.signer_name = signerName;
+  data.assignment_of_benefits.signer_name = signerName;
+  data.assignment_of_benefits.signer_family_member_id = data.authorization.signer_family_member_id;
+  data.assignment_of_benefits.signature_date = data.authorization.signature_date;
+  return data;
+}
+
+function recalcTotals(form) {
+  let total = 0;
+  form.querySelectorAll('.line-charge').forEach(el => { total += parseFloat(el.value) || 0; });
+  const paid = parseFloat(form.querySelector('.amount-paid').value) || 0;
+  form.querySelector('.total-charge').value = total.toFixed(2);
+  form.querySelector('.balance-due').value = Math.max(0, total - paid).toFixed(2);
+}
+
+function addLine(index) {
+  const form = formEl(index);
+  const tbody = form.querySelector('tbody');
+  const row = document.getElementById('lineRowTemplate').content.firstElementChild.cloneNode(true);
+  const last = tbody.querySelector('tr:last-child');
+  if (last) {
+    row.querySelector('[data-line="place_of_service"]').value = last.querySelector('[data-line="place_of_service"]').value || '11';
+    row.querySelector('[data-line="cpt_code"]').value = last.querySelector('[data-line="cpt_code"]').value || '';
+    row.querySelector('[data-line="description"]').value = last.querySelector('[data-line="description"]').value || '';
+  }
+  tbody.appendChild(row);
+  recalcTotals(form);
+}
+
+function removeLine(btn) {
+  const form = btn.closest('.claim-form');
+  btn.closest('tr').remove();
+  recalcTotals(form);
+}
+
+function applyToggles(form) {
+  form.querySelectorAll('[data-toggle-target]').forEach(cb => {
+    const target = form.querySelector(cb.dataset.toggleTarget);
+    if (!target) return;
+    const show = cb.dataset.toggleInvert ? !cb.checked : cb.checked;
+    target.classList.toggle('d-none', !show);
+  });
+}
+
+function allIndexes() { return Array.from(document.querySelectorAll('.claim-form')).map(f => parseInt(f.dataset.index, 10)); }
+function resolveIndexes(target) { return target === 'all' ? allIndexes() : [parseInt(target, 10)]; }
+
+async function fetchPdf(index) {
+  const resp = await fetch('/api/claims/pdf', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(collectClaim(index))
+  });
+  return handlePdfResponse(resp);
+}
+
+async function fetchPdfBatch(indexes) {
+  const resp = await fetch('/api/claims/pdf-batch', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ claims: indexes.map(collectClaim) })
+  });
+  return handlePdfResponse(resp);
+}
+
+async function handlePdfResponse(resp) {
+  if (!resp.ok) {
+    const j = await resp.json().catch(() => ({}));
+    throw new Error(j.detail ? JSON.stringify(j.detail) : ('HTTP ' + resp.status));
+  }
+  const cd = resp.headers.get('Content-Disposition') || '';
+  const m = cd.match(/filename="([^"]+)"/);
+  return { blob: await resp.blob(), filename: m ? m[1] : 'claim.pdf' };
+}
+
+async function previewAll() {
+  try {
+    const { blob } = await fetchPdfBatch(allIndexes());
+    window.open(URL.createObjectURL(blob), '_blank');
+  } catch (e) { alert('PDF error: ' + e.message); }
+}
+
+async function previewClaim(index) {
+  try {
+    const { blob } = await fetchPdf(index);
+    window.open(URL.createObjectURL(blob), '_blank');
+  } catch (e) { alert('PDF error: ' + e.message); }
+}
+
+async function downloadClaim(index) {
+  try {
+    const { blob, filename } = await fetchPdf(index);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  } catch (e) { alert('PDF error: ' + e.message); }
+}
+
+function selectedAttachmentIds(index) {
+  return Array.from(formEl(index).querySelectorAll('.claim-attachment:checked')).map(cb => parseInt(cb.value, 10));
+}
+function selectedAttachmentNames(index) {
+  return Array.from(formEl(index).querySelectorAll('.claim-attachment:checked')).map(cb => cb.nextElementSibling.querySelector('a').textContent);
+}
+
+function openEmailModal(target) {
+  const indexes = resolveIndexes(target);
+  const claims = indexes.map(collectClaim);
+  const data = claims[0];
+  const patientOf = d => `${d.patient.first_name || d.member.first_name || ''} ${d.patient.last_name || d.member.last_name || ''}`.trim();
+  const patient = patientOf(data);
+  document.getElementById('emailClaimIndex').value = target;
+  document.getElementById('emailTo').value = claims.map(c => c.insurance.claim_email).find(Boolean) || '';
+  document.getElementById('emailCc').value = DEFAULT_CC || '';
+  if (claims.length === 1) {
+    document.getElementById('emailSubject').value = `Medical Claim Form - ${patient} - Member ID ${data.member.member_id || ''}`;
+    document.getElementById('emailBody').value =
+      `Please find the attached medical claim form for processing.\n\n` +
+      `Member: ${data.member.first_name || ''} ${data.member.last_name || ''}\n` +
+      `Member ID: ${data.member.member_id || ''}\n` +
+      `Patient: ${patient}\n` +
+      `Provider: ${data.provider_statement.provider_name || ''}\n` +
+      `Dates of service: ${data.provider_statement.service_lines.map(l => l.date_from).filter(Boolean).join(', ')}\n` +
+      `Total charges: $${(data.provider_statement.total_charge || 0).toFixed(2)}\n\nThank you.`;
+  } else {
+    document.getElementById('emailSubject').value = `Medical Claim Forms (${claims.length}) - Member ID ${data.member.member_id || ''}`;
+    const list = claims.map((c, i) => `  ${i + 1}. ${patientOf(c)} - ${c.provider_statement.provider_name || ''} - $${(c.provider_statement.total_charge || 0).toFixed(2)}`).join('\n');
+    document.getElementById('emailBody').value =
+      `Please find the attached ${claims.length} medical claim forms for processing (one per provider/patient).\n\n` +
+      `Member: ${data.member.first_name || ''} ${data.member.last_name || ''}\n` +
+      `Member ID: ${data.member.member_id || ''}\n\n` +
+      `Claims included:\n${list}\n\nThank you.`;
+  }
+  document.getElementById('emailSubmittedDate').value = new Date().toISOString().slice(0, 10);
+  const attNames = indexes.flatMap(selectedAttachmentNames);
+  const pdfLabel = claims.length === 1 ? 'claim form PDF' : `combined PDF (${claims.length} claim forms)`;
+  document.getElementById('emailAttachmentSummary').textContent = 'Attachments: ' + pdfLabel + (attNames.length ? ' + ' + attNames.join(', ') : '');
+  document.getElementById('emailStatus').textContent = '';
+  document.getElementById('emailSendBtn').disabled = false;
+  new bootstrap.Modal(document.getElementById('emailModal')).show();
+}
+
+async function sendEmail() {
+  const target = document.getElementById('emailClaimIndex').value;
+  const indexes = resolveIndexes(target);
+  const to = document.getElementById('emailTo').value.trim();
+  if (!to) { alert('Recipient address is required.'); return; }
+  const status = document.getElementById('emailStatus');
+  const btn = document.getElementById('emailSendBtn');
+  btn.disabled = true; status.textContent = 'Sending...';
+  try {
+    const resp = await fetch('/api/claims/email', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        claims: indexes.map(collectClaim),
+        to,
+        cc: document.getElementById('emailCc').value.trim(),
+        subject: document.getElementById('emailSubject').value,
+        body: document.getElementById('emailBody').value,
+        mark_submitted: document.getElementById('emailMarkSubmitted').checked,
+        submitted_date: document.getElementById('emailSubmittedDate').value || null,
+        attachment_ids: indexes.flatMap(selectedAttachmentIds)
+      })
+    });
+    const j = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(j.detail ? JSON.stringify(j.detail) : ('HTTP ' + resp.status));
+    const extra = (j.attachments_included || []).length ? ` Included ${j.attachments_included.length} supporting file(s).` : '';
+    status.innerHTML = `<span class="text-success">Sent <strong>${j.filename}</strong> (${j.claims_included} claim form(s)) to ${j.to}${j.cc ? ' (cc ' + j.cc + ')' : ''}.${extra} ${j.charges_marked} charge(s) marked as submitted.</span>`;
+    indexes.forEach(i => {
+      const header = formEl(i).querySelector('.card-header');
+      if (header && !header.querySelector('.badge.bg-success')) header.insertAdjacentHTML('beforeend', '<span class="badge bg-success">Emailed</span>');
+    });
+  } catch (e) {
+    status.innerHTML = `<span class="text-danger">Error: ${e.message}</span>`;
+    btn.disabled = false;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.claim-form').forEach(form => {
+    applyToggles(form);
+    form.addEventListener('change', ev => {
+      if (ev.target.matches('[data-toggle-target]')) applyToggles(form);
+      if (ev.target.matches('.signer-select')) {
+        const opt = ev.target.selectedOptions[0];
+        const prev = form.querySelector('.signature-preview');
+        prev.innerHTML = opt && opt.value && SIGNATURE_IDS.has(parseInt(opt.value, 10))
+          ? `<img src="/api/family_members/${opt.value}/signature" alt="signature" class="border rounded bg-white" style="max-height:48px;max-width:100%;">`
+          : '<span class="text-muted small">No signature image on file.</span>';
+      }
+    });
+    form.addEventListener('input', ev => {
+      if (ev.target.matches('.line-charge, .amount-paid')) recalcTotals(form);
+    });
+  });
+});
+</script>
+{% endblock %}

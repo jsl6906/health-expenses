@@ -43,6 +43,16 @@ services:
       EOB_DEBUG_PREVIEW: ${EOB_DEBUG_PREVIEW:-false}
       EOB_USE_FILE_UPLOAD: ${EOB_USE_FILE_UPLOAD:-true}
 
+      # Claim email (SMTP) Configuration
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_USE_SSL: ${SMTP_USE_SSL:-false}
+      CLAIM_EMAIL_CC: ${CLAIM_EMAIL_CC:-}
+      CLAIM_EMAIL_BCC: ${CLAIM_EMAIL_BCC:-}
+
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       interval: 30s
