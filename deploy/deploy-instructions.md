@@ -36,8 +36,9 @@ The `personal-expenses` service is defined in `<docker-config-dir>/docker-compos
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Production database |
 | `ENV_MODE`, `APP_PORT` | `PROD`; port `8081` |
 | `GEMINI_API_KEY`, `GEMINI_MODEL_NAME` | EOB parsing; synced from the local `.env` by `deploy/sync_server_env.ps1` |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_USE_SSL`, `CLAIM_EMAIL_CC`, `CLAIM_EMAIL_BCC` | Insurance claim emails; sync with `deploy/sync_server_env.ps1 -Keys SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASSWORD,SMTP_FROM,SMTP_USE_SSL,CLAIM_EMAIL_CC` |
 
-`sync_server_env.ps1` changes only the Gemini keys and saves a backup of the old file to `\\myserver\Docker\_backups` first.
+`sync_server_env.ps1` changes only the keys passed in `-Keys` (default: the Gemini keys) and saves a backup of the old file to `\\myserver\Docker\_backups` first. Every key must be set in the local `.env`, so leave out keys you have not set (e.g. `CLAIM_EMAIL_BCC`).
 
 `.env` changes take effect only after the container is recreated (step 4, or `docker compose up -d --force-recreate personal-expenses` from `<docker-config-dir>`). A plain `docker restart` does not reload them.
 
