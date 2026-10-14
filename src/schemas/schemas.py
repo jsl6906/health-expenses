@@ -5,9 +5,23 @@ Pydantic schemas for API request and response models.
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
+from typing import Annotated, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AfterValidator, BaseModel, ConfigDict
+
+
+def normalize_date(value: Optional[date]) -> Optional[date]:
+    """Browser date inputs accept 2-digit years (e.g. '25' -> 0025); treat those as 20xx and reject other pre-1900 dates."""
+    if value is None:
+        return None
+    if value.year < 100:
+        return value.replace(year=value.year + 2000)
+    if value.year < 1900:
+        raise ValueError(f"Invalid year {value.year}; dates must be 1900 or later")
+    return value
+
+
+SafeDate = Annotated[date, AfterValidator(normalize_date)]
 
 
 class MedicalTypeEnum(str, Enum):
@@ -72,12 +86,12 @@ class Provider(ProviderBase):
 # Charge Schemas
 class ChargeBase(BaseModel):
     excel_legacy_id: Optional[str] = None
-    service_date: Optional[date] = None
+    service_date: Optional[SafeDate] = None
     family_member_id: Optional[int] = None
     medical_type: Optional[MedicalTypeEnum] = None
     cpt_code: Optional[str] = None
     diagnosis_code: Optional[str] = None
-    claim_submitted_date: Optional[date] = None
+    claim_submitted_date: Optional[SafeDate] = None
     provider_id: Optional[int] = None
     doctor_name: Optional[str] = None
     charge_description: Optional[str] = None
@@ -100,12 +114,12 @@ class ChargeCreate(ChargeBase):
 
 class ChargeUpdate(BaseModel):
     excel_legacy_id: Optional[str] = None
-    service_date: Optional[date] = None
+    service_date: Optional[SafeDate] = None
     family_member_id: Optional[int] = None
     medical_type: Optional[MedicalTypeEnum] = None
     cpt_code: Optional[str] = None
     diagnosis_code: Optional[str] = None
-    claim_submitted_date: Optional[date] = None
+    claim_submitted_date: Optional[SafeDate] = None
     provider_id: Optional[int] = None
     doctor_name: Optional[str] = None
     charge_description: Optional[str] = None
@@ -139,7 +153,7 @@ class FamilyMemberBase(BaseModel):
     gender: Optional[str] = None
     relationship_to_primary: Optional[str] = None
     phone_number: Optional[str] = None
-    dob: Optional[date] = None
+    dob: Optional[SafeDate] = None
     emoji: Optional[str] = None
 
 
@@ -156,7 +170,7 @@ class FamilyMemberUpdate(BaseModel):
     gender: Optional[str] = None
     relationship_to_primary: Optional[str] = None
     phone_number: Optional[str] = None
-    dob: Optional[date] = None
+    dob: Optional[SafeDate] = None
     emoji: Optional[str] = None
 
 
@@ -174,7 +188,7 @@ class FamilyMember(FamilyMemberBase):
 
 # Payment Schemas
 class PaymentBase(BaseModel):
-    payment_date: Optional[date] = None
+    payment_date: Optional[SafeDate] = None
     payment_amount: Optional[Decimal] = None
     expense_type: Optional[ExpenseTypeEnum] = None
     provider_id: Optional[int] = None
@@ -191,7 +205,7 @@ class PaymentCreate(PaymentBase):
 
 
 class PaymentUpdate(BaseModel):
-    payment_date: Optional[date] = None
+    payment_date: Optional[SafeDate] = None
     payment_amount: Optional[Decimal] = None
     expense_type: Optional[ExpenseTypeEnum] = None
     provider_id: Optional[int] = None

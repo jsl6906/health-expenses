@@ -818,12 +818,12 @@ async def claim_form_page(
         from models.database import Attachment as AttachmentModel  # type: ignore
         from models.database import FamilyMember as FamilyMemberModel  # type: ignore
         from services.claim_form import build_claim_forms, claim_warnings  # type: ignore
-        from services.mailer import default_claim_cc, mail_config_ok  # type: ignore
+        from services.mailer import default_claim_cc, default_claim_to, mail_config_ok  # type: ignore
     except ImportError:  # pragma: no cover
         from ..models.database import Attachment as AttachmentModel  # type: ignore
         from ..models.database import FamilyMember as FamilyMemberModel  # type: ignore
         from ..services.claim_form import build_claim_forms, claim_warnings  # type: ignore
-        from ..services.mailer import default_claim_cc, mail_config_ok  # type: ignore
+        from ..services.mailer import default_claim_cc, default_claim_to, mail_config_ok  # type: ignore
 
     forms = build_claim_forms(db, ids)
     if not forms:
@@ -886,6 +886,7 @@ async def claim_form_page(
             "signature_ids": sorted(signature_ids),
             "mail_configured": mail_config_ok(),
             "default_cc": default_claim_cc(),
+            "default_to": default_claim_to(),
         },
     )
 

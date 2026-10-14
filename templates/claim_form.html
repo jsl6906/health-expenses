@@ -66,7 +66,7 @@
     <div class="row g-2 mb-2">
       {{ fld('Plan Name', 'insurance.plan_name', f.insurance.plan_name, col='col-md-4') }}
       {{ fld('Group Number', 'insurance.group_number', f.insurance.group_number, col='col-md-2') }}
-      {{ fld('Claim Email (To)', 'insurance.claim_email', f.insurance.claim_email, type='email', col='col-md-3', extra='placeholder="MHBPeligibility@aetna.com"') }}
+      {{ fld('Claim Email (To)', 'insurance.claim_email', f.insurance.claim_email, type='email', col='col-md-3', extra='placeholder="' ~ (default_to or 'MHBPeligibility@aetna.com') ~ '"') }}
       {{ fld('Claim Mailing Address', 'insurance.claim_mailing_address', f.insurance.claim_mailing_address, col='col-md-3', extra='placeholder="PO Box 981106, El Paso, TX 79998"') }}
     </div>
 
@@ -318,6 +318,7 @@
 const CLAIMS = {{ claims | tojson }};
 const SIGNATURE_IDS = new Set({{ signature_ids | tojson }});
 const DEFAULT_CC = {{ default_cc | tojson }};
+const DEFAULT_TO = {{ default_to | tojson }};
 
 function setPath(obj, path, value) {
   const parts = path.split('.');
@@ -471,7 +472,7 @@ function openEmailModal(target) {
   const patientOf = d => `${d.patient.first_name || d.member.first_name || ''} ${d.patient.last_name || d.member.last_name || ''}`.trim();
   const patient = patientOf(data);
   document.getElementById('emailClaimIndex').value = target;
-  document.getElementById('emailTo').value = claims.map(c => c.insurance.claim_email).find(Boolean) || '';
+  document.getElementById('emailTo').value = claims.map(c => c.insurance.claim_email).find(Boolean) || DEFAULT_TO || '';
   document.getElementById('emailCc').value = DEFAULT_CC || '';
   if (claims.length === 1) {
     document.getElementById('emailSubject').value = `Medical Claim Form - ${patient} - Member ID ${data.member.member_id || ''}`;
@@ -505,7 +506,7 @@ async function sendEmail() {
   const target = document.getElementById('emailClaimIndex').value;
   const indexes = resolveIndexes(target);
   const to = document.getElementById('emailTo').value.trim();
-  if (!to) { alert('Recipient address is required.'); return; }
+  if (!to) { alert('Recipient address is required. Set it here, on the insurance record (Claim Submission Email), or via CLAIM_EMAIL_TO in .env.'); return; }
   const status = document.getElementById('emailStatus');
   const btn = document.getElementById('emailSendBtn');
   btn.disabled = true; status.textContent = 'Sending...';

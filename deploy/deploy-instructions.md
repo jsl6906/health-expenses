@@ -22,7 +22,7 @@ The share `\\myserver\Docker` is `<docker-config-dir>` on the server.
    ssh <user>@<server>
    bash <docker-config-dir>/personal-expenses/update_personal_expenses.sh
    ```
-   The script loads the newest tar, tags it `personal-expenses:latest`, deletes older tars, runs `docker compose up -d --force-recreate personal-expenses`, and waits for the container to report healthy.
+   The script loads the newest tar, tags it `personal-expenses:latest`, deletes older tars, runs `docker compose up -d --force-recreate personal-expenses`, and waits for the container to report healthy. Once it is healthy, the script removes every older `personal-expenses` image from the server. If the health check fails, it leaves the older images in place.
    Alembic migrations run automatically when the container starts (`docker-entrypoint.sh`).
 
 Check the deployment with `docker logs -f personal-expenses`, or open http://myserver:8081.
@@ -36,7 +36,7 @@ The `personal-expenses` service is defined in `<docker-config-dir>/docker-compos
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | Production database |
 | `ENV_MODE`, `APP_PORT` | `PROD`; port `8081` |
 | `GEMINI_API_KEY`, `GEMINI_MODEL_NAME` | EOB parsing; synced from the local `.env` by `deploy/sync_server_env.ps1` |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_USE_SSL`, `CLAIM_EMAIL_CC`, `CLAIM_EMAIL_BCC` | Insurance claim emails; sync with `deploy/sync_server_env.ps1 -Keys SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASSWORD,SMTP_FROM,SMTP_USE_SSL,CLAIM_EMAIL_CC` |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_USE_SSL`, `CLAIM_EMAIL_TO`, `CLAIM_EMAIL_CC`, `CLAIM_EMAIL_BCC` | Insurance claim emails; sync with `deploy/sync_server_env.ps1 -Keys SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASSWORD,SMTP_FROM,SMTP_USE_SSL,CLAIM_EMAIL_TO,CLAIM_EMAIL_CC` |
 
 `sync_server_env.ps1` changes only the keys passed in `-Keys` (default: the Gemini keys) and saves a backup of the old file to `\\myserver\Docker\_backups` first. Every key must be set in the local `.env`, so leave out keys you have not set (e.g. `CLAIM_EMAIL_BCC`).
 
@@ -54,4 +54,4 @@ The `personal-expenses` service is defined in `<docker-config-dir>/docker-compos
 
 - `publish.ps1` saves the image locally and then copies it, because `docker save` written straight to the SMB share produces an empty file.
 - Images are built for `linux/amd64`.
-- The update script keeps only the newest tar, but earlier loaded images stay on the server until pruned. To roll back, list them with `docker images personal-expenses`, then run `docker tag personal-expenses:<old-timestamp> personal-expenses:latest` and recreate the container.
+- After a successful deploy, the update script keeps only the newest tar and the newest image. To roll back, rebuild the older commit and publish it again. If a deploy fails its health check, the older images stay on the server. You can list them with `docker images personal-expenses`, then run `docker tag personal-expenses:<old-timestamp> personal-expenses:latest` and recreate the container.

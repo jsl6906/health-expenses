@@ -132,7 +132,8 @@ class ClaimEmailRequest(BaseModel):
     # Either a single claim or several; all are combined into one PDF / one email
     claim: Optional[ClaimForm] = None
     claims: List[ClaimForm] = Field(default_factory=list)
-    to: str
+    # Omitted/blank -> insurance record's claim email, then CLAIM_EMAIL_TO
+    to: Optional[str] = None
     cc: Optional[str] = None
     subject: Optional[str] = None
     body: Optional[str] = None

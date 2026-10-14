@@ -29,6 +29,7 @@ from ..services.claim_pdf import (
 from ..services.mailer import (
     MailConfigError,
     default_claim_cc,
+    default_claim_to,
     mail_config_ok,
     send_email_with_attachment,
 )
@@ -110,7 +111,11 @@ def claims_pdf_batch(
 
 @router.get("/claims/mail-status")
 def claim_mail_status():
-    return {"configured": mail_config_ok(), "default_cc": default_claim_cc() or None}
+    return {
+        "configured": mail_config_ok(),
+        "default_to": default_claim_to() or None,
+        "default_cc": default_claim_cc() or None,
+    }
 
 
 @router.post("/claims/email", response_model=ClaimEmailResponse)
@@ -120,6 +125,14 @@ def email_claim(req: ClaimEmailRequest, db: Session = Depends(get_db)):
     if not forms:
         raise HTTPException(status_code=400, detail="No claims provided")
     form = forms[0]
+    to = (req.to or "").strip() or next(
+        (f.insurance.claim_email for f in forms if f.insurance.claim_email), ""
+    ) or default_claim_to()
+    if not to:
+        raise HTTPException(
+            status_code=400,
+            detail="No recipient: set 'to', the insurance record's claim email, or CLAIM_EMAIL_TO.",
+        )
     # cc omitted (None) -> configured default; empty string -> explicitly no CC
     cc = default_claim_cc() if req.cc is None else req.cc.strip()
     pdf = render_claims_pdf(forms, _signatures_for(db, forms))
@@ -191,7 +204,7 @@ def email_claim(req: ClaimEmailRequest, db: Session = Depends(get_db)):
 
     try:
         send_email_with_attachment(
-            to=req.to,
+            to=to,
             cc=cc or None,
             subject=subject,
             body=body,
@@ -217,7 +230,7 @@ def email_claim(req: ClaimEmailRequest, db: Session = Depends(get_db)):
 
     return ClaimEmailResponse(
         sent=True,
-        to=req.to,
+        to=to,
         cc=cc or None,
         subject=subject,
         filename=filename,

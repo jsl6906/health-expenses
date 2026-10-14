@@ -3,6 +3,7 @@
 Configuration (environment / .env):
   SMTP_HOST, SMTP_PORT (default 587), SMTP_USER, SMTP_PASSWORD,
   SMTP_FROM (defaults to SMTP_USER), SMTP_USE_SSL (true => implicit TLS on 465),
+  CLAIM_EMAIL_TO (optional default recipient when the insurance record has no claim email),
   CLAIM_EMAIL_CC (optional default CC, prefilled in the UI and editable per send),
   CLAIM_EMAIL_BCC (optional, always BCC'd on claim emails, e.g. yourself).
 """
@@ -35,6 +36,10 @@ def mail_config_ok() -> bool:
 
 def default_claim_cc() -> str:
     return os.getenv("CLAIM_EMAIL_CC", "").strip()
+
+
+def default_claim_to() -> str:
+    return os.getenv("CLAIM_EMAIL_TO", "").strip()
 
 
 def send_email_with_attachment(

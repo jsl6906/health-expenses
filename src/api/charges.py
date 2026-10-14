@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..crud.attachment import create_attachment  # needed for bulk attach
 from ..crud.charge import charge_crud
 from ..database_config import get_db
-from ..schemas.schemas import Charge, ChargeCreate, ChargeUpdate
+from ..schemas.schemas import Charge, ChargeCreate, ChargeUpdate, normalize_date
 
 router = APIRouter(tags=["charges"], prefix="/api")
 
@@ -48,7 +48,9 @@ async def bulk_create_charges(
     svc_date_obj = None
     if service_date:
         try:
-            svc_date_obj = datetime.strptime(service_date, "%Y-%m-%d").date()
+            svc_date_obj = normalize_date(
+                datetime.strptime(service_date, "%Y-%m-%d").date()
+            )
         except ValueError:
             raise HTTPException(
                 status_code=400, detail="Invalid service_date format. Use YYYY-MM-DD"
@@ -750,7 +752,9 @@ def merge_charges_with_fields(
                 from datetime import datetime
 
                 setattr(
-                    target_charge, "service_date", datetime.fromisoformat(value).date()
+                    target_charge,
+                    "service_date",
+                    normalize_date(datetime.fromisoformat(value).date()),
                 )
             elif field in [
                 "base_fee_amount",
@@ -959,7 +963,7 @@ def bulk_update_charges(payload: BulkUpdateRequest, db: Session = Depends(get_db
         else:
             try:
                 dt = datetime.fromisoformat(str(cs))
-                upd["claim_submitted_date"] = dt.date().isoformat()
+                upd["claim_submitted_date"] = normalize_date(dt.date()).isoformat()
             except Exception:
                 raise HTTPException(
                     status_code=400,

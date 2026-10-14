@@ -16,7 +16,8 @@ echo "[INFO] Loading $latest_tar"
 load_output="$(docker load -i "$latest_tar")"
 echo "$load_output"
 if [[ "$load_output" =~ Loaded\ image:\ ([^[:space:]]+) ]]; then
-  docker tag "${BASH_REMATCH[1]}" $SERVICE:latest
+  new_image="${BASH_REMATCH[1]}"
+  docker tag "$new_image" $SERVICE:latest
 else
   echo "[ERROR] Could not find the loaded image name" >&2
   exit 1
@@ -43,3 +44,14 @@ if [[ "$status" != "healthy" ]]; then
   echo "[ERROR] $SERVICE is $status" >&2
   exit 1
 fi
+
+# Only prune once the new container is healthy, so a failed deploy can still roll back.
+new_id="$(docker image inspect -f '{{.Id}}' "$new_image")"
+old_ids="$(docker images --no-trunc $SERVICE --format '{{.ID}}' | sort -u | grep -vxF "$new_id" || true)"
+if [[ -n "$old_ids" ]]; then
+  for id in $old_ids; do
+    echo "[INFO] Removing old image $(docker image inspect -f '{{join .RepoTags ", "}}' "$id") (${id:7:12})"
+    docker rmi -f "$id" >/dev/null || echo "[WARN] Could not remove image $id" >&2
+  done
+fi
+docker images $SERVICE
