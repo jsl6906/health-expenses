@@ -17,3 +17,6 @@ wheels/
 
 # Environment files
 .env
+
+# Generated claim PDFs (contain real member/patient data)
+*.pdf
