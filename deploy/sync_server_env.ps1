@@ -36,4 +36,4 @@ $backupDir = Join-Path (Split-Path $ServerEnv -Parent) "_backups"
 New-Item -ItemType Directory -Force $backupDir | Out-Null
 Copy-Item $ServerEnv (Join-Path $backupDir (".env." + (Get-Date -Format "yyyyMMdd-HHmmss")))
 [IO.File]::WriteAllText($ServerEnv, ($lines -join $nl) + $nl)
-Write-Host "Updated $($changed -join ', ') in $ServerEnv. Recreate the container (update_personal_expenses.sh) to apply."
+Write-Host "Updated $($changed -join ', ') in $ServerEnv. Recreate the container to apply."
