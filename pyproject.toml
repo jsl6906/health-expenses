@@ -1,6 +1,6 @@
 [project]
 name = "personal-expenses"
-version = "0.2.0"
+version = "1.0.0"
 description = "Personal Health Expenses Management System - A CRUD application for managing medical, dental, and vision expenses"
 readme = "README.md"
 requires-python = ">=3.13"
