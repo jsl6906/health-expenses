@@ -10,6 +10,7 @@ All CRUD JSON endpoints now reside in dedicated routers under api/.
 """
 
 import os
+import zlib
 from pathlib import Path
 from uuid import uuid4
 
@@ -18,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from markupsafe import Markup
+from markupsafe import Markup, escape
 from sqlalchemy.orm import Session  # retained for diagnostic endpoint dependency
 
 from .api.attachments import router as attachments_router
@@ -90,19 +91,9 @@ def fam_avatar(name: str) -> Markup:
         # Fallback for non-printable characters
         if not ch or ch.isspace():
             ch = "?"
-        # Per-member modifier class for initial set
-        slug = raw.lower()
-        mod = ""
-        if slug == "alex":
-            mod = "fam-avatar--alex"
-        elif slug == "sam":
-            mod = "fam-avatar--sam"
-        elif slug == "riley":
-            mod = "fam-avatar--riley"
-        elif slug == "jordan":
-            mod = "fam-avatar--jordan"
-        cls = f"fam-avatar {mod}" if mod else "fam-avatar"
-        html = f'<span class="{cls}" title="{raw}">{ch}</span>'
+        # crc32 is stable across processes, unlike hash()
+        mod = f"fam-avatar--c{zlib.crc32(raw.lower().encode()) % 4}"
+        html = f'<span class="fam-avatar {mod}" title="{escape(raw)}">{escape(ch)}</span>'
         return Markup(html)
     except Exception:
         return Markup("")

@@ -1,12 +1,19 @@
 # Copy the Gemini settings from the local .env into the server's shared compose .env without printing secrets.
-param([string]$ServerEnv = "\\myserver\Docker\.env", [string[]]$Keys = @("GEMINI_API_KEY", "GEMINI_MODEL_NAME", "EOB_USE_FILE_UPLOAD"))
+# The server .env defaults to <DEPLOY_SHARE>\.env, with DEPLOY_SHARE read from the local .env.
+param([string]$ServerEnv, [string[]]$Keys = @("GEMINI_API_KEY", "GEMINI_MODEL_NAME", "EOB_USE_FILE_UPLOAD"))
 # For claim email: .\sync_server_env.ps1 -Keys SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASSWORD (all must be set locally)
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
 
 $values = @{}
+$share = $null
 foreach ($line in Get-Content "$root\.env") {
+    if ($line -match '^\s*DEPLOY_SHARE=(.+)$') { $share = $Matches[1].Trim() }
     if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$' -and $Keys -contains $Matches[1]) { $values[$Matches[1]] = $Matches[2] }
+}
+if (-not $ServerEnv) {
+    if (-not $share) { throw "Pass -ServerEnv or set DEPLOY_SHARE in .env" }
+    $ServerEnv = "$share\.env"
 }
 $missing = $Keys | Where-Object { -not $values[$_] }
 if ($missing) { throw "Local .env is missing: $($missing -join ', ')" }

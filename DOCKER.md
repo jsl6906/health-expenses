@@ -47,7 +47,7 @@ docker-compose up -d
 
 ### 3. Deploying to the Home Server
 
-To package and deploy to myserver, follow [deploy/deploy-instructions.md](deploy/deploy-instructions.md).
+To package and deploy to a home server, follow [deploy/deploy-instructions.md](deploy/deploy-instructions.md).
 
 ## Configuration
 

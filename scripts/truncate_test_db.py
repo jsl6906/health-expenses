@@ -24,7 +24,7 @@ src_path = Path(__file__).parent.parent / "src"
 sys.path.insert(0, str(src_path))
 
 try:
-    from database_config import db_config, engine
+    from database_config import db_config, engine, local_db_hosts
 except ImportError as e:
     print(f"❌ Error importing database config: {e}")
     print("Make sure you're running this from the project root or scripts directory.")
@@ -47,7 +47,7 @@ def main():
         sys.exit(1)
 
     # Safety check 2: Not a production-looking host
-    if db_config.db_host not in {"localhost", "127.0.0.1", "192.0.2.10"}:
+    if db_config.db_host not in local_db_hosts():
         print(
             f"❌ WARNING: Host '{db_config.db_host}' doesn't look like a test environment"
         )

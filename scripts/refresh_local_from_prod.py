@@ -377,11 +377,10 @@ def main():
     if args.verbose_env:
         print(f"Target prefix selected: {target_prefix}")
 
-    if not args.force_nonlocal_target and local["host"] not in {
-        "127.0.0.1",
-        "localhost",
-        "192.0.2.10",
-    }:
+    local_hosts = {"127.0.0.1", "localhost"} | {
+        h.strip() for h in os.getenv("LOCAL_DB_HOSTS", "").split(",") if h.strip()
+    }
+    if not args.force_nonlocal_target and local["host"] not in local_hosts:
         print(
             "Refusing to run: target host is not local. Use --force-nonlocal-target to override.",
             file=sys.stderr,

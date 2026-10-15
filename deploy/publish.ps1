@@ -1,7 +1,13 @@
-# Build the image on this PC and drop it on the myserver share; then run update_personal_expenses.sh on the server.
-param([string]$Share = "\\myserver\Docker\personal-expenses")
+# Build the image on this PC and drop it on the server's Docker share; then run update_personal_expenses.sh on the server.
+# The share root comes from DEPLOY_SHARE in the local .env (e.g. \\myserver\Docker).
+param([string]$Share)
 $ErrorActionPreference = "Stop"
 $root = Split-Path $PSScriptRoot -Parent
+if (-not $Share) {
+    $line = Get-Content "$root\.env" | Where-Object { $_ -match '^\s*DEPLOY_SHARE=(.+)$' } | Select-Object -First 1
+    if (-not $line) { throw "Pass -Share or set DEPLOY_SHARE in .env" }
+    $Share = ($line -replace '^\s*DEPLOY_SHARE=', '').Trim() + "\personal-expenses"
+}
 $tag = "personal-expenses:" + (Get-Date -Format "yyyyMMdd-HHmm")
 
 docker build --platform linux/amd64 -t $tag $root

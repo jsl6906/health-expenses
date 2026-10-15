@@ -71,12 +71,7 @@ class DatabaseConfig:
         self.db_password = first(f"{prefix}_DB_PASSWORD", "DB_PASSWORD", default="")
 
         # Safety: If TEST mode but host looks like a prod host (heuristic), warn.
-        if self.env_mode == "TEST" and self.db_host not in {
-            "localhost",
-            "127.0.0.1",
-            "0.0.0.0",
-            "192.0.2.10",
-        }:
+        if self.env_mode == "TEST" and self.db_host not in local_db_hosts():
             print(f"WARNING: ENV_MODE=TEST but host={self.db_host} is not local.")
 
         # Connection pool settings
@@ -93,6 +88,12 @@ class DatabaseConfig:
         print(
             f"DEBUG: Database URL: {self.database_url.replace(encoded_password, '***')}"
         )
+
+
+def local_db_hosts() -> set[str]:
+    """Hosts treated as local/test; extend with comma-separated LOCAL_DB_HOSTS."""
+    extra = {h.strip() for h in os.getenv("LOCAL_DB_HOSTS", "").split(",") if h.strip()}
+    return {"localhost", "127.0.0.1", "0.0.0.0"} | extra
 
 
 # Global database configuration

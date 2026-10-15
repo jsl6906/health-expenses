@@ -36,17 +36,21 @@ def upgrade():
         sa.Column("updated_by", sa.String),
     )
 
-    # 2. Insert initial family members from previous enum
-    family_members = [
-        {"first_name": "Alex"},
-        {"first_name": "Jordan"},
-        {"first_name": "Sam"},
-        {"first_name": "Riley"},
-    ]
+    # 2. Insert initial family members from the previous enum values in use
+    connection = op.get_bind()
+    names = sorted(
+        str(n)
+        for n in connection.execute(
+            sa.text(
+                "SELECT DISTINCT family_member::text FROM charges WHERE family_member IS NOT NULL"
+            )
+        ).scalars()
+    )
     family_members_table = table(
         "family_members", column("id", Integer), column("first_name", String)
     )
-    op.bulk_insert(family_members_table, family_members)
+    if names:
+        op.bulk_insert(family_members_table, [{"first_name": n} for n in names])
 
     # 3. Add family_member_id column to charges
     op.add_column(
@@ -55,8 +59,7 @@ def upgrade():
     )
 
     # 4. Migrate data from charges.family_member to charges.family_member_id
-    connection = op.get_bind()
-    for name in ["Alex", "Jordan", "Sam", "Riley"]:
+    for name in names:
         result = connection.execute(
             sa.text("SELECT id FROM family_members WHERE first_name = :name"),
             {"name": name},

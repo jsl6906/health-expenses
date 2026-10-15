@@ -1,7 +1,7 @@
-# Deploying Personal Expenses to myserver
+# Deploying Personal Expenses to a home server
 
-The app runs as the `personal-expenses` container in the main compose file on myserver, at http://myserver:8081.
-The share `\\myserver\Docker` is `<docker-config-dir>` on the server.
+The app runs as the `personal-expenses` container in the main compose file on the server, at http://&lt;server&gt;:8081.
+The Windows share set in `DEPLOY_SHARE` (local `.env`, e.g. `\\<server>\Docker`) maps to `<docker-config-dir>` on the server.
 
 ## Pushing an update
 
@@ -13,7 +13,7 @@ The share `\\myserver\Docker` is `<docker-config-dir>` on the server.
    ```powershell
    powershell -ExecutionPolicy Bypass -File deploy\sync_server_env.ps1
    ```
-3. Build the image and copy it to the share. This writes `\\myserver\Docker\personal-expenses\container_files\personal-expenses-<timestamp>.tar` and refreshes `update_personal_expenses.sh`:
+3. Build the image and copy it to the share. This writes `<DEPLOY_SHARE>\personal-expenses\container_files\personal-expenses-<timestamp>.tar` and refreshes `update_personal_expenses.sh`:
    ```powershell
    powershell -ExecutionPolicy Bypass -File deploy\publish.ps1
    ```
@@ -25,7 +25,7 @@ The share `\\myserver\Docker` is `<docker-config-dir>` on the server.
    The script loads the newest tar, tags it `personal-expenses:latest`, deletes older tars, runs `docker compose up -d --force-recreate personal-expenses`, and waits for the container to report healthy. Once it is healthy, the script removes every older `personal-expenses` image from the server. If the health check fails, it leaves the older images in place.
    Alembic migrations run automatically when the container starts (`docker-entrypoint.sh`).
 
-Check the deployment with `docker logs -f personal-expenses`, or open http://myserver:8081.
+Check the deployment with `docker logs -f personal-expenses`, or open http://&lt;server&gt;:8081.
 
 ## Server settings
 
@@ -38,7 +38,7 @@ The `personal-expenses` service is defined in `<docker-config-dir>/docker-compos
 | `GEMINI_API_KEY`, `GEMINI_MODEL_NAME` | EOB parsing; synced from the local `.env` by `deploy/sync_server_env.ps1` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_USE_SSL`, `CLAIM_EMAIL_TO`, `CLAIM_EMAIL_CC`, `CLAIM_EMAIL_BCC` | Insurance claim emails; sync with `deploy/sync_server_env.ps1 -Keys SMTP_HOST,SMTP_PORT,SMTP_USER,SMTP_PASSWORD,SMTP_FROM,SMTP_USE_SSL,CLAIM_EMAIL_TO,CLAIM_EMAIL_CC` |
 
-`sync_server_env.ps1` changes only the keys passed in `-Keys` (default: the Gemini keys) and saves a backup of the old file to `\\myserver\Docker\_backups` first. Every key must be set in the local `.env`, so leave out keys you have not set (e.g. `CLAIM_EMAIL_BCC`).
+`sync_server_env.ps1` changes only the keys passed in `-Keys` (default: the Gemini keys) and saves a backup of the old file to `<DEPLOY_SHARE>\_backups` first. Every key must be set in the local `.env`, so leave out keys you have not set (e.g. `CLAIM_EMAIL_BCC`).
 
 `.env` changes take effect only after the container is recreated (step 4, or `docker compose up -d --force-recreate personal-expenses` from `<docker-config-dir>`). A plain `docker restart` does not reload them.
 
